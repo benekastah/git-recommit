@@ -154,6 +154,18 @@ class Session:
         self.uncommitted = tip != head
         return True
 
+    def drop_stale_edits(self) -> list[str]:
+        """Drop the edits of files the range no longer changes (e.g. after
+        the user undid their changes while git recommit was suspended), which
+        building would ignore, and say which."""
+        changed = {diff.path for diff in self.files}
+        dropped = []
+        for number, commit in enumerate(self.plan.commits, start=1):
+            for path in [path for path in commit.edits if path not in changed]:
+                del commit.edits[path]
+                dropped.append(f"dropped commit {number}'s edit of {path}, which the range no longer changes")
+        return dropped
+
     def head_moved(self) -> bool:
         """Whether HEAD has moved since the diff was loaded (e.g. the user
         committed while git recommit was suspended)."""

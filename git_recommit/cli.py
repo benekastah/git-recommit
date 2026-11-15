@@ -139,7 +139,7 @@ def run_subcommand(git: GitClient, args: argparse.Namespace) -> int:
         planfile.remove(git)
         print("Aborted the recommit; no commits were changed.")
         return 0
-    session = planfile.load(git)
+    session = load_plan(git)
     if args.command == "show":
         if args.json:
             print(json.dumps(show.as_json(session), indent=1))
@@ -156,6 +156,17 @@ def run_subcommand(git: GitClient, args: argparse.Namespace) -> int:
     planfile.save(session)
     print(result.message)
     return 0
+
+
+def load_plan(git: GitClient) -> Session:
+    """The recommit in progress, without edits of files the range no longer
+    changes (saying which it dropped)."""
+    session = planfile.load(git)
+    if dropped := session.drop_stale_edits():
+        planfile.save(session)
+        for note in dropped:
+            print(f"git-recommit: {note}", file=sys.stderr)
+    return session
 
 
 def command(args: argparse.Namespace) -> Command:

@@ -90,3 +90,14 @@ def test_bad_targets_and_commits_are_errors(repo: Repo) -> None:
     repo.recommit("start", "HEAD~")
     assert "nope isn't changed" in repo.recommit("assign", "1", "nope", expect_success=False).stderr
     assert "there's no commit 5" in repo.recommit("assign", "5", "a", expect_success=False).stderr
+
+
+def test_loading_a_plan_drops_edits_of_files_no_longer_changed(repo: Repo) -> None:
+    repo.commit("wip", a="real\n", b="b\n")
+    repo.recommit("start", "HEAD~")
+    repo.recommit("edit", "1", "a", input="stub\n")
+    (repo.path / "a").unlink()
+    result = repo.recommit("show")
+    assert "dropped commit 1's edit of a" in result.stderr
+    again = repo.recommit("show")
+    assert "edits a" not in again.stdout and again.stderr == ""

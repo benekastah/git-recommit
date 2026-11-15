@@ -3,14 +3,6 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## Edits on a file that leaves the diff are ignored
-
-After a reload, an edit of a file that's no longer in the diff stays in the
-commit's edits, and the sidebar still shows ✎, but building ignores it, since
-it only builds files in the diff. Drop such edits on reload and say so, or
-keep the file in the diff (see "A commit can't take a file the range doesn't
-change").
-
 ## An unassigned new file ends up untracked
 
 Unassigned changes are meant to be left uncommitted, but writing finishes with

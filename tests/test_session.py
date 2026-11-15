@@ -356,3 +356,20 @@ def test_building_a_file_whose_name_isnt_utf8(repo: Repo) -> None:
         ["git", "ls-tree", "-z", "--name-only", sha], cwd=repo.path, capture_output=True, check=True
     )
     assert name in listed.stdout.split(b"\0")
+
+
+def test_reloading_drops_edits_of_files_no_longer_changed(repo: Repo) -> None:
+    from git_recommit.board import Board
+    from git_recommit.commands import Edit
+
+    repo.commit("wip", a="real\n", b="b\n")
+    session = repo.session("HEAD~")
+    session.restore_old_commits()
+    Edit(1, "a", b"stub\n").run(session)
+    board = Board(session)
+    # a is added by the range; deleting it means the range doesn't change it.
+    (repo.path / "a").unlink()
+    board.reload()
+    assert [d.path for d in session.files] == ["b"]
+    assert session.plan.commits[0].edits == {}
+    assert "dropped commit 1's edit of a" in board.message

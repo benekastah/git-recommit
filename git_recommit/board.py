@@ -190,12 +190,15 @@ class Board:
             if not quiet:
                 self.message = "Nothing has changed."
             return
+        dropped = self.session.drop_stale_edits()
         self.rows = build_rows(self.session.files)
         self.anchor = None
         files = [i for i, row in enumerate(self.rows) if row.kind == "file"]
         same = next((i for i in files if self.session.files[self.rows[i].file].path == path), None)
         self.cursor = 0 if same is None else min(same + offset, self.extent(same))
-        self.message = "Reloaded the changes; assignments of changes that are still there are kept."
+        self.message = (
+            "; ".join(["Reloaded the changes; assignments of changes that are still there are kept", *dropped]) + "."
+        )
 
     # Changing the plan.
 

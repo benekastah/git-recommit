@@ -1,6 +1,7 @@
 """Starting from the commits being rebuilt (Session.restore_old_commits)."""
 
 import os
+import pathlib
 
 import pytest
 
@@ -105,6 +106,27 @@ def test_restoring_from_a_subdirectory_with_a_relative_git_dir(repo: Repo, monke
         env.setenv("GIT_WORK_TREE", "..")
         session = Session.load(GitClient(repo.path / "dir"), "HEAD~2")
         session.restore_old_commits()
+        new = session.build()
+    assert trees(repo, new) == trees(repo, old)
+
+
+def test_restoring_from_outside_the_worktree(
+    repo: Repo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # As `git --git-dir=... --work-tree=... recommit` runs it, from anywhere.
+    repo.commit("base", **{"dir/f": LINES})
+    old = [
+        repo.commit("first", **{"dir/f": LINES.replace("line 5\n", "five\n")}),
+        repo.commit("second", **{"dir/f": LINES.replace("line 5\n", "FIVE\n")}),
+    ]
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    with monkeypatch.context() as env:
+        env.setenv("GIT_DIR", str(repo.path / ".git"))
+        env.setenv("GIT_WORK_TREE", str(repo.path))
+        session = Session.load(GitClient(elsewhere), "HEAD~2")
+        session.restore_old_commits()
+        assert session.unassigned() == []
         new = session.build()
     assert trees(repo, new) == trees(repo, old)
 

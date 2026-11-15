@@ -141,9 +141,12 @@ class GitClient:
 
     def cdup(self) -> str:
         """The path from directory up to the top of the worktree, ending in a
-        slash (or empty, at the top), to put before a path from the top."""
+        slash (or empty, at the top or outside the worktree, where git takes
+        paths from the top), to put before a path from the top."""
         if self._cdup is None:
-            self._cdup = self.run("rev-parse", "--show-cdup")
+            # Not --show-cdup, which outside the worktree gives its path.
+            prefix = self.run("rev-parse", "--show-prefix")
+            self._cdup = "../" * prefix.count("/")
         return self._cdup
 
     def commit_sha(self, rev: str) -> str | None:

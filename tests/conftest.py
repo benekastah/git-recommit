@@ -1,4 +1,6 @@
 import pathlib
+import shutil
+from collections.abc import Iterator
 
 import pytest
 
@@ -7,12 +9,10 @@ from tests.helpers import Repo
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
-@pytest.fixture
-def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]) -> Repo:
-    """An empty repository on main with a first commit (README). git, and git
-    recommit, see an isolated git config and identity for the rest of the
-    test."""
-    global_config = tmp_path / "gitconfig"
+def isolate(monkeypatch: pytest.MonkeyPatch, directory: pathlib.Path) -> None:
+    """Have git (and git recommit) see an isolated git config, with its
+    global config in directory, and identity."""
+    global_config = directory / "gitconfig"
     # Without auto-maintenance, which would otherwise start a `git maintenance
     # run --auto` after each commit, fetch, merge and push: hundreds of
     # processes over the tests, none of which they need.
@@ -29,8 +29,37 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("GIT_SEQUENCE_EDITOR", raising=False)
+
+
+@pytest.fixture(scope="session")
+def template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[pathlib.Path]:
+    """The repository each test's starts as a copy of (see repo), made once
+    (for each worker), since making it takes several git processes, which
+    are slow to start on macOS and Windows."""
+    directory = tmp_path_factory.mktemp("template")
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        isolate(monkeypatch, directory)
+        template = Repo(directory / "repo")
+        template.path.mkdir()
+        template.git("init", "--quiet")
+        template.commit("init", README="readme\n")
+    # Fewer files to copy for each test; the hooks directory stays.
+    for sample in (template.path / ".git" / "hooks").glob("*.sample"):
+        sample.unlink()
+    yield template.path
+
+
+@pytest.fixture
+def repo(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    template: pathlib.Path,
+) -> Repo:
+    """An empty repository on main with a first commit (README). git, and git
+    recommit, see an isolated git config and identity for the rest of the
+    test."""
+    isolate(monkeypatch, tmp_path)
     repo = Repo(tmp_path / "repo", capfd)
-    repo.path.mkdir()
-    repo.git("init", "--quiet")
-    repo.commit("init", README="readme\n")
+    shutil.copytree(template, repo.path, symlinks=True)
     return repo

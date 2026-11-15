@@ -256,8 +256,31 @@ def test_an_uncommitted_rename_starts_unassigned(repo: Repo) -> None:
 
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:
     repo.commit("base", data=b"\0one")
-    repo.commit("change data", data=b"\0two")
+    old = [repo.commit("change data", data=b"\0two")]
     repo.write("data", b"\0three")
     session = restored(repo, "HEAD~")
     (data,) = session.files
     assert session.unassigned() == [data.meta_id]
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_binary_files_are_reproduced_too(repo: Repo) -> None:
+    repo.commit("base", data=b"\0one")
+    old = [
+        repo.commit("first", data=b"\0two"),
+        repo.commit("second", data=b"\0three"),
+    ]
+    session = restored(repo, "HEAD~2")
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_a_binary_file_renamed_then_changed(repo: Repo) -> None:
+    repo.commit("base", old=b"\0" + LINES.encode())
+    old = [
+        repo.commit("rename", old=None, new=b"\0" + LINES.encode()),
+        repo.commit("change", new=b"\0" + LINES.encode() + b"more\n"),
+    ]
+    session = restored(repo, "HEAD~2")
+    (new,) = session.files
+    assert new.status == "R" and new.whole
+    assert trees(repo, session.build()) == trees(repo, old)

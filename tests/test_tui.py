@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+import pytest
 from textual.app import App
 from textual.pilot import Pilot
 
@@ -459,3 +460,23 @@ def test_a_rename_is_a_row_of_its_own(repo: Repo) -> None:
     run(session, FakeTerminal(repo), script)
     (new,) = session.files
     assert list(session.plan.assignment) == [new.meta_id]
+
+
+def test_e_replaces_a_binary_file_with_another(repo: Repo) -> None:
+    repo.commit("base", data=b"\0one")
+    repo.commit("change", data=b"\0two")
+    session = repo.session("HEAD~")
+    # Next to the repository, and named relative to it, where git recommit runs.
+    (repo.path.parent / "stub.bin").write_bytes(b"\0stub")
+
+    async def script(pilot: Pilot[Any]) -> None:
+        await create(pilot, "Stub data")
+        await pilot.press("e", *"../stub.bin", "enter")
+        await create(pilot, "Not there")
+        await pilot.press("e", *"../missing", "enter")
+        assert "Can't read" in str(pilot.app.screen.query_one("#status").render())
+
+    terminal = FakeTerminal(repo, edit_with=lambda _: pytest.fail("a binary file doesn't open in an editor"))
+    run(session, terminal, script)
+    (sha, _) = session.build()
+    assert repo.git("cat-file", "blob", f"{sha}:data") == "\0stub"

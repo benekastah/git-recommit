@@ -247,3 +247,12 @@ def test_a_renamed_file_goes_by_either_name(repo: Repo) -> None:
     repo.recommit("write")
     assert repo.show("HEAD~", "new") == RENAMED + "edited\n" and repo.show("HEAD~", "old") is None
     assert repo.show("HEAD", "new") == RENAMED.replace("line 3\n", "three\n") + "edited\n"
+
+
+def test_replacing_a_binary_file_from_stdin(repo: Repo) -> None:
+    repo.commit("base", data=b"\0one")
+    repo.commit("change", data=b"\0two")
+    repo.recommit("start", "HEAD~")
+    repo.recommit("edit", "1", "data", input="\0stub")
+    repo.recommit("write")
+    assert repo.git("cat-file", "blob", "HEAD:data") == "\0stub"

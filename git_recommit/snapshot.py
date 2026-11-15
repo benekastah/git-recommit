@@ -69,6 +69,30 @@ def _content(version: Version | None) -> bytes:
     return b"" if version is None or version.content is None else version.content
 
 
+def _blob(version: Version | None) -> bytes:
+    """A version of a file that changes as a whole, as its edits keep it:
+    its blob id (see plan.Edit)."""
+    return b"" if version is None or version.sha is None else version.sha.encode()
+
+
+def _text_version(mode: str, content: bytes) -> Version | None:
+    return Version(mode, content=content)
+
+
+def _blob_version(mode: str, sha: bytes) -> Version | None:
+    return Version(mode, sha=sha.decode()) if sha else None
+
+
+def _merge_blobs(basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
+    """Merge what can't be merged line by line (blob ids): a change on one
+    side is taken, but changes on both conflict (keeping ours)."""
+    if ours in (basis, theirs):
+        return theirs, False
+    if theirs == basis:
+        return ours, False
+    return ours, True
+
+
 def file_states(
     diff: FileDiff, commits: list[NewCommit], assignment: dict[int, int], merge: Merge, pure: Pure
 ) -> list[FileState]:
@@ -78,14 +102,19 @@ def file_states(
     For each commit: `assigned` is the file with only the changes assigned to
     it and earlier commits; `carried` is that with the edits of earlier
     commits carried in (merged); and `result` is that with this commit's own
-    edit, if any, which is the file in the commit.
+    edit, if any, which is the file in the commit. A file that changes as a
+    whole (e.g. a binary file) is merged by its blob ids, with
+    _merge_blobs rather than merge.
     """
+    content, version = (_blob, _blob_version) if diff.whole else (_content, _text_version)
+    merge = _merge_blobs if diff.whole else merge
+
     taken: dict[int | None, list[int]] = {}
     for i in diff.ids:
         taken.setdefault(assignment.get(i), []).append(i)
     selected: frozenset[int] = frozenset()
     states = []
-    edited = not diff.whole and any(diff.path in commit.edits for commit in commits)
+    edited = any(diff.path in commit.edits for commit in commits)
     prev_assigned = prev_result = pure(selected)
     prev_conflict = False
     for commit in commits:
@@ -93,7 +122,7 @@ def file_states(
         assigned = pure(selected)
         path = diff.path_with(selected)
         if not edited:
-            states.append(FileState(assigned, path, basis=_content(assigned)))
+            states.append(FileState(assigned, path, basis=content(assigned)))
             continue
         # Carry the edits so far into this commit.
         if prev_result == prev_assigned:
@@ -101,26 +130,26 @@ def file_states(
         elif assigned == prev_assigned:
             carried, conflict = prev_result, prev_conflict
         else:
-            merged, conflict = merge(_content(prev_assigned), _content(prev_result), _content(assigned))
+            merged, conflict = merge(content(prev_assigned), content(prev_result), content(assigned))
             conflict = conflict or prev_conflict
             mode = (
                 assigned or prev_result or prev_assigned or Version(diff.old_mode or diff.new_mode or "100644")
             ).mode
             gone = assigned is None and not merged and not conflict
-            carried = None if gone else Version(mode, content=merged)
+            carried = None if gone else version(mode, merged)
         # A conflicted file is no basis for an edit, which resolves it.
-        basis = _content(assigned if conflict else carried)
+        basis = content(assigned if conflict else carried)
         result = carried
         if (edit := commit.edits.get(diff.path)) is not None and edit.content is None:
             # Deleting the file.
             result, conflict = None, False
         elif edit is not None and edit.content is not None:
             if edit.basis == basis:
-                content, conflict = edit.content, False
+                edited_to, conflict = edit.content, False
             else:
-                content, conflict = merge(edit.basis, edit.content, basis)
+                edited_to, conflict = merge(edit.basis, edit.content, basis)
             mode = (carried or assigned or Version(diff.new_mode or diff.old_mode or "100644")).mode
-            result = Version(mode, content=content)
+            result = version(mode, edited_to)
         states.append(FileState(result, path, conflict, result != assigned, basis))
         prev_assigned, prev_result, prev_conflict = assigned, result, conflict
     return states

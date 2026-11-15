@@ -73,7 +73,7 @@ are along the top.
 | `D` | delete the active commit; its changes become unassigned |
 | `C` | clear every commit, to start from scratch |
 | `O` | go back to the commits being rebuilt, as they were at the start |
-| `e` | edit the file as it is in the active commit, in your editor |
+| `e` | edit the file as it is in the active commit, in your editor (a binary file: replace it with another file) |
 | `E` | drop the active commit's edit of the file |
 | `+` | edit a file the range doesn't change (or that isn't there yet) in the active commit, as `e` |
 | `ctrl+z` | suspend, to change files; when you bring it back (`fg`), it reloads the changes |
@@ -107,6 +107,12 @@ was opened changes nothing.
 `+` does the same for a file the range doesn't change (or that isn't there at
 all), e.g. to stub one out for a commit and put it back in a later one; it's
 shown as `= path`.
+
+A binary file doesn't open in an editor: `e` asks for a file to replace it
+with in the commit (relative to the current directory). A symlink opens as
+where it points. Since neither can be merged, a later commit that changes the
+file too conflicts with the edit, until you replace (or edit) it there as
+well. Submodules can't be edited.
 
 **Changing your mind** about the code itself: press `ctrl+z`, change files (or
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd
@@ -158,6 +164,7 @@ git recommit commit add "Add the API" --after 2
 git recommit assign 3 src/api.py src/util.py:@2 src/main.py:+10-14
 git recommit unassign src/main.py:-3
 git recommit edit 3 src/api.py < stub.py    # the file in commit 3, by hand
+git recommit edit 3 logo.png < old-logo.png # (a binary file too)
 git recommit edit 2 scratch.txt --delete    # (any file, changed by the range or not)
 git recommit commit move 3 1                # or remove, or reword
 git recommit commit author 3 "Ana <ana@example.com>"

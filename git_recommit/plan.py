@@ -10,7 +10,9 @@ class Edit:
 
     Kept as the file's content before and after the edit, so that when the
     content before changes (e.g. the commit takes more changes), the edit can be
-    merged into the new content, as a rebase would.
+    merged into the new content, as a rebase would. For a file that changes as
+    a whole (a binary file or a symlink), which can't be merged, they're its
+    blob ids before and after instead (see snapshot._merge_blobs).
     """
 
     basis: bytes

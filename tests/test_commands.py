@@ -1,4 +1,5 @@
 import dataclasses
+import os
 import random
 
 import pytest
@@ -168,3 +169,100 @@ def test_an_edit_before_the_rename_is_cleaned_as_the_old_path(repo: Repo) -> Non
     Assign((Target("new"),), 2).run(s)
     Edit(1, "new", b"crlf\r\n").run(s)
     assert s.plan.commits[0].edits["new"].content == b"crlf\r\n"
+
+
+def binary_session(repo: Repo) -> Session:
+    """data (binary) changed, and f (text) changed."""
+    repo.commit("base", data=b"\0one", f=LINES)
+    repo.commit("change", data=b"\0two", f=LINES + "21\n")
+    return repo.session("HEAD~")
+
+
+def test_replacing_a_binary_file_in_a_commit(repo: Repo) -> None:
+    s = binary_session(repo)
+    AddCommit("Stub data").run(s)
+    AddCommit("Change data").run(s)
+    Assign((Target("f"),), 1).run(s)
+    assert Edit(1, "data", b"\0stub").run(s).message == "Edited data in commit 1; later commits carry the edit."
+    first, second = s.build()
+    assert repo.git("cat-file", "blob", f"{first}:data") == "\0stub"
+    # Carried into the next commit, which doesn't change data.
+    assert repo.git("cat-file", "blob", f"{second}:data") == "\0stub"
+    assert s.left_uncommitted() == ["data"]
+
+
+def test_a_replaced_binary_file_conflicts_with_a_later_change_to_it(repo: Repo) -> None:
+    s = binary_session(repo)
+    AddCommit("Stub data").run(s)
+    AddCommit("Change data").run(s)
+    Assign((Target("f"),), 1).run(s)
+    Assign((Target("data"),), 2).run(s)
+    Edit(1, "data", b"\0stub").run(s)
+    # Both the edit and commit 2 change it, and binary files can't be merged.
+    assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
+    Edit(2, "data", b"\0two").run(s)
+    assert s.conflicts() == []
+    first, second = s.build()
+    assert repo.git("cat-file", "blob", f"{first}:data") == "\0stub"
+    assert repo.git("cat-file", "blob", f"{second}:data") == "\0two"
+
+
+def test_replacing_a_binary_file_the_range_doesnt_change(repo: Repo) -> None:
+    repo.commit("base", data=b"\0one")
+    repo.commit("change", f="f\n")
+    s = repo.session("HEAD~")
+    AddCommit("Stub data").run(s)
+    Edit(1, "data", b"\0stub").run(s)
+    (sha,) = s.build()
+    assert repo.git("cat-file", "blob", f"{sha}:data") == "\0stub"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs symlinks")
+def test_editing_a_symlink_edits_where_it_points(repo: Repo) -> None:
+    (repo.path / "link").symlink_to("README")
+    repo.commit("base")
+    (repo.path / "link").unlink()
+    (repo.path / "link").symlink_to("f")
+    repo.commit("change", f="f\n")
+    s = repo.session("HEAD~")
+    AddCommit("Point elsewhere").run(s)
+    # As an editor saves it, with a line ending, which a link has no use for.
+    assert Edit(1, "link", b"README\n").run(s).message == "link is unchanged in commit 1."
+    Edit(1, "link", b"elsewhere\n").run(s)
+    (sha,) = s.build()
+    assert repo.git("ls-tree", sha, "link").startswith("120000 blob")
+    assert repo.git("cat-file", "blob", f"{sha}:link") == "elsewhere"
+
+
+def test_a_submodule_cant_be_edited(repo: Repo) -> None:
+    sha = repo.git("rev-parse", "HEAD")
+    # One the range adds, and one it doesn't change (each unpopulated, an
+    # empty directory).
+    for name in ("old_sub", "sub"):
+        (repo.path / name).mkdir()
+    repo.git("update-index", "--add", "--cacheinfo", f"160000,{sha},old_sub")
+    repo.git("commit", "--quiet", "-m", "add old_sub")
+    repo.git("update-index", "--add", "--cacheinfo", f"160000,{sha},sub")
+    repo.git("commit", "--quiet", "-m", "add sub")
+    s = repo.session("HEAD~")
+    AddCommit("one").run(s)
+    for name in ("old_sub", "sub"):
+        with pytest.raises(RecommitError, match=f"{name} is a submodule, so it can't be edited"):
+            Edit(1, name, b"x").run(s)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs symlinks")
+def test_a_file_that_becomes_a_symlink_is_edited_as_what_it_is_in_the_commit(repo: Repo) -> None:
+    repo.commit("base", link="a file\n")
+    (repo.path / "link").unlink()
+    (repo.path / "link").symlink_to("README")
+    repo.commit("change", f="f\n")
+    s = repo.session("HEAD~")
+    AddCommit("Before").run(s)
+    AddCommit("After").run(s)
+    Assign((Target("link"),), 2).run(s)
+    Edit(1, "link", b"still a file\n").run(s)
+    Edit(2, "link", b"elsewhere\n").run(s)
+    first, second = s.build()
+    assert repo.show(first, "link") == "still a file\n"
+    assert repo.git("ls-tree", second, "link").startswith("120000") and repo.show(second, "link") == "elsewhere"

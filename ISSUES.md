@@ -23,7 +23,7 @@ to the last commit to change the file, even if the mode changed only in the
 uncommitted changes, which so get committed. It should be unassigned then, as
 an uncommitted rename is, or a file that changes as a whole.
 
-## Edits are whole files, and text only
+## Edits are whole files
 
-`e` edits a whole file, not a hunk or a line, and binary files, symlinks and
-submodules can't be edited.
+`e` edits a whole file, not a hunk or a line. (And submodules can't be
+edited.)

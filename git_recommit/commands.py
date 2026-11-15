@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from git_recommit.diff import FileDiff, numbered
+from git_recommit.diff import SYMLINK_MODE, FileDiff, numbered
 from git_recommit.errors import RecommitError
 from git_recommit.plan import Author
 from git_recommit.session import Session
@@ -259,11 +259,11 @@ class Assign:
 
 @dataclass(frozen=True)
 class Edit:
-    """Make a text file content in a commit, by hand, or with None, delete it
-    (carried into later commits). The file can be one the range doesn't
-    change, or that isn't there at all. Content that's what the file already
-    is in the commit changes nothing, so quitting an editor without saving is
-    safe."""
+    """Make a file content in a commit, by hand, or with None, delete it
+    (carried into later commits): for a symlink, where it points. The file
+    can be one the range doesn't change, or that isn't there at all. Content
+    that's what the file already is in the commit changes nothing, so
+    quitting an editor without saving is safe. A submodule can't be edited."""
 
     commit: int
     path: str
@@ -274,13 +274,19 @@ class Edit:
         diff = session.add_unchanged(self.path)
         # A renamed file's edits go by its new path, whichever it's named by.
         path = diff.path
-        if diff.whole:
-            raise RecommitError(f"{path} isn't a text file, so it can't be edited")
         index = session.plan.index(key)
         state = session.states(diff, upto=index)[index]
-        # E.g. an editor that saved Windows line endings, in a repository that
-        # stores Unix ones (cleaned as the file is where the commit has it).
-        content = None if self.content is None else session.git.clean(state.path, self.content)
+        content = self.content
+        # What the file is in the commit, or will be once there.
+        mode = state.version.mode if state.version is not None else diff.new_mode or diff.old_mode
+        if content is not None and mode == SYMLINK_MODE:
+            # Where it points, which an editor ends with a line ending.
+            content = content.removesuffix(b"\n").removesuffix(b"\r")
+        elif content is not None:
+            # E.g. an editor that saved Windows line endings, in a repository
+            # that stores Unix ones (cleaned as the file is where the commit
+            # has it).
+            content = session.git.clean(state.path, content)
         # Saving what the editor opened (see Session.edit_text) changes nothing.
         unchanged = state.version is None if content is None else content == session.edit_text(key, diff)
         if unchanged:

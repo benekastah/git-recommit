@@ -20,7 +20,8 @@ LineKind = Literal["+", "-", " "]
 
 HUNK_HEADER = re.compile(rb"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 # Symlinks and submodules, which aren't split into lines.
-SPECIAL_MODES = {"120000", "160000"}
+SYMLINK_MODE, SUBMODULE_MODE = "120000", "160000"
+SPECIAL_MODES = {SYMLINK_MODE, SUBMODULE_MODE}
 NO_MODE = "000000"
 
 
@@ -71,6 +72,11 @@ class FileDiff:
     def whole(self) -> bool:
         """Whether the file only changes as a whole, not line by line."""
         return self.binary or self.status == "T" or bool({self.old_mode, self.new_mode} & SPECIAL_MODES)
+
+    @property
+    def submodule(self) -> bool:
+        """Whether it's a submodule (at either end), which can't be edited."""
+        return SUBMODULE_MODE in (self.old_mode, self.new_mode)
 
     def describe_meta(self) -> str:
         """What the file's change to itself (its meta change) is."""

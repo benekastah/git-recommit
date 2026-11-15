@@ -8,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 
 from git_recommit import oldcommits
-from git_recommit.diff import SPECIAL_MODES, FileDiff, change_keys, load_diff, split_lines
+from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, split_lines
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit, NewCommit, Plan
@@ -261,17 +261,22 @@ class Session:
         if it conflicts). If the commit doesn't have the file, its end state
         (or if it ends up deleted, its start), to cut down to what the commit
         should have."""
+        _check_editable(diff)
         index = self.plan.index(key)
         version = self.states(diff, upto=index)[index].version
         if version is None:
             version = pure_version(diff, set(diff.ids)) or pure_version(diff, set())
+        if version is not None and version.sha is not None:
+            return self.git.blob(version.sha)
         return b"" if version is None or version.content is None else version.content
 
     def set_edit(self, key: int, diff: FileDiff, content: bytes | None) -> None:
         """Make the file content in the commit, or with None, delete it (and
         carry that into later ones)."""
-        if diff.whole:
-            raise RecommitError(f"{diff.path} isn't a text file, so it can't be edited")
+        _check_editable(diff)
+        if diff.whole and content is not None:
+            # Kept as its blob id (see plan.Edit).
+            content = self.git.hash_blob(content).encode()
         commit = self.plan.get(key)
         index = self.plan.index(key)
         state = self.states(diff, upto=index)[index]
@@ -297,12 +302,17 @@ class Session:
         diff = FileDiff(path=path, status="=", old_mode=None, new_mode=None, old_blob=None, new_blob=None, binary=False)
         if found:
             mode, kind, blob = entry.decode().split(" ")
-            content = self.git.blob(blob) if kind == "blob" else b""
-            if kind != "blob" or mode in SPECIAL_MODES or b"\0" in content[:8000]:
-                raise RecommitError(f"{path} isn't a text file, so it can't be edited")
+            if kind == "commit":
+                raise RecommitError(f"{path} is a submodule, so it can't be edited")
+            if kind != "blob":
+                raise RecommitError(f"{path} isn't a file")
             diff.old_mode = diff.new_mode = mode
             diff.old_blob = diff.new_blob = blob
-            diff.old_lines = split_lines(content)
+            content = self.git.blob(blob)
+            # As git tells a binary file (but for its attributes).
+            diff.binary = mode != SYMLINK_MODE and b"\0" in content[:8000]
+            if not diff.whole:
+                diff.old_lines = split_lines(content)
         self.files = sorted([*self.files, diff], key=lambda d: os.fsencode(d.path))
         self.unchanged.add(path)
         return diff
@@ -517,6 +527,11 @@ class Session:
     def untracked_left_out(self) -> list[str]:
         """The untracked files that aren't ignored, but aren't included."""
         return [] if self.include_untracked else self._untracked
+
+
+def _check_editable(diff: FileDiff) -> None:
+    if diff.submodule:
+        raise RecommitError(f"{diff.path} is a submodule, so it can't be edited")
 
 
 def _author_env(commit: NewCommit) -> dict[str, str]:

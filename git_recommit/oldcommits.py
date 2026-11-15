@@ -5,6 +5,7 @@ blame says it made, and the edits it needs to be as it was."""
 import hashlib
 import os
 import re
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
@@ -28,7 +29,7 @@ def restore(session: "Session") -> None:
     Where a commit's changes overlap a later one's (e.g. it adds a line a
     later commit rewrites), the changes alone can't make the commit as it
     was, so it gets edits that do. Building the plan unchanged makes the
-    same trees, but for files that end up as they started (see ISSUES.md).
+    same trees, but where a submodule changes, which edits can't.
     """
     shas = session.git.run("rev-list", "--reverse", session.history).split()
     session.plan = plan = Plan()
@@ -47,7 +48,7 @@ def restore(session: "Session") -> None:
     touched_by = _touched_by(session, shas)
     trees = [_blobs(session, sha) for sha in shas]
     # Files old commits change that end as they started aren't in the diff;
-    # add them, so the edits can reproduce them (but for binary ones).
+    # add them, so the edits can reproduce them (but for submodules).
     changed = {path for diff in session.files for path in (diff.path, diff.old_path) if path is not None}
     for path in sorted(set(touched_by) - changed):
         try:
@@ -62,18 +63,10 @@ def restore(session: "Session") -> None:
         touched = [sha for sha in shas if any(sha in touched_by.get(path, []) for path in paths)]
         last = keys.get(touched[-1]) if touched else None
         if diff.meta_id is not None:
-            # A file that changes as a whole, and has uncommitted changes, has
-            # them in its one change, which so stays uncommitted.
-            meta_by = None if diff.whole and paths & uncommitted else last
-            if diff.old_path is not None and not diff.whole:
-                # The rename goes to the first commit to have the new path, or
-                # if none does, it's uncommitted, so to none. (The rename of a
-                # file that changes as a whole, e.g. a binary file or a
-                # symlink, is all of its change, so it stays with the last
-                # commit, as the rest of such a file's change does.)
-                renamed_in = next((sha for sha, blobs in zip(shas, trees, strict=True) if diff.path in blobs), None)
-                meta_by = keys.get(renamed_in) if renamed_in else None
-            plan.assign([diff.meta_id], meta_by)
+            meta_by = _meta_by(
+                diff, touched[-1] if touched else None, bool(paths & uncommitted), zip(shas, trees, strict=True)
+            )
+            plan.assign([diff.meta_id], None if meta_by is None else keys[meta_by])
         if diff.whole:
             continue
         if len(touched) == 1 and not paths & uncommitted:
@@ -87,6 +80,25 @@ def restore(session: "Session") -> None:
     authors = {commit.key: commit.author for commit in plan.commits}
     session.origin = {i: author for i, key in plan.assignment.items() if (author := authors[key]) is not None}
     _reproduce(session, trees)
+
+
+def _meta_by(
+    diff: FileDiff, last: str | None, uncommitted: bool, trees: Iterable[tuple[str, dict[str, str]]]
+) -> str | None:
+    """Which old commit (of the (sha, tree)s) made the file's change to
+    itself, given the last to change it, if any: that one, but for a rename,
+    which the first commit to have the new path made, or if none does, it's
+    uncommitted. A file that changes as a whole and has uncommitted changes
+    has them in that one change, which so stays uncommitted."""
+    if diff.whole and uncommitted:
+        return None
+    if diff.old_path is None or diff.submodule:
+        # (A submodule can't be edited, so its rename, which is all of its
+        # change, stays with the last commit.)
+        return last
+    # For a file that changes as a whole, the rename is all of its change;
+    # edits make the commits before the last as they were.
+    return next((sha for sha, blobs in trees if diff.path in blobs), None)
 
 
 def _touched_by(session: "Session", shas: list[str]) -> dict[str, list[str]]:
@@ -139,8 +151,8 @@ def _blame(session: "Session", path: str, reverse: bool) -> dict[int | None, str
 
 
 def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
-    """Give each commit of the plan the edits it needs to have each text
-    file as the old commit with trees[i] does."""
+    """Give each commit of the plan the edits it needs to have each file
+    (but submodules) as the old commit with trees[i] does."""
     object_format = session.git.run("rev-parse", "--show-object-format")
 
     def reproduce(diff: FileDiff) -> None:
@@ -155,16 +167,18 @@ def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
                 if version is not None:
                     session.set_edit(commit.key, diff, None)
                 continue
-            content = None if version is None else version.content
-            if content is not None and blob_id(content, object_format) == actual:
+            if version is not None and actual in (
+                version.sha,
+                None if version.content is None else blob_id(version.content, object_format),
+            ):
                 continue
             session.set_edit(commit.key, diff, session.git.blob(actual))
 
     # Each file is reproduced on its own (its edits are its own), so files
     # are done in parallel, which overlaps their git merge-file processes
-    # (the rest holds the GIL). An edit can't change a binary file.
+    # (the rest holds the GIL).
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
-        list(pool.map(reproduce, [diff for diff in session.files if not diff.whole]))
+        list(pool.map(reproduce, [diff for diff in session.files if not diff.submodule]))
 
 
 def _blobs(session: "Session", sha: str) -> dict[str, str]:

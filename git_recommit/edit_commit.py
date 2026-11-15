@@ -9,9 +9,7 @@ from git_recommit.git import GitClient
 
 
 def edit_commit(git: GitClient, rev: str) -> bool:
-    sha = git.commit_sha(rev)
-    if sha is None:
-        raise RecommitError(f"{rev} isn't a commit")
+    sha = git.resolve_commit(rev)
     if not git.is_ancestor(sha, "HEAD"):
         raise RecommitError(f"{rev} isn't on the current branch")
     if git.run("rev-list", "--merges", f"{sha}..HEAD"):

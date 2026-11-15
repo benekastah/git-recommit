@@ -14,6 +14,13 @@ def test_reports_errors_without_a_traceback(repo: Repo) -> None:
     assert result.stderr == "git-recommit: nope isn't a commit\n"
 
 
+def test_says_why_git_cant_resolve_a_name(repo: Repo) -> None:
+    result = repo.recommit("@{u}", expect_success=False)
+    assert result.stderr.startswith("git-recommit: @{u} isn't a commit:\n")
+    assert "no upstream" in result.stderr
+    assert "--edit" not in result.stderr
+
+
 def test_refuses_commits_that_change_nothing(repo: Repo) -> None:
     repo.commit("empty")
     assert "change nothing" in repo.recommit("HEAD~", expect_success=False).stderr

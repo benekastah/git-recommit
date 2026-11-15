@@ -7,56 +7,11 @@ permissions:
   contents: read
 
 jobs:
-  diag:
-    name: diag ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+  # Whether GitHub honors a fractional timeout-minutes: 0.2 minutes is 12s,
+  # so a job that sleeps 50s is cancelled at about 12s if it does, at 60s
+  # if it rounds up, and not at all if it ignores it.
+  fractional-timeout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 0.2
     steps:
-      - name: Turn off Defender's real-time scanning
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Set-MpPreference -DisableRealtimeMonitoring $true
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.15"
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.13.8"
-          python-version: "3.15"
-          enable-cache: true
-          cache-dependency-glob: pyproject.toml
-          activate-environment: true
-      - run: uv pip install --group dev --editable .
-      - name: Timings
-        shell: bash
-        run: |
-          nproc 2>/dev/null || sysctl -n hw.ncpu || echo "$NUMBER_OF_PROCESSORS"
-          which -a git; git --version; git --exec-path
-          python - <<'PY'
-          import os, shutil, subprocess, sys, time
-          def t(label, cmd, n=40):
-              start = time.perf_counter()
-              for _ in range(n):
-                  subprocess.run(cmd, capture_output=True, check=True)
-              print(f"{label}: {(time.perf_counter() - start) / n * 1000:.1f} ms")
-          git = shutil.which("git")
-          t(f"git --version ({git})", [git, "--version"])
-          core = subprocess.run([git, "--exec-path"], capture_output=True, text=True).stdout.strip()
-          direct = os.path.join(core, "git.exe" if os.name == "nt" else "git")
-          if os.path.exists(direct):
-              t(f"git --version ({direct})", [direct, "--version"])
-          t("git rev-parse HEAD", [git, "rev-parse", "HEAD"])
-          t("python -c pass", [sys.executable, "-c", "pass"], 20)
-          t("python -I -S -c pass", [sys.executable, "-I", "-S", "-c", "pass"], 20)
-          t("import git_recommit.cli", [sys.executable, "-c", "import git_recommit.cli"], 10)
-          t("python -m git_recommit --help", [sys.executable, "-m", "git_recommit", "--help"], 10)
-          PY
-          python -X importtime -c "import git_recommit.cli" 2>&1 | sort -t'|' -k2 -n | tail -8
-      - name: Tests, slowest
-        run: python -m pytest -q -p no:randomly --durations=25
-      - name: Tests, 8 workers
-        run: python -m pytest -q -p no:randomly -n 8
+      - run: sleep 50

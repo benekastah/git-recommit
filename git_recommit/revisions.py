@@ -4,6 +4,7 @@ the uncommitted changes as a commit, and what must not be in progress."""
 import os
 import shutil
 import tempfile
+from dataclasses import dataclass
 
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
@@ -45,7 +46,7 @@ def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
         raise RecommitError(f"{spec} has no commits")
     # A range can end below HEAD: the commits after it are replayed on the
     # new ones, as git rebase does.
-    if not git.is_ancestor(tip, head):
+    if tip != head and not git.is_ancestor(tip, head):
         raise RecommitError(f"{spec} isn't in HEAD's history, so it can't be rebuilt")
     if git.run("rev-list", "--merges", f"{base}..{head}"):
         raise RecommitError(f"{spec} has merge commits (or the commits after it do), which can't be rebuilt")
@@ -78,31 +79,49 @@ def check_nothing_in_progress(git: GitClient) -> None:
     is in progress, or the index has unresolved conflicts: taking the working
     tree as uncommitted changes would take the conflict markers, and writing
     (which resets the index) would end the operation."""
-    for path, what in zip(git.git_paths(*IN_PROGRESS), IN_PROGRESS.values(), strict=True):
+    # With the paths worktree_commit and Session.finish need, so one git
+    # process finds them all (GitClient keeps them).
+    paths = git.git_paths(*IN_PROGRESS, "index", "index.lock")[: len(IN_PROGRESS)]
+    for path, what in zip(paths, IN_PROGRESS.values(), strict=True):
         if os.path.exists(path):
             raise RecommitError(f"{what} is in progress; finish it or abort it first")
     if git.run("ls-files", "--unmerged"):
         raise RecommitError("there are unresolved conflicts; resolve them first")
 
 
-def untracked_files(git: GitClient) -> list[str]:
-    """The working tree's untracked files that aren't ignored, from the top."""
-    out = git.run_bytes("ls-files", "--others", "--exclude-standard", "--full-name", "-z", ":/")
-    return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
+@dataclass(frozen=True)
+class WorktreeStatus:
+    # Whether the tracked files (or what's staged) have uncommitted changes.
+    changed: bool
+    # The untracked files that aren't ignored, from the top.
+    untracked: list[str]
 
 
-def worktree_commit(git: GitClient, head: str, include_untracked: bool = False) -> str | None:
+def worktree_status(git: GitClient, include_untracked: bool = False) -> WorktreeStatus:
+    """The working tree's status, as worktree_commit takes it."""
+    # Untracked files in a submodule are a change to it only with
+    # include_untracked, as `git status --untracked-files=no` has it without.
+    submodules = [] if include_untracked else ["--ignore-submodules=untracked"]
+    # --no-optional-locks: don't refresh (and so write) the user's index.
+    out = git.run_bytes(
+        "--no-optional-locks", "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all", *submodules
+    )
+    # "<XY> <path>", where XY is ?? for an untracked file; paths are from the top.
+    entries = [entry for entry in out.split(b"\0") if entry]
+    untracked = [entry[3:].decode(errors="surrogateescape") for entry in entries if entry.startswith(b"??")]
+    return WorktreeStatus(changed=len(untracked) < len(entries), untracked=untracked)
+
+
+def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_untracked: bool = False) -> str | None:
     """A commit, on head, of the working tree's tracked files (and whatever is
-    staged), as `git stash` makes; or None if they have no uncommitted changes.
-    With include_untracked, as `git stash -u`: its untracked files too, but
-    for ignored ones.
+    staged), as `git stash` makes; or None if they have no uncommitted changes
+    (by status, from worktree_status). With include_untracked, as `git stash
+    -u`: its untracked files too, but for ignored ones.
 
     It isn't on any branch; recommit uses it as the end of the diff, so that
     uncommitted changes can be assigned to new commits like committed ones.
     """
-    untracked = "--untracked-files=all" if include_untracked else "--untracked-files=no"
-    # --no-optional-locks: don't refresh (and so write) the user's index.
-    if not git.run("--no-optional-locks", "status", "--porcelain", untracked):
+    if not status.changed and not (include_untracked and status.untracked):
         return None
     with tempfile.TemporaryDirectory() as scratch:
         # A copy of the real index, so `git add` sees what's staged, and only
@@ -115,12 +134,6 @@ def worktree_commit(git: GitClient, head: str, include_untracked: bool = False) 
         git.run("add", "--all" if include_untracked else "--update", "--", ":/", env=env)
         tree = git.run("write-tree", env=env)
     return git.run("commit-tree", tree, "-p", head, "-m", "Uncommitted changes")
-
-
-def changed_paths(git: GitClient, old: str, new: str) -> list[str]:
-    """The paths that differ between two commits (or trees)."""
-    out = git.run_bytes("diff-tree", "-r", "--no-renames", "--name-only", "-z", old, new)
-    return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
 
 
 def literal(path: str) -> str:

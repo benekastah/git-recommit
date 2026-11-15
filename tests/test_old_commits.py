@@ -46,6 +46,17 @@ def test_rebuilding_them_unchanged_makes_the_same_trees(repo: Repo) -> None:
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+def test_rebuilding_them_unchanged_in_a_sha256_repository(repo: Repo) -> None:
+    sha256 = Repo(repo.path.parent / "sha256")
+    sha256.path.mkdir()
+    sha256.git("init", "--quiet", "--object-format=sha256")
+    old = history(sha256)
+    session = restored(sha256, "HEAD~3")
+    assert [len(sha) for sha in old] == [64] * 3
+    assert trees(sha256, session.build()) == trees(sha256, old)
+    assert [set(commit.edits) for commit in session.plan.commits] == [{"f"}, {"f"}, set()]
+
+
 def test_overlapping_changes_are_reproduced_with_edits(repo: Repo) -> None:
     history(repo)
     session = restored(repo, "HEAD~3")

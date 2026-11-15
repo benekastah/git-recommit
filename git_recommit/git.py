@@ -48,10 +48,14 @@ class GitClient:
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         self.directory = os.fspath(directory)
-        # `git cat-file --batch`, started the first time a blob is read, and
-        # what keeps threads from talking to it at once.
+        # `git cat-file --batch-command`, started the first time an object is
+        # read or a name resolved, and what keeps threads from talking to it at
+        # once.
         self._cat_file: subprocess.Popen[bytes] | None = None
         self._cat_file_lock = threading.Lock()
+        # Where git keeps each file asked about (see git_paths), which doesn't
+        # change.
+        self._git_paths: dict[str, str] = {}
 
     def __del__(self) -> None:
         self.close()
@@ -122,45 +126,80 @@ class GitClient:
     def git_paths(self, *names: str) -> list[str]:
         """Where each of names is in the git directory (as `git rev-parse
         --git-path` says), as paths in the filesystem: so in its encoding,
-        not as text."""
-        args = [a for name in names for a in ("--git-path", name)]
-        out = self.run_bytes("rev-parse", "--path-format=absolute", *args)
-        return [os.fsdecode(path) for path in out.splitlines()]
+        not as text. Each is only asked of git once."""
+        if new := [name for name in dict.fromkeys(names) if name not in self._git_paths]:
+            args = [a for name in new for a in ("--git-path", name)]
+            out = self.run_bytes("rev-parse", "--path-format=absolute", *args)
+            self._git_paths.update(zip(new, map(os.fsdecode, out.splitlines()), strict=True))
+        return [self._git_paths[name] for name in names]
 
     def commit_sha(self, rev: str) -> str | None:
         """The commit rev names, or None if it doesn't name one."""
-        return (
-            self.run("rev-parse", "--verify", "--quiet", "--end-of-options", f"{rev}^{{commit}}", check=False) or None
-        )
+        return self._resolve(f"{rev}^{{commit}}")
+
+    def tree(self, rev: str) -> str:
+        """The tree rev names (e.g. a commit's)."""
+        sha = self._resolve(f"{rev}^{{tree}}")
+        if sha is None:
+            raise RecommitError(f"{rev} isn't a commit or tree")
+        return sha
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         return self.ok("merge-base", "--is-ancestor", ancestor, descendant)
 
     def blob(self, sha: str) -> bytes:
-        """A blob's content, read with one `git cat-file --batch` process kept
-        for all of them, rather than a process each."""
+        """A blob's content."""
+        return self.read_object(sha, "blob")
+
+    def read_object(self, sha: str, kind: str) -> bytes:
+        """An object's content (as `git cat-file <kind> <sha>`, e.g. a
+        commit's, its headers and message, exactly as they are)."""
         if not OBJECT_ID.fullmatch(sha):
             # Anything else (e.g. a line ending) would put the process out of
             # step with what's read back.
             raise RecommitError(f"{sha!r} isn't an object id")
         with self._cat_file_lock:
-            return self._read_blob(sha)
+            header = self._cat_file_command(b"contents " + sha.encode())
+            if len(header) != 3:
+                raise RecommitError(f"{sha} isn't a {kind}")
+            assert self._cat_file is not None and self._cat_file.stdout is not None
+            # Read even if it's another kind, so the process stays in step.
+            content = self._cat_file.stdout.read(int(header[2]))
+            self._cat_file.stdout.read(1)
+        if header[1] != kind.encode():
+            raise RecommitError(f"{sha} isn't a {kind}")
+        return content
 
-    def _read_blob(self, sha: str) -> bytes:
+    def _resolve(self, name: str) -> str | None:
+        """The object name names (as rev-parse --verify would find it), or
+        None if it names none."""
+        if not name or "\n" in name:
+            # A line ending would put the process out of step.
+            return None
+        with self._cat_file_lock:
+            header = self._cat_file_command(b"info " + encode(name))
+        # "<name> missing" can split in three too, if name has a space.
+        found = len(header) == 3 and OBJECT_ID.fullmatch(header[0].decode()) and header[2].isdigit()
+        return header[0].decode() if found else None
+
+    def _cat_file_command(self, command: bytes) -> list[bytes]:
+        """Send command to one `git cat-file --batch-command` process, kept for
+        reading every object and resolving every name, rather than a process
+        each; and return the reply's first line: "<sha> <type> <size>" (for
+        contents, then the content and a newline), or "<name> missing" (or
+        ambiguous), split. It sees refs and objects as they are when asked,
+        even when other processes have changed them since it started."""
         if self._cat_file is None:
             self._cat_file = subprocess.Popen(
-                self._command("cat-file", "--batch"), stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=self._env()
+                self._command("cat-file", "--batch-command"),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                env=self._env(),
             )
         assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
-        self._cat_file.stdin.write(sha.encode() + b"\n")
+        self._cat_file.stdin.write(command + b"\n")
         self._cat_file.stdin.flush()
-        # "<sha> <type> <size>", then the content and a newline; or "<sha> missing".
-        header = self._cat_file.stdout.readline().split()
-        if len(header) != 3 or header[1] != b"blob":
-            raise RecommitError(f"{sha} isn't a blob")
-        content = self._cat_file.stdout.read(int(header[2]))
-        self._cat_file.stdout.read(1)
-        return content
+        return self._cat_file.stdout.readline().split()
 
     def clean(self, path: str, content: bytes) -> bytes:
         """content as `git add` would commit it at path: through the clean

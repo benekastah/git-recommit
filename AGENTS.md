@@ -131,6 +131,10 @@ git-recommit should run on all three (CI runs the tests on each).
 - Use `os.path` or `pathlib` for paths. Run git through `GitClient`, with
   arguments as a list, never through a shell. (The editor and the validate
   command are the user's shell commands, so those do run through one.)
+- Starting a process is slow, on Windows most of all, so read from git with
+  as few as you can: names and objects through `GitClient`'s one `cat-file`
+  process (`commit_sha`, `tree`, `read_object`), and one git command for
+  many things (e.g. one `git log` for every commit) over one each.
 - Don't assume `\n` line endings in files: diff.py keeps every line's own
   ending, and splits only at `\n`, as git does.
 - Shell scripts (`check.sh`, `lint.sh`, the hooks) are for development only.

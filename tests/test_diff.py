@@ -192,6 +192,22 @@ def test_a_renamed_file_is_binary_if_its_attributes_say_so(repo: Repo) -> None:
     assert new.status == "R" and new.binary and new.whole
 
 
+def test_a_file_with_nuls_its_attributes_say_is_text_is_split_into_lines(repo: Repo) -> None:
+    base: dict[str, str | bytes] = {".gitattributes": "*.txt diff\n", "nul.txt": b"a\0b\nkeep\n", "after": LINES}
+    repo.commit("base", **base)
+    change: dict[str, str | bytes] = {"nul.txt": b"a\0c\nkeep\n", "after": LINES + "more\n"}
+    repo.commit("change", **change)
+    files = load(repo)
+    nul = files["nul.txt"]
+    assert not nul.binary
+    assert [(line.kind, line.text) for line in nul.hunks[0].lines if line.id is not None] == [
+        ("-", b"a\0b\n"),
+        ("+", b"a\0c\n"),
+    ]
+    # And the files after it are read as they are.
+    assert [line.text for line in files["after"].hunks[0].lines if line.id is not None] == [b"more\n"]
+
+
 def test_an_empty_diff_renames_is_off_as_git_reads_it(repo: Repo) -> None:
     repo.commit("base", old=LINES)
     repo.commit("rename", old=None, new=LINES)

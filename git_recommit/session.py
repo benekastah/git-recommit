@@ -17,8 +17,8 @@ from git_recommit.revisions import (
     literal,
     resolve_range,
     resolve_root,
-    untracked_files,
     worktree_commit,
+    worktree_status,
 )
 from git_recommit.snapshot import FileState, Version, file_states, pure_version
 
@@ -48,15 +48,17 @@ class Session:
         include_untracked: bool = False,
         root: bool = False,
         end: str | None = None,
+        untracked: list[str] | None = None,
     ) -> None:
         """Rebuild the commits after base up to head, from files, the diff from
         base to tip: head, or with uncommitted changes, worktree_commit's
-        commit on head (of untracked files too, with include_untracked)."""
+        commit on head (of untracked files too, with include_untracked).
+        untracked is the untracked files that aren't ignored."""
         self.git = git
         # Whether rebuilding from the root commit: then base is the empty tree.
         self.root = root
         self.include_untracked = include_untracked
-        self._untracked = untracked_files(git)
+        self._untracked = untracked or []
         self.base = base
         self.head = head
         self.end = end or head
@@ -65,7 +67,7 @@ class Session:
         self.plan = Plan()
         self.old_commits = git.run("log", "--format=%h %s", self.history).splitlines()
         self.uncommitted = self.tip != self.end
-        self._tip_tree = git.run("rev-parse", f"{self.tip}^{{tree}}")
+        self._tip_tree = git.tree(self.tip)
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
         # For each file, its versions with only some changes (see states).
         self._pure: dict[str, dict[frozenset[int], Version | None]] = {}
@@ -84,12 +86,15 @@ class Session:
         base, end = resolve_root(git) if spec is None else resolve_range(git, spec)
         head = git.commit_sha("HEAD")
         assert head is not None
+        status = worktree_status(git, include_untracked)
         # Uncommitted changes come after HEAD, so only a range ending there takes them.
-        tip = worktree_commit(git, end, include_untracked) if end == head else None
+        tip = worktree_commit(git, end, status, include_untracked) if end == head else None
         if base == end and tip is None:
             raise RecommitError(f"{spec} has no commits in it, and there are no uncommitted changes")
         files = load_diff(git, base, tip or end)
-        return cls(git, base, head, files, tip, include_untracked, root=spec is None, end=end)
+        return cls(
+            git, base, head, files, tip, include_untracked, root=spec is None, end=end, untracked=status.untracked
+        )
 
     def later(self) -> list[str]:
         """The commits after the range, up to HEAD, which writing replays."""
@@ -116,6 +121,7 @@ class Session:
         changes that are still there. Return whether anything changed."""
         try:
             check_nothing_in_progress(self.git)
+            status = worktree_status(self.git, self.include_untracked)
             if self.end != self.head:
                 # A range below HEAD stays as it is, but for what comes after.
                 base, end, head = self.base, self.end, self.git.commit_sha("HEAD") or self.head
@@ -125,11 +131,11 @@ class Session:
             else:
                 base, end = resolve_root(self.git) if self.root else resolve_range(self.git, self.base)
                 head = end
-                tip = worktree_commit(self.git, head, self.include_untracked) or head
+                tip = worktree_commit(self.git, head, status, self.include_untracked) or head
         except RecommitError as e:
             raise RecommitError(f"can't reload: {e}") from e
-        self._untracked = untracked_files(self.git)
-        tree = self.git.run("rev-parse", f"{tip}^{{tree}}")
+        self._untracked = status.untracked
+        tree = self.git.tree(tip)
         if head == self.head and tree == self._tip_tree:
             return False
         files = load_diff(self.git, base, tip)
@@ -518,12 +524,23 @@ class Session:
         the last. Each keeps its tree, message and author, so nothing can
         conflict: writing.blocker makes sure the new commits end with the
         range's tree."""
+        if self.end == self.head:
+            return onto
         sign = ["-S"] if self.git.run("config", "--type=bool", "commit.gpgSign", check=False) == "true" else []
-        for sha in self.later():
-            message = self.git.run_bytes("cat-file", "commit", sha).partition(b"\n\n")[2]
-            name, email, date = self.git.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha).split("\0")
+        later = self.git.run(
+            "log",
+            "--reverse",
+            "--no-show-signature",
+            "--format=%H%x00%an%x00%ae%x00%ad",
+            "--date=raw",
+            f"{self.end}..{self.head}",
+        )
+        for line in later.splitlines():
+            sha, name, email, date = line.split("\0")
             env = {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": date}
-            tree = self.git.run("rev-parse", f"{sha}^{{tree}}")
+            # "tree <id>" first, then the other headers, a blank line, and the message.
+            headers, _, message = self.git.read_object(sha, "commit").partition(b"\n\n")
+            tree = headers.split(b"\n", 1)[0].removeprefix(b"tree ").decode()
             onto = self.git.run_bytes("commit-tree", tree, "-p", onto, *sign, input=message, env=env).decode().strip()
         return onto
 

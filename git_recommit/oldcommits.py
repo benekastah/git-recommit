@@ -7,12 +7,12 @@ import os
 import re
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from git_recommit.diff import FileDiff, numbered
+from git_recommit.diff import SUBMODULE_MODE, FileDiff, numbered
 from git_recommit.errors import RecommitError
 from git_recommit.plan import Author, Plan
-from git_recommit.revisions import changed_paths
 
 if TYPE_CHECKING:
     from git_recommit.session import Session
@@ -32,22 +32,25 @@ def restore(session: "Session") -> None:
     same trees, but where a submodule changes, or a file's mode changes and
     changes back, which edits can't do (see ISSUES.md).
     """
-    shas = session.git.run("rev-list", "--reverse", session.history).split()
+    old = _old_commits(session)
+    # The commit of the uncommitted changes, after them, isn't one of them.
+    uncommitted = set(old.pop().changed) if session.uncommitted else set()
+    shas = [commit.sha for commit in old]
     session.plan = plan = Plan()
     keys = {}
-    for sha in shas:
+    for commit in old:
         # Exactly as it is in the commit (git log would trim it), for
         # writing it unchanged; in the plan, without its final newline,
         # as messages the user writes are.
-        exact = session.git.run_bytes("cat-file", "commit", sha).partition(b"\n\n")[2].decode(errors="surrogateescape")
-        name, email, date = session.git.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha).split("\0")
-        commit = plan.add(exact.removesuffix("\n"), author=Author(name, email, date))
-        commit.old_message = exact
-        keys[sha] = commit.key
+        raw = session.git.read_object(commit.sha, "commit")
+        exact = raw.partition(b"\n\n")[2].decode(errors="surrogateescape")
+        new = plan.add(exact.removesuffix("\n"), author=commit.author)
+        new.old_message = exact
+        keys[commit.sha] = new.key
     # A line last there in a commit (or base) was removed by the next one.
     removed_by = dict(zip([session.base, *shas], shas, strict=False))
-    touched_by = _touched_by(session, shas)
-    trees = [_blobs(session, sha) for sha in shas]
+    touched_by = _touched_by(old)
+    trees = _trees(session, old)
     # Files old commits change that end as they started aren't in the diff;
     # add them, so the edits can reproduce them (but for submodules).
     changed = {path for diff in session.files for path in (diff.path, diff.old_path) if path is not None}
@@ -56,7 +59,6 @@ def restore(session: "Session") -> None:
             session.add_unchanged(path)
         except RecommitError:
             pass
-    uncommitted = set(changed_paths(session.git, session.head, session.tip)) if session.uncommitted else set()
     for diff in session.files:
         # The last commit to change the file takes what blame can't say
         # who made, as well as what blame doesn't cover.
@@ -102,13 +104,63 @@ def _meta_by(
     return next((sha for sha, blobs in trees if diff.path in blobs), None)
 
 
-def _touched_by(session: "Session", shas: list[str]) -> dict[str, list[str]]:
-    """For each path, the commits of shas (in order) that changed it."""
+@dataclass
+class _OldCommit:
+    sha: str
+    author: Author
+    # Each path it changes (from its parent, without finding renames), and
+    # the blob it then has there, or None for none (or a submodule).
+    changes: list[tuple[str, str | None]] = field(default_factory=list)
+
+    @property
+    def changed(self) -> list[str]:
+        return [path for path, _ in self.changes]
+
+
+def _touched_by(commits: list[_OldCommit]) -> dict[str, list[str]]:
+    """For each path, the commits (in order) that changed it."""
     touched: dict[str, list[str]] = {}
-    for parent, sha in zip([session.base, *shas], shas, strict=False):
-        for path in changed_paths(session.git, parent, sha):
-            touched.setdefault(path, []).append(sha)
+    for commit in commits:
+        for path in commit.changed:
+            touched.setdefault(path, []).append(commit.sha)
     return touched
+
+
+def _old_commits(session: "Session") -> list[_OldCommit]:
+    """The commits being rebuilt, oldest first, then the commit of the
+    uncommitted changes, if any: read with one git process."""
+    span = session.tip if session.root else f"{session.base}..{session.tip}"
+    out = session.git.run_bytes(
+        "log",
+        "--reverse",
+        "--root",
+        "--raw",
+        "-r",
+        "--no-renames",
+        "--no-abbrev",
+        "--no-show-signature",
+        "-z",
+        "--format=%H%x00%an%x00%ae%x00%ad",
+        "--date=raw",
+        span,
+    )
+    # Each commit's id, author's name, email and date, then for each path it
+    # changes, ":<old mode> <new mode> <old blob> <new blob> <status>" (after
+    # a line ending, for the first) and the path. A path is always just one
+    # field, so it can't be mistaken for anything else.
+    fields = iter(out.split(b"\0"))
+    commits: list[_OldCommit] = []
+    for entry in fields:
+        entry = entry.lstrip(b"\n")
+        if entry.startswith(b":"):
+            _, new_mode, _, blob, status = entry.decode().split(" ")
+            path = next(fields).decode(errors="surrogateescape")
+            gone = status == "D" or new_mode == SUBMODULE_MODE
+            commits[-1].changes.append((path, None if gone else blob))
+        elif entry:
+            name, email, date = (next(fields).decode(errors="surrogateescape") for _ in range(3))
+            commits.append(_OldCommit(entry.decode(), Author(name, email, date)))
+    return commits
 
 
 def _made_by(session: "Session", diff: FileDiff, removed_by: dict[str, str]) -> dict[int, str | None]:
@@ -154,7 +206,8 @@ def _blame(session: "Session", path: str, reverse: bool) -> dict[int | None, str
 def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
     """Give each commit of the plan the edits it needs to have each file
     (but submodules) as the old commit with trees[i] does."""
-    object_format = session.git.run("rev-parse", "--show-object-format")
+    # As an id's length says: SHA-1's are 40 hex digits, SHA-256's 64.
+    object_format = "sha1" if len(session.base) == 40 else "sha256"
 
     def reproduce(diff: FileDiff) -> None:
         for index, (commit, blobs) in enumerate(zip(session.plan.commits, trees, strict=True)):
@@ -182,16 +235,25 @@ def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
         list(pool.map(reproduce, [diff for diff in session.files if not diff.submodule]))
 
 
-def _blobs(session: "Session", sha: str) -> dict[str, str]:
-    """Each file's blob in the commit."""
+def _trees(session: "Session", commits: list[_OldCommit]) -> list[dict[str, str]]:
+    """Each file's blob in each commit: base's, as each commit changes them."""
     blobs = {}
-    for entry in session.git.run_bytes("ls-tree", "-r", "-z", "--full-tree", sha).split(b"\0"):
-        if entry:
-            meta, _, path = entry.partition(b"\t")
-            _, kind, blob = meta.decode().split(" ")
-            if kind == "blob":
-                blobs[path.decode(errors="surrogateescape")] = blob
-    return blobs
+    if not session.root:
+        for entry in session.git.run_bytes("ls-tree", "-r", "-z", "--full-tree", session.base).split(b"\0"):
+            if entry:
+                meta, _, name = entry.partition(b"\t")
+                _, kind, blob = meta.decode().split(" ")
+                if kind == "blob":
+                    blobs[name.decode(errors="surrogateescape")] = blob
+    trees = []
+    for commit in commits:
+        for path, change in commit.changes:
+            if change is None:
+                blobs.pop(path, None)
+            else:
+                blobs[path] = change
+        trees.append(dict(blobs))
+    return trees
 
 
 def blob_id(content: bytes, object_format: str) -> str:

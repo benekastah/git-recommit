@@ -81,14 +81,15 @@ class FileDiff:
     def describe_meta(self) -> str:
         """What the file's change to itself (its meta change) is."""
         renamed = [f"renamed from {self.old_path}"] if self.old_path is not None else []
+        both = self.old_mode is not None and self.new_mode is not None
+        mode = [f"mode {self.old_mode} -> {self.new_mode}"] if both and self.old_mode != self.new_mode else []
         if self.binary:
-            return ", ".join(["binary", *renamed])
+            return ", ".join(["binary", *renamed, *mode])
         if self.whole:
             modes = f"{self.old_mode or 'none'} -> {self.new_mode or 'none'}"
             return ", ".join([*renamed, modes] if not renamed or self.old_mode != self.new_mode else renamed)
         if self.status in ("A", "D"):
             return "added, empty" if self.status == "A" else "deleted, empty"
-        mode = [f"mode {self.old_mode} -> {self.new_mode}"] if self.old_mode != self.new_mode else []
         return ", ".join([*renamed, *mode])
 
     def path_with(self, selected: Container[int]) -> str:

@@ -44,11 +44,11 @@ class Session:
         base: str,
         head: str,
         files: list[FileDiff],
+        untracked: list[str],
         tip: str | None = None,
         include_untracked: bool = False,
         root: bool = False,
         end: str | None = None,
-        untracked: list[str] | None = None,
     ) -> None:
         """Rebuild the commits after base up to head, from files, the diff from
         base to tip: head, or with uncommitted changes, worktree_commit's
@@ -58,7 +58,7 @@ class Session:
         # Whether rebuilding from the root commit: then base is the empty tree.
         self.root = root
         self.include_untracked = include_untracked
-        self._untracked = untracked or []
+        self._untracked = untracked
         self.base = base
         self.head = head
         self.end = end or head
@@ -84,7 +84,7 @@ class Session:
         up to HEAD (as `git rebase --root`)."""
         check_nothing_in_progress(git)
         base, end = resolve_root(git) if spec is None else resolve_range(git, spec)
-        head = git.commit_sha("HEAD")
+        head = git.head()
         assert head is not None
         status = worktree_status(git, include_untracked)
         # Uncommitted changes come after HEAD, so only a range ending there takes them.
@@ -92,9 +92,7 @@ class Session:
         if base == end and tip is None:
             raise RecommitError(f"{spec} has no commits in it, and there are no uncommitted changes")
         files = load_diff(git, base, tip or end)
-        return cls(
-            git, base, head, files, tip, include_untracked, root=spec is None, end=end, untracked=status.untracked
-        )
+        return cls(git, base, head, files, status.untracked, tip, include_untracked, root=spec is None, end=end)
 
     def later(self) -> list[str]:
         """The commits after the range, up to HEAD, which writing replays."""
@@ -124,7 +122,7 @@ class Session:
             status = worktree_status(self.git, self.include_untracked)
             if self.end != self.head:
                 # A range below HEAD stays as it is, but for what comes after.
-                base, end, head = self.base, self.end, self.git.commit_sha("HEAD") or self.head
+                base, end, head = self.base, self.end, self.git.head() or self.head
                 if not self.git.is_ancestor(end, head):
                     raise RecommitError("HEAD isn't after the commits being rebuilt any more")
                 tip = end
@@ -238,7 +236,7 @@ class Session:
     def head_moved(self) -> bool:
         """Whether HEAD has moved since the diff was loaded (e.g. the user
         committed while git recommit was suspended)."""
-        return self.git.commit_sha("HEAD") != self.head
+        return self.git.head() != self.head
 
     def clear(self) -> None:
         """Start from scratch, with no commits."""

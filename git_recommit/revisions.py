@@ -40,7 +40,7 @@ def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
         if not merge_base:
             raise RecommitError(f"{a} and {b} have no history in common")
         base, tip = merge_base, sha_b
-    head = git.commit_sha("HEAD")
+    head = git.head()
     assert head is not None
     if base == tip and tip != head:
         raise RecommitError(f"{spec} has no commits")
@@ -56,7 +56,7 @@ def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
 def resolve_root(git: GitClient) -> tuple[str, str]:
     """The (base, tip) of every commit up to HEAD, as `git rebase --root`
     takes them: base is the empty tree, since there's no commit before."""
-    head = git.commit_sha("HEAD")
+    head = git.head()
     if head is None:
         raise RecommitError("there are no commits yet")
     if git.run("rev-list", "--merges", head):
@@ -98,18 +98,27 @@ class WorktreeStatus:
 
 
 def worktree_status(git: GitClient, include_untracked: bool = False) -> WorktreeStatus:
-    """The working tree's status, as worktree_commit takes it."""
-    # Untracked files in a submodule are a change to it only with
-    # include_untracked, as `git status --untracked-files=no` has it without.
-    submodules = [] if include_untracked else ["--ignore-submodules=untracked"]
+    """The working tree's status, as worktree_commit takes it: as `git status`
+    has it (with the user's config, e.g. submodule.<name>.ignore), but for a
+    submodule with untracked files in it, which only has changes with
+    include_untracked."""
     # --no-optional-locks: don't refresh (and so write) the user's index.
     out = git.run_bytes(
-        "--no-optional-locks", "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all", *submodules
+        "--no-optional-locks", "status", "--porcelain=v2", "-z", "--no-renames", "--untracked-files=all"
     )
-    # "<XY> <path>", where XY is ?? for an untracked file; paths are from the top.
-    entries = [entry for entry in out.split(b"\0") if entry]
-    untracked = [entry[3:].decode(errors="surrogateescape") for entry in entries if entry.startswith(b"??")]
-    return WorktreeStatus(changed=len(untracked) < len(entries), untracked=untracked)
+    changed = False
+    untracked = []
+    # "? <path>" for an untracked file; for a changed one, "1 <XY> <submodule>
+    # ..." (or "u ..." unmerged), where <submodule> is S..U for a submodule
+    # with only untracked files in it. Paths are from the top.
+    for entry in out.split(b"\0"):
+        if entry.startswith(b"? "):
+            untracked.append(entry[2:].decode(errors="surrogateescape"))
+        elif entry.startswith(b"1 .M S..U ") and not include_untracked:
+            continue
+        elif entry:
+            changed = True
+    return WorktreeStatus(changed=changed, untracked=untracked)
 
 
 def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_untracked: bool = False) -> str | None:

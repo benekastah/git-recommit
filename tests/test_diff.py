@@ -1,3 +1,4 @@
+import os
 import random
 
 import pytest
@@ -98,3 +99,17 @@ def test_binary_files_and_modes_change_as_a_whole(repo: Repo) -> None:
 def test_paths_with_spaces_and_unicode(repo: Repo) -> None:
     repo.commit("change", **{"dir with space/naïve.txt": "x\n"})
     assert list(load(repo)) == ["dir with space/naïve.txt"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs symlinks")
+def test_a_file_that_becomes_a_symlink_changes_as_a_whole(repo: Repo) -> None:
+    repo.commit("base", link="a file\n", after="x\n")
+    (repo.path / "link").unlink()
+    (repo.path / "link").symlink_to("after")
+    repo.commit("change", after="y\n")
+    files = load(repo)
+    assert list(files) == ["after", "link"]
+    link = files["link"]
+    assert (link.status, link.old_mode, link.new_mode) == ("T", "100644", "120000")
+    assert link.whole and link.ids == [link.meta_id]
+    assert len(files["after"].ids) == 2

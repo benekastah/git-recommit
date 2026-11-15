@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from itertools import count
 from typing import Literal
 
+from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 
 LineKind = Literal["+", "-", " "]
@@ -206,14 +207,21 @@ def load(git: GitClient, base: str, tip: str) -> list[FileDiff]:
     common = ("diff-tree", "-r", "--no-renames", "--no-abbrev", base, tip)
     raw = git.run_bytes(*common, "--raw", "-z")
     patch = git.run_bytes(*common, "-p", "-U3", "--full-index")
-    # Both list the files in the same order.
-    parts = list(_patch_parts(patch))
+    # Both list the files in the same order, but the patch shows a change of
+    # kind (status T, e.g. a file to a symlink) as two parts: a deletion, then
+    # an addition. A file of either kind changes as a whole, so its parts
+    # don't matter.
     entries = list(_raw_entries(raw))
-    if len(parts) != len(entries):
-        raise AssertionError(f"git diff-tree listed {len(entries)} files but patched {len(parts)}")
+    parts = list(_patch_parts(patch))
+    if len(parts) != len(entries) + sum(1 for entry in entries if entry[4] == "T"):
+        raise RecommitError(f"git diff-tree listed {len(entries)} files, but its patch doesn't match")
+    remaining = iter(parts)
     ids = count()
     diffs = []
-    for (old_mode, new_mode, old_blob, new_blob, status, path), part in zip(entries, parts, strict=True):
+    for old_mode, new_mode, old_blob, new_blob, status, path in entries:
+        part = next(remaining)
+        if status == "T":
+            part += next(remaining)
         diff = FileDiff(
             path=path,
             status=status,

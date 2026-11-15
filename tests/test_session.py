@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from git_recommit.errors import RecommitError
@@ -319,3 +321,15 @@ def test_writing_after_head_moved_says_where_the_new_commits_are(repo: Repo) -> 
     with pytest.raises(RecommitError, match=f"HEAD moved.*{shas[-1]}"):
         session.finish(shas)
     assert repo.git("rev-parse", "HEAD") == moved
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs symlinks")
+def test_building_a_change_of_kind(repo: Repo) -> None:
+    repo.commit("base", link="a file\n")
+    (repo.path / "link").unlink()
+    (repo.path / "link").symlink_to("target")
+    repo.commit("change")
+    session = repo.session("HEAD~")
+    session.restore_old_commits()
+    (sha,) = session.build()
+    assert repo.git("ls-tree", sha, "link").startswith("120000 blob")

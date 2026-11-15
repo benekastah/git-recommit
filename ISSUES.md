@@ -3,17 +3,6 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## A file that changes kind (e.g. to a symlink) crashes loading
-
-Confirmed. `git diff-tree -p` shows a change of kind as two parts (a deletion
-and an addition) where `--raw` lists one entry, so `diff.load` fails its count
-check with `AssertionError: ... listed 2 files but patched 3`. The `T`
-handling in `FileDiff.whole` is never reached.
-
-Fix: match the patch's parts to the raw entries by path rather than position
-(or don't read the patch for `T` entries), and make a mismatch a
-`RecommitError`, which the CLI reports, rather than an `AssertionError`.
-
 ## File names that aren't UTF-8 crash writing
 
 Confirmed. Paths are decoded with `surrogateescape`, but `Session.build` sends

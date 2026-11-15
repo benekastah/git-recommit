@@ -1,5 +1,6 @@
 import os
 import pathlib
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -48,8 +49,12 @@ class Repo:
             else:
                 self.write(name, content)
         self.git("add", "--all")
-        self.git("commit", "--quiet", "--allow-empty", "-m", message)
-        return self.git("rev-parse", "HEAD")
+        # "[<branch> <id>] <subject>", with the whole id, rather than asking
+        # for it after, with another git process.
+        summary = self.git("-c", "core.abbrev=no", "commit", "--allow-empty", "-m", message).splitlines()[0]
+        match = re.match(r"\[.* ([0-9a-f]{40}|[0-9a-f]{64})\] ", summary)
+        assert match is not None, summary
+        return match[1]
 
     def show(self, rev: str, name: str) -> str | None:
         """The file in rev, or None if it isn't there."""

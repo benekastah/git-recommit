@@ -1,9 +1,15 @@
 """The state of the TUI, apart from how it's drawn: the rows of the diff, the
-cursor and selection, and the commit being worked on."""
+cursor and selection, and the commit being worked on.
+
+It changes the plan only by running commands (commands.py), as the command
+line does, turning the cursor and selection into the commits and targets they
+name."""
 
 from dataclasses import dataclass
 from typing import Literal
 
+from git_recommit import commands
+from git_recommit.commands import Command, Result, targets_for
 from git_recommit.diff import FileDiff, Line, numbered
 from git_recommit.errors import RecommitError
 from git_recommit.plan import NewCommit, Plan
@@ -112,6 +118,10 @@ class Board:
         """The commit's place in the list, from 1."""
         return self.plan.index(key) + 1
 
+    def active_number(self) -> int:
+        """The active commit's number, for a command."""
+        return self.number(self.active_commit().key)
+
     def active_commit(self) -> NewCommit:
         if self.active is None:
             raise RecommitError("there's no commit yet; press c to create one")
@@ -189,6 +199,16 @@ class Board:
 
     # Changing the plan.
 
+    def run(self, command: Command) -> Result | None:
+        """Run command on the plan, and say what it did (or why it couldn't)."""
+        try:
+            result = command.run(self.session)
+        except RecommitError as e:
+            self.message = str(e)
+            return None
+        self.message = result.message
+        return result
+
     def assign(self, key: int | None) -> None:
         """Assign the selected changes to the commit with key (None: unassign),
         then move past them."""
@@ -209,11 +229,10 @@ class Board:
         if not ids:
             self.message = "There's no change here to assign."
             return
-        self.plan.assign(ids, key)
-        self.anchor = None
-        self.goto(last + 1)
-        what = "Unassigned" if key is None else f"Assigned to {self.number(key)}:"
-        self.message = f"{what} {len(ids)} change{'s' if len(ids) != 1 else ''}."
+        number = None if key is None else self.number(key)
+        if self.run(commands.Assign(tuple(targets_for(self.session, ids)), number)) is not None:
+            self.anchor = None
+            self.goto(last + 1)
 
     def assign_number(self, number: int) -> None:
         if not 1 <= number <= len(self.plan.commits):
@@ -222,33 +241,48 @@ class Board:
         self.active = self.plan.commits[number - 1].key
         self.assign(self.active)
 
+    def _activate(self, result: Result | None) -> None:
+        """Make the commit result left the user on the active one."""
+        if result is not None and result.commit is not None:
+            self.active = self.plan.commits[result.commit - 1].key
+
     def clear(self) -> None:
         """Remove every commit, to start from scratch."""
-        self.session.clear()
-        self.active = None
-        self.message = "Cleared every commit. Press c to create one."
+        if self.run(commands.Clear()) is not None:
+            self.active = None
+            self.message += " Press c to create one."
 
     def restore(self) -> None:
         """Go back to the commits being rebuilt."""
-        self.session.restore_old_commits()
-        self.active = self.plan.commits[0].key if self.plan.commits else None
-        self.message = "Back to the commits being rebuilt."
+        self.active = None
+        self._activate(self.run(commands.Restore()))
 
     def add_commit(self, message: str) -> None:
         """Add a commit after the active one, and make it active."""
-        self.active = self.plan.add(message, after=self.active).key
-        self.message = f"Created commit {self.number(self.active)}."
+        after = None if self.active is None else self.number(self.active)
+        self._activate(self.run(commands.AddCommit(message, after)))
 
     def remove_active(self) -> None:
-        commit = self.active_commit()
-        index = self.plan.index(commit.key)
-        self.plan.remove(commit.key)
-        commits = self.plan.commits
-        self.active = commits[min(index, len(commits) - 1)].key if commits else None
-        self.message = f"Deleted {commit.subject!r}; its changes are unassigned."
+        number = self.active_number()
+        if self.run(commands.RemoveCommit(number)) is not None:
+            commits = self.plan.commits
+            self.active = commits[min(number, len(commits)) - 1].key if commits else None
 
     def move_active(self, delta: int) -> None:
-        self.plan.move(self.active_commit().key, delta)
+        number = self.active_number()
+        to = max(1, min(len(self.plan.commits), number + delta))
+        if to != number:
+            self.run(commands.MoveCommit(number, to))
+
+    def reword_active(self, message: str) -> None:
+        self.run(commands.Reword(self.active_number(), message))
+
+    def edit_active(self, path: str, content: bytes) -> None:
+        """Make the file content in the active commit (see commands.Edit)."""
+        self.run(commands.Edit(self.active_number(), path, content))
+
+    def drop_edit(self, path: str) -> None:
+        self.run(commands.DropEdit(self.active_number(), path))
 
     def cycle_active(self, delta: int) -> None:
         commits = self.plan.commits

@@ -49,12 +49,16 @@ class Repo:
     def session(self, spec: str) -> Session:
         return Session.load(self.client, spec)
 
-    def recommit(self, *args: str, expect_success: bool = True) -> subprocess.CompletedProcess[str]:
-        """Run `git recommit <args>` as a separate process (without a terminal)."""
+    def recommit(
+        self, *args: str, expect_success: bool = True, input: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run `git recommit <args>` as a separate process (without a terminal),
+        with input on its stdin."""
         result = subprocess.run(
             [sys.executable, "-m", "git_recommit", "-C", str(self.path), *args],
             capture_output=True,
             text=True,
+            input=input,
             timeout=60,
             check=False,
         )

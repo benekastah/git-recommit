@@ -29,9 +29,21 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
 - `git_recommit/session.py` ties those to a repository: loading the range,
   building the new commits (with plumbing, in a temporary index, never touching
   the working tree), and moving HEAD's branch to them.
+- `git_recommit/commands.py` is every change to the plan, as a command: a
+  frozen dataclass with `run(session)`, naming commits by number and changes
+  by `Target`s (`path`, `path:@2`, `path:+10-14`). The command line's
+  subcommands and the TUI's keys both run them, so anything one can do, the
+  other can; a change to the plan that isn't a command is a missing command.
+- `git_recommit/planfile.py` keeps a recommit in progress between subcommands,
+  as JSON in the git directory, with changes by `diff.change_keys`;
+  `git_recommit/show.py` prints a plan, as text or JSON. `git_recommit/cli.py`
+  parses the subcommands into commands, and runs the TUI for `git recommit
+  <range>` (or `tui`).
 - `git_recommit/board.py` is the TUI's state apart from drawing (rows, cursor,
-  selection, active commit); `git_recommit/tui.py` draws it with Textual and
-  maps the keys. Keep logic in `board.py`, where it's tested without Textual.
+  selection, active commit), and turns the cursor and selection into commands
+  (`Board.run`); `git_recommit/tui.py` draws it with Textual and maps the
+  keys. Keep logic in `board.py` or the commands, where it's tested without
+  Textual.
   What the TUI does with the terminal itself (the editor, the validate command)
   goes through `tui.Terminal`, which tests replace.
 - The sidebar is built from sections, one method each (`_new_commits_section`,

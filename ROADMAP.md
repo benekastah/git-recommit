@@ -35,6 +35,10 @@ A reasonable path: 5 first, then 1 with 2 for the other authors, then 3.
 
 ## A command line for everything the TUI does
 
+Done, but for undo and the log: see README.md's "From the command line", and
+`commands.py`, which both the TUI and the command line run. What's left, and
+how it was designed, follows.
+
 So that a script or an agent can rebuild commits too: each thing the TUI does
 as a subcommand, working on a plan kept in a file between commands, and a last
 command that writes it.

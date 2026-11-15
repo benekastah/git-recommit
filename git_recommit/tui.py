@@ -563,12 +563,8 @@ class BoardScreen(Screen[None]):
         except RecommitError as e:
             self._do(str(e))
             return
-        message = editor.strip_comments(saved.decode(errors="replace"))
-        if not message:
-            self._do("The message was empty, so it's unchanged.")
-            return
-        commit.message = message
-        self._do("Reworded.")
+        self.board.reword_active(editor.strip_comments(saved.decode(errors="replace")))
+        self._do()
 
     def action_edit(self) -> None:
         diff = self.board.current_file()
@@ -576,32 +572,19 @@ class BoardScreen(Screen[None]):
             commit = self.board.active_commit()
             if diff.whole:
                 raise RecommitError(f"{diff.path} isn't a text file, so it can't be edited")
-            opened = self.session.edit_text(commit.key, diff)
-            content = self.terminal.edit(self.app, opened, diff.path)
+            content = self.terminal.edit(self.app, self.session.edit_text(commit.key, diff), diff.path)
         except RecommitError as e:
             self._do(str(e))
             return
-        number = self.board.number(commit.key)
-        if content == opened:
-            self._do(f"{diff.path} is unchanged in commit {number}.")
-            return
-        self.session.set_edit(commit.key, diff, content)
-        if diff.path in commit.edits:
-            self._do(f"Edited {diff.path} in commit {number}; later commits carry the edit.")
-        else:
-            self._do(f"{diff.path} in commit {number} has no edits.")
+        self.board.edit_active(diff.path, content)
+        self._do()
 
     def action_drop_edit(self) -> None:
-        diff = self.board.current_file()
         try:
-            commit = self.board.active_commit()
+            self.board.drop_edit(self.board.current_file().path)
         except RecommitError as e:
-            self._do(str(e))
-            return
-        if commit.edits.pop(diff.path, None) is None:
-            self._do(f"Commit {self.board.number(commit.key)} doesn't edit {diff.path}.")
-        else:
-            self._do(f"Dropped commit {self.board.number(commit.key)}'s edit of {diff.path}.")
+            self.board.message = str(e)
+        self._do()
 
     # Finishing.
 

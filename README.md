@@ -100,6 +100,35 @@ The old commits are replaced, and the command prints how to get them back
 (`git reset <old HEAD>`, which leaves your working tree as it is); they're
 also in the reflog.
 
+### From the command line
+
+Everything the TUI does can be done a step at a time from the command line,
+e.g. in a script, or by an agent. `start` begins a recommit, kept as a plan in
+the git directory (like a rebase in progress) until `write` makes the new
+commits, or `abort` drops it. Commits are named by number, from 1, and changes
+by *targets*: `PATH` (the whole file), `PATH:@N` (its Nth hunk; `@0` is the
+change to the file itself, like its mode), `PATH:+N-M` (added lines, numbered
+as after the changes) or `PATH:-N-M` (removed lines, numbered as before).
+`show` shows the numbers.
+
+```sh
+git recommit start HEAD~6               # start from the 6 commits as they are
+git recommit show                       # the commits, and the diff marked with them
+git recommit show --json                # all of it, for scripts
+git recommit commit add "Add the API" --after 2
+git recommit assign 3 src/api.py src/util.py:@2 src/main.py:+10-14
+git recommit unassign src/main.py:-3
+git recommit edit 3 src/api.py < stub.py    # the file in commit 3, by hand
+git recommit commit move 3 1                # or remove, or reword
+git recommit write --validate 'pytest'
+git recommit tui                        # or carry on in the TUI (quitting keeps the plan)
+git recommit abort                      # or drop it
+```
+
+The other subcommands are `drop-edit`, `clear` and `restore`; `git recommit
+<subcommand> -h` says more. With `--validate`, `write` stops at the first
+commit the command fails on, changing nothing.
+
 ### --edit
 
 `git recommit --edit <commit>` runs `git rebase -i` and stops at that commit.

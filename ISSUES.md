@@ -194,12 +194,13 @@ changes. ROADMAP.md lists ways to do better.
 
 ## Logic has leaked out of board.py, and session.py does too much
 
-AGENTS.md says to keep the TUI's logic in `board.py`, where it's tested
-without Textual, but `tui.py` decides things too: `action_drop_edit` changes
-`commit.edits` itself, `action_edit` and `action_reword` decide what an edit
-or a message comes to, `action_write` works out the warnings, and `_build`
-runs the validation flow. Move them into `board.py` (or into the commands
-ROADMAP.md plans). And `session.py` does five jobs (resolving the range, the
+AGENTS.md says to keep the TUI's logic in `board.py` or the commands, where
+it's tested without Textual. Changing the plan now goes through the commands,
+but `tui.py` still decides things: `action_write` works out the warnings
+(which `git recommit write` doesn't give), and `_build` runs the validation
+flow, which `cli.write` does its own way. Writing could be a command too, with
+the TUI and the command line differing only in how they ask what to do when
+validation fails. And `session.py` does five jobs (resolving the range, the
 working tree's commit, starting from the old commits, building, finishing):
 starting from the old commits (~100 lines) could be a module of its own.
 

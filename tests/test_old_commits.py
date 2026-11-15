@@ -80,6 +80,8 @@ def test_a_submodule_is_reproduced_whatever_config_ignores_it(repo: Repo, ignore
     old.append(repo.git("rev-parse", "HEAD"))
     session = restored(repo, "HEAD~2")
     assert [diff.path for diff in session.files] == ["f", "sub"]
+    # And a target can name it.
+    assert session.match("sub") == ["sub"]
     assert session.unassigned() == []
     assert trees(repo, session.build()) == trees(repo, old)
 

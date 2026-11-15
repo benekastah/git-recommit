@@ -65,17 +65,48 @@ def test_rebuilding_them_unchanged_in_a_sha256_repository(repo: Repo) -> None:
     assert [set(commit.edits) for commit in session.plan.commits] == [{"f"}, {"f"}, set()]
 
 
-def test_a_submodule_is_reproduced_whatever_diff_config_ignores(repo: Repo) -> None:
+@pytest.mark.parametrize("ignored_by", ["diff.ignoreSubmodules", "submodule.sub.ignore", ".gitmodules"])
+def test_a_submodule_is_reproduced_whatever_config_ignores_it(repo: Repo, ignored_by: str) -> None:
+    ignore = "\tignore = all\n" if ignored_by == ".gitmodules" else ""
+    repo.commit("gitmodules", **{".gitmodules": f'[submodule "sub"]\n\tpath = sub\n{ignore}'})
+    if ignored_by != ".gitmodules":
+        repo.git("config", ignored_by, "all")
     old = [repo.commit("other", f="f\n")]
     # As a submodule that isn't checked out is: an empty directory.
     (repo.path / "sub").mkdir()
     repo.git("update-index", "--add", "--cacheinfo", f"160000,{old[0]},sub")
     repo.git("commit", "--quiet", "-m", "add sub")
     old.append(repo.git("rev-parse", "HEAD"))
-    repo.git("config", "diff.ignoreSubmodules", "all")
     session = restored(repo, "HEAD~2")
+    assert [diff.path for diff in session.files] == ["f", "sub"]
     assert session.unassigned() == []
     assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_blame_takes_every_commit_whatever_config_ignores(repo: Repo) -> None:
+    repo.commit("base", f=LINES)
+    first = repo.commit("first", f=LINES.replace("line 5\n", "five\n"))
+    repo.commit("second", f=LINES.replace("line 5\n", "five\n").replace("line 15\n", "fifteen\n"))
+    (repo.path / "ignored").write_text(first + "\n")
+    repo.git("config", "blame.ignoreRevsFile", str(repo.path / "ignored"))
+    session = restored(repo, "HEAD~2")
+    # Each takes the line it changed, so neither needs an edit.
+    assert [commit.edits for commit in session.plan.commits] == [{}, {}]
+
+
+def test_restoring_from_a_subdirectory_with_a_relative_git_dir(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo.commit("base", **{"dir/f": LINES})
+    old = [
+        repo.commit("first", **{"dir/f": LINES.replace("line 5\n", "five\n")}),
+        repo.commit("second", **{"dir/f": LINES.replace("line 5\n", "FIVE\n")}),
+    ]
+    with monkeypatch.context() as env:
+        env.setenv("GIT_DIR", "../.git")
+        env.setenv("GIT_WORK_TREE", "..")
+        session = Session.load(GitClient(repo.path / "dir"), "HEAD~2")
+        session.restore_old_commits()
+        new = session.build()
+    assert trees(repo, new) == trees(repo, old)
 
 
 @pytest.mark.parametrize("relative", [False, True])

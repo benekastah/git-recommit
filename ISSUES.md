@@ -12,11 +12,6 @@ most of it is one `git merge-file` per carried edit. Merging in-process would
 be faster, but would have to agree with git's merges; or the TUI could open
 first, and show progress.
 
-## The range must end at HEAD
-
-Only the commits up to HEAD can be rebuilt. Rebuilding commits further down,
-and replaying the ones above on the result, isn't supported.
-
 ## Merges can't be rebuilt
 
 The range can't include merge commits: the new commits are one line of

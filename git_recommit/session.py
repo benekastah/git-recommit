@@ -30,11 +30,12 @@ class Conflict:
 
 
 class Session:
-    """A recommit: the commits after `base` up to `head` (HEAD, when it was
-    loaded) being rebuilt, from the diff from `base` to `tip`: `head`, or a
+    """A recommit: the commits after `base` up to `end` being rebuilt, from
+    the diff from `base` to `tip`: `end`, or (when the range ends at HEAD) a
     commit of the uncommitted changes on it (see revisions.worktree_commit),
     whose tree (`_tip_tree`) says whether reloading finds anything new. And
-    the plan for the new commits.
+    the plan for the new commits. `head` is HEAD, when it was loaded: `end`,
+    or a later commit, when the commits after the range are replayed.
     """
 
     def __init__(
@@ -46,6 +47,7 @@ class Session:
         tip: str | None = None,
         include_untracked: bool = False,
         root: bool = False,
+        end: str | None = None,
     ) -> None:
         """Rebuild the commits after base up to head, from files, the diff from
         base to tip: head, or with uncommitted changes, worktree_commit's
@@ -57,11 +59,12 @@ class Session:
         self._untracked = untracked_files(git)
         self.base = base
         self.head = head
-        self.tip = tip or head
+        self.end = end or head
+        self.tip = tip or self.end
         self.files = files
         self.plan = Plan()
         self.old_commits = git.run("log", "--format=%h %s", self.history).splitlines()
-        self.uncommitted = self.tip != head
+        self.uncommitted = self.tip != self.end
         self._tip_tree = git.run("rev-parse", f"{self.tip}^{{tree}}")
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
         # The author of the old commit that made each change, where known.
@@ -76,22 +79,34 @@ class Session:
         """The recommit of the commits spec names, or with None, every commit
         up to HEAD (as `git rebase --root`)."""
         check_nothing_in_progress(git)
-        base, head = resolve_root(git) if spec is None else resolve_range(git, spec)
-        tip = worktree_commit(git, head, include_untracked)
-        if base == head and tip is None:
+        base, end = resolve_root(git) if spec is None else resolve_range(git, spec)
+        head = git.commit_sha("HEAD")
+        assert head is not None
+        # Uncommitted changes come after HEAD, so only a range ending there takes them.
+        tip = worktree_commit(git, end, include_untracked) if end == head else None
+        if base == end and tip is None:
             raise RecommitError(f"{spec} has no commits in it, and there are no uncommitted changes")
-        session = cls(git, base, head, load_diff(git, base, tip or head), tip, include_untracked, root=spec is None)
-        return session
+        files = load_diff(git, base, tip or end)
+        return cls(git, base, head, files, tip, include_untracked, root=spec is None, end=end)
+
+    def later(self) -> list[str]:
+        """The commits after the range, up to HEAD, which writing replays."""
+        return (
+            [] if self.end == self.head else self.git.run("rev-list", "--reverse", f"{self.end}..{self.head}").split()
+        )
 
     @property
     def history(self) -> str:
         """The commits being rebuilt, as a revision range for git log."""
-        return self.head if self.root else f"{self.base}..{self.head}"
+        return self.end if self.root else f"{self.base}..{self.end}"
 
     def describe_range(self) -> str:
         old = len(self.old_commits)
         commits = f"{old} commit{'s' if old != 1 else ''}"
-        return f"Rebuilding {commits} from the root" if self.root else f"Rebuilding {commits} after {self.base[:7]}"
+        what = f"Rebuilding {commits} from the root" if self.root else f"Rebuilding {commits} after {self.base[:7]}"
+        if later := len(self.later()):
+            what += f", then replaying {later} later commit{'s' if later != 1 else ''}"
+        return what
 
     def reload(self) -> bool:
         """Load the diff again, to pick up changes the user made to the
@@ -99,11 +114,19 @@ class Session:
         changes that are still there. Return whether anything changed."""
         try:
             check_nothing_in_progress(self.git)
-            base, head = resolve_root(self.git) if self.root else resolve_range(self.git, self.base)
+            if self.end != self.head:
+                # A range below HEAD stays as it is, but for what comes after.
+                base, end, head = self.base, self.end, self.git.commit_sha("HEAD") or self.head
+                if not self.git.is_ancestor(end, head):
+                    raise RecommitError("HEAD isn't after the commits being rebuilt any more")
+                tip = end
+            else:
+                base, end = resolve_root(self.git) if self.root else resolve_range(self.git, self.base)
+                head = end
+                tip = worktree_commit(self.git, head, self.include_untracked) or head
         except RecommitError as e:
             raise RecommitError(f"can't reload: {e}") from e
         self._untracked = untracked_files(self.git)
-        tip = worktree_commit(self.git, head, self.include_untracked) or head
         tree = self.git.run("rev-parse", f"{tip}^{{tree}}")
         if head == self.head and tree == self._tip_tree:
             return False
@@ -116,13 +139,13 @@ class Session:
             new_ids[old_keys[i]]: key for i, key in self.plan.assignment.items() if old_keys[i] in new_ids
         }
         self.origin = {new_ids[old_keys[i]]: author for i, author in self.origin.items() if old_keys[i] in new_ids}
-        self.head, self.tip, self.files, self._tip_tree = head, tip, files, tree
+        self.head, self.end, self.tip, self.files, self._tip_tree = head, end, tip, files, tree
         changed = {diff.path for diff in files}
         for path in sorted(self.unchanged - changed):
             self.unchanged.discard(path)
             self.add_unchanged(path)
         self.old_commits = self.git.run("log", "--format=%h %s", self.history).splitlines()
-        self.uncommitted = tip != head
+        self.uncommitted = tip != end
         return True
 
     def drop_stale_edits(self) -> list[str]:
@@ -402,6 +425,7 @@ class Session:
             raise RecommitError(
                 f"HEAD moved while the new commits were being made, so they weren't used; they end at {new_tip}"
             )
+        new_tip = self._replay_later(new_tip)
         self.git.run(
             "update-ref", "-m", f"recommit: rebuild {len(self.old_commits)} commits", "HEAD", new_tip, self.head
         )
@@ -412,6 +436,20 @@ class Session:
         # out): keep it known to git, as `git add --intent-to-add` does.
         if added := [diff.path for diff in self.files if self._only_in_tip(diff)]:
             self.git.run("add", "--intent-to-add", "--", *map(literal, added))
+
+    def _replay_later(self, onto: str) -> str:
+        """Replay the commits after the range onto the new commits, and return
+        the last. Each keeps its tree, message and author, so nothing can
+        conflict: writing.blocker makes sure the new commits end with the
+        range's tree."""
+        sign = ["-S"] if self.git.run("config", "--type=bool", "commit.gpgSign", check=False) == "true" else []
+        for sha in self.later():
+            message = self.git.run_bytes("cat-file", "commit", sha).partition(b"\n\n")[2]
+            name, email, date = self.git.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha).split("\0")
+            env = {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": date}
+            tree = self.git.run("rev-parse", f"{sha}^{{tree}}")
+            onto = self.git.run_bytes("commit-tree", tree, "-p", onto, *sign, input=message, env=env).decode().strip()
+        return onto
 
     def _only_in_tip(self, diff: FileDiff) -> bool:
         """Whether the file is at the tip but not in the last new commit (and

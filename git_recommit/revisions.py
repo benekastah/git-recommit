@@ -40,12 +40,15 @@ def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
             raise RecommitError(f"{a} and {b} have no history in common")
         base, tip = merge_base, sha_b
     head = git.commit_sha("HEAD")
+    assert head is not None
     if base == tip and tip != head:
         raise RecommitError(f"{spec} has no commits")
-    if tip != head:
-        raise RecommitError(f"{spec} doesn't end at HEAD; only commits up to HEAD can be rebuilt")
-    if git.run("rev-list", "--merges", f"{base}..{tip}"):
-        raise RecommitError(f"{spec} has merge commits, which can't be rebuilt")
+    # A range can end below HEAD: the commits after it are replayed on the
+    # new ones, as git rebase does.
+    if not git.is_ancestor(tip, head):
+        raise RecommitError(f"{spec} isn't in HEAD's history, so it can't be rebuilt")
+    if git.run("rev-list", "--merges", f"{base}..{head}"):
+        raise RecommitError(f"{spec} has merge commits (or the commits after it do), which can't be rebuilt")
     return base, tip
 
 

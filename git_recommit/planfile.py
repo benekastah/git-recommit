@@ -45,6 +45,8 @@ def save(session: Session) -> None:
         "head": session.head,
         "include_untracked": session.include_untracked,
         "root": session.root,
+        # The range again, ending where it did (which may be below HEAD).
+        "range": f"{session.base}..{session.end}",
         "unchanged": sorted(session.unchanged),
         "commits": [
             {
@@ -86,7 +88,8 @@ def load(git: GitClient) -> Session:
         data: dict[str, Any] = json.load(f)
     if data.get("version") != VERSION:
         raise RecommitError(f"{path(git)} is from another version of git recommit; abort it and start again")
-    session = Session.load(git, None if data.get("root") else data["base"], data.get("include_untracked", False))
+    spec = None if data.get("root") else data.get("range", data["base"])
+    session = Session.load(git, spec, data.get("include_untracked", False))
     for unchanged in data.get("unchanged", []):
         session.add_unchanged(unchanged)
     plan = session.plan

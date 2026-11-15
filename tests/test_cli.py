@@ -214,3 +214,13 @@ def test_editing_a_file_the_range_doesnt_change(repo: Repo) -> None:
     assert "= README" in repo.recommit("show").stdout
     repo.recommit("write")
     assert repo.show("HEAD~", "README") == "stubbed\n" and repo.show("HEAD", "README") == "readme\n"
+
+
+def test_rebuilding_commits_below_head(repo: Repo) -> None:
+    repo.commit("one", a="a\n")
+    repo.commit("two", b="b\n")
+    repo.commit("three", c="c\n")
+    repo.recommit("start", "HEAD~3..HEAD~1")
+    repo.recommit("commit", "move", "2", "1")
+    repo.recommit("write")
+    assert repo.git("log", "--format=%s", "-3").splitlines() == ["three", "one", "two"]

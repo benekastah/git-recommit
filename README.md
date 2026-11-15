@@ -23,8 +23,11 @@ git recommit --edit HEAD~3                # change one commit, then replay the l
 
 The range is read as git reads ranges: `a..b` is the commits in `b` but not
 `a` (so `main..HEAD` is those since your branch left `main`), `a...b` those
-on either side but not both, and `a` alone means `a..HEAD`. It must end at
-`HEAD`, and can't have merge commits in it. Your
+on either side but not both, and `a` alone means `a..HEAD`. It can end below
+`HEAD` (e.g. `HEAD~6..HEAD~2`): then the commits after it are replayed on the
+new ones, as `git rebase` does, which needs the last new commit to end as the
+range does (every change assigned). It can't have merge commits in it, or
+after it. Your
 uncommitted changes to tracked files (staged or not) are included, after the
 last commit, so you can assign them to new commits too. Untracked files are
 too with `-u` (`--include-untracked`), as with `git stash -u`, but for ignored

@@ -26,6 +26,11 @@ def blocker(session: Session) -> str | None:
     if conflicts := session.conflicts():
         where = ", ".join(f"{c.path} in commit {session.plan.index(c.commit.key) + 1}" for c in conflicts)
         return f"resolve the conflicts first (by editing the file in that commit): {where}"
+    if session.end != session.head and (left := session.left_uncommitted()):
+        return (
+            "the later commits are replayed on the last new commit, so it must end as the range does: assign every "
+            f"change, and don't let edits last to the end (in {', '.join(left)})"
+        )
     return None
 
 

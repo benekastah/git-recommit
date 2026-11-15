@@ -45,8 +45,8 @@ def test_resolve_range(repo: Repo) -> None:
         resolve_range(git, "nope")
     # No commits: only the uncommitted changes (see test_only_uncommitted_changes).
     assert resolve_range(git, "HEAD") == (head, head)
-    with pytest.raises(RecommitError, match="doesn't end at HEAD"):
-        resolve_range(git, "HEAD~3..HEAD~1")
+    # A range can end below HEAD: the commits after it are replayed.
+    assert resolve_range(git, "HEAD~3..HEAD~1") == (init, repo.git("rev-parse", "HEAD~"))
 
 
 def test_resolve_range_of_another_branch(repo: Repo) -> None:
@@ -547,3 +547,35 @@ def test_editing_a_file_the_range_doesnt_change(repo: Repo) -> None:
     assert repo.show(first, "scratch.txt") == "temporary\n" and repo.show(second, "scratch.txt") is None
     assert repo.show(third, "README") == "readme\n"
     assert session.left_uncommitted() == []
+
+
+def test_rebuilding_commits_below_head_replays_the_later_ones(repo: Repo) -> None:
+    feature_repo(repo)
+    repo.git("commit", "--quiet", "--amend", "--no-edit", "--author=Someone Else <else@example.com>")
+    later = repo.git("rev-parse", "HEAD")
+    repo.write("a.py", "uncommitted\n")
+    session = repo.session("HEAD~3..HEAD~1")
+    assert [line.split(" ", 1)[1] for line in session.old_commits] == ["more wip", "wip"]
+    assert session.describe_range().endswith("then replaying 1 later commit")
+    session.restore_old_commits()
+    plan = session.plan
+    plan.commits[0].message = "wip, reworded"
+    session.finish(session.build())
+    assert repo.git("log", "--format=%s|%an", "-3").splitlines() == [
+        "done|Someone Else",
+        "more wip|Test",
+        "wip, reworded|Test",
+    ]
+    # The later commit is the same but for its parent; the working tree too.
+    assert repo.git("rev-parse", "HEAD^{tree}") == repo.git("rev-parse", f"{later}^{{tree}}")
+    assert repo.git("status", "--porcelain") == "M a.py"
+
+
+def test_below_head_every_change_must_be_assigned(repo: Repo) -> None:
+    from git_recommit import writing
+
+    feature_repo(repo)
+    session = repo.session("HEAD~3..HEAD~1")
+    session.restore_old_commits()
+    session.plan.assign(files_ids(session, "notes.txt"), None)
+    assert "later commits are replayed on" in (writing.blocker(session) or "")

@@ -109,7 +109,7 @@ def test_loading_a_plan_drops_edits_of_files_no_longer_changed(repo: Repo) -> No
 def test_works_whatever_the_locales_encoding(repo: Repo) -> None:
     # As on Windows, where text is cp1252 unless Python's UTF-8 mode is on.
     not_utf8 = {"PYTHONUTF8": "0", "LC_ALL": "C", "LANG": "C"}
-    repo.commit("Café crème", a="a\n")
+    repo.commit("Café crème", **{"a": "a\n", "café.txt": "c\n"})
     repo.git("commit", "--quiet", "--amend", "--no-edit", "--author=Zoë Ünïcode <z@example.com>")
     repo.recommit("start", "HEAD~", env=not_utf8)
     repo.recommit("show", env=not_utf8)
@@ -118,6 +118,7 @@ def test_works_whatever_the_locales_encoding(repo: Repo) -> None:
     repo.recommit("commit", "add", "Ça va", env=not_utf8)
     repo.recommit("write", env=not_utf8)
     assert repo.git("log", "--format=%an|%s", "-2").splitlines() == ["Test|Ça va", "Zoë Ünïcode|Café crème"]
+    assert repo.show("HEAD", "café.txt") == "c\n"
 
 
 def pathspec_repo(repo: Repo) -> None:

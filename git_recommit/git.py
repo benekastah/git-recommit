@@ -9,12 +9,35 @@ from typing import TypeAlias
 
 from git_recommit.errors import RecommitError
 
-# An environment for git: on Windows, as str, as the OS keeps it; elsewhere,
-# as bytes too (see GitClient._env).
+# A command and an environment for git: on Windows, as str, as the OS keeps
+# them; elsewhere, as bytes (see GitClient._command and _env).
 if sys.platform == "win32":
+    Command: TypeAlias = list[str]
     Env: TypeAlias = Mapping[str, str]
 else:
+    Command: TypeAlias = list[bytes]
     Env: TypeAlias = Mapping[str, str] | Mapping[bytes, bytes]
+
+# What git stores as text (UTF-8), rather than as a path in the filesystem's
+# encoding, of what git recommit puts in git's environment.
+IDENTITY = {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE"}
+
+
+def encode(text: str) -> bytes:
+    """What git gave as text (e.g. a path or a message, decoded as UTF-8 with
+    surrogateescape, as GitClient.run does), as git gave it."""
+    return text.encode("utf-8", errors="surrogateescape")
+
+
+def fs_path(path: str) -> str | bytes:
+    """A path in the filesystem (e.g. a temporary file, not a path git gave),
+    as an argument for GitClient: in the filesystem's encoding."""
+    return path if sys.platform == "win32" else os.fsencode(path)
+
+
+def _describe(args: tuple[str | bytes, ...]) -> str:
+    return " ".join(map(os.fsdecode, args))
+
 
 # A full object id: SHA-1 or SHA-256.
 OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
@@ -41,21 +64,29 @@ class GitClient:
             self._cat_file.wait()
             self._cat_file = None
 
-    def _command(self, *args: str) -> list[str]:
-        return ["git", "-C", self.directory, *args]
+    def _command(self, *args: str | bytes) -> Command:
+        """git's command line. Bytes are paths in the filesystem, from fs_path
+        (on Windows, they're str)."""
+        if sys.platform == "win32":
+            return ["git", "-C", self.directory, *map(os.fsdecode, args)]
+        # The arguments (e.g. paths git gave) as git gave them, whatever the
+        # locale's encoding (which, e.g. with LC_ALL=C, can't hold a name that
+        # isn't ASCII); the directory, a path in the filesystem's encoding.
+        return [b"git", b"-C", os.fsencode(self.directory), *(a if isinstance(a, bytes) else encode(a) for a in args)]
 
     def _env(self, env: Mapping[str, str] | None = None) -> Env:
         # Not GIT_LITERAL_PATHSPECS, which the user's hooks would inherit: a
         # command given paths git reported marks them literal (see literal).
         if sys.platform == "win32" or not env:
             return {**os.environ, **(env or {})}
-        # As UTF-8, which git takes them as, whatever the locale's encoding
-        # (which, e.g. with LC_ALL=C, can't hold an author's name).
-        added = {key.encode(): value.encode("utf-8", errors="surrogateescape") for key, value in env.items()}
+        # An author as git gave it (or the user typed it), whatever the
+        # locale's encoding; other values are paths (e.g. GIT_INDEX_FILE), in
+        # the filesystem's encoding.
+        added = {key.encode(): encode(value) if key in IDENTITY else os.fsencode(value) for key, value in env.items()}
         return {**os.environb, **added}
 
     def run(
-        self, *args: str, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None
+        self, *args: str | bytes, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None
     ) -> str:
         """Run git and return stripped stdout."""
         # UTF-8, as git writes (not the locale's encoding, e.g. cp1252 on
@@ -70,21 +101,21 @@ class GitClient:
             check=False,
         )
         if check and result.returncode != 0:
-            raise RecommitError(f"git {' '.join(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
+            raise RecommitError(f"git {_describe(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
         return result.stdout.decode("utf-8", errors="surrogateescape").strip()
 
-    def run_bytes(self, *args: str, input: bytes | None = None, env: Mapping[str, str] | None = None) -> bytes:
+    def run_bytes(self, *args: str | bytes, input: bytes | None = None, env: Mapping[str, str] | None = None) -> bytes:
         """Run git and return stdout as it is, for file contents and patches."""
         result = subprocess.run(self._command(*args), capture_output=True, input=input, env=self._env(env), check=False)
         if result.returncode != 0:
-            raise RecommitError(f"git {' '.join(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
+            raise RecommitError(f"git {_describe(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
         return result.stdout
 
-    def ok(self, *args: str) -> bool:
+    def ok(self, *args: str | bytes) -> bool:
         """Run git and report whether it succeeded."""
         return subprocess.run(self._command(*args), capture_output=True, env=self._env(), check=False).returncode == 0
 
-    def passthrough(self, *args: str, env: Mapping[str, str] | None = None) -> bool:
+    def passthrough(self, *args: str | bytes, env: Mapping[str, str] | None = None) -> bool:
         """Run git with its output going straight to the terminal."""
         return subprocess.run(self._command(*args), env=self._env(env), check=False).returncode == 0
 
@@ -145,8 +176,10 @@ class GitClient:
                 with open(paths[-1], "wb") as f:
                     f.write(content)
             # --no-filters: the contents are what to commit, as they are.
-            out = self.run("hash-object", "-w", "--no-filters", "--stdin-paths", input="\n".join(paths) + "\n")
-        return out.split()
+            # (Paths in the filesystem, so in its encoding.)
+            stdin = b"".join(os.fsencode(path) + b"\n" for path in paths)
+            out = self.run_bytes("hash-object", "-w", "--no-filters", "--stdin-paths", input=stdin)
+        return out.decode().split()
 
     def merge_file(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         """Merge the changes from basis to ours and from basis to theirs, as
@@ -160,7 +193,10 @@ class GitClient:
                 with open(path, "wb") as f:
                     f.write(content)
             result = subprocess.run(
-                self._command("merge-file", "-p", *labels, *paths), capture_output=True, env=self._env(), check=False
+                self._command("merge-file", "-p", *labels, *map(fs_path, paths)),
+                capture_output=True,
+                env=self._env(),
+                check=False,
             )
         # The exit status is the number of conflicts, or negative (shown as
         # 128 or more) on an error.

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from git_recommit import oldcommits
 from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, split_lines
 from git_recommit.errors import RecommitError
-from git_recommit.git import GitClient
+from git_recommit.git import GitClient, encode
 from git_recommit.plan import Author, Edit, NewCommit, Plan
 from git_recommit.revisions import (
     check_nothing_in_progress,
@@ -327,7 +327,7 @@ class Session:
             diff.binary = mode != SYMLINK_MODE and b"\0" in content[:8000]
             if not diff.whole:
                 diff.old_lines = split_lines(content)
-        self.files = sorted([*self.files, diff], key=lambda d: os.fsencode(d.path))
+        self.files = sorted([*self.files, diff], key=lambda d: encode(d.path))
         self.unchanged.add(path)
         return diff
 
@@ -392,7 +392,7 @@ class Session:
         blobs = dict(zip(contents, self.git.hash_blobs(contents), strict=True))
 
         def entry(path: str, version: Version | None) -> bytes:
-            # Paths were decoded with surrogateescape, which os.fsencode undoes,
+            # Paths were decoded with surrogateescape, which encode undoes,
             # so a name that isn't UTF-8 is written back as it was.
             if version is None:
                 mode, blob = "0", zero
@@ -401,7 +401,7 @@ class Session:
                 mode, blob = version.mode, blobs[version.content]
             else:
                 mode, blob = version.mode, version.sha
-            return f"{mode} {blob}\t".encode() + os.fsencode(path) + b"\0"
+            return f"{mode} {blob}\t".encode() + encode(path) + b"\0"
 
         # commit-tree only signs when asked to, unlike git commit.
         sign = ["-S"] if self.git.run("config", "--type=bool", "commit.gpgSign", check=False) == "true" else []

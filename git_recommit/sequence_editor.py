@@ -19,13 +19,15 @@ def mark_edit(todo: str, sha: str) -> str | None:
 
 def main(argv: list[str]) -> int:
     sha, path = argv
-    with open(path, encoding="utf-8") as f:
+    # As it is (newline=""): with no \r\n for each \n on Windows, and the
+    # bytes of commit subjects that aren't UTF-8 kept.
+    with open(path, encoding="utf-8", errors="surrogateescape", newline="") as f:
         todo = f.read()
     marked = mark_edit(todo, sha)
     if marked is None:
         print(f"git-recommit: {sha} isn't in the rebase's todo list", file=sys.stderr)
         return 1
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
         f.write(marked)
     return 0
 

@@ -364,7 +364,7 @@ def test_building_a_change_of_kind(repo: Repo) -> None:
     assert repo.git("ls-tree", sha, "link").startswith("120000 blob")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows only passes git names that are Unicode")
+@pytest.mark.skipif(os.name == "nt", reason="Windows can't pass git a name that isn't UTF-8 as an argument")
 def test_building_a_file_whose_name_isnt_utf8(repo: Repo) -> None:
     # Made with plumbing, since some filesystems (e.g. macOS's) refuse such
     # names; skip-worktree keeps git from seeing it as deleted from the
@@ -406,7 +406,8 @@ def test_reloading_drops_edits_of_files_no_longer_changed(repo: Repo) -> None:
 
 def script(path: pathlib.Path, body: str) -> str:
     """An executable shell script at path, returning its path."""
-    path.write_text("#!/bin/sh\n" + body)
+    # newline: with \n line endings (which sh needs), even on Windows.
+    path.write_text("#!/bin/sh\n" + body, newline="\n")
     path.chmod(0o755)
     return str(path)
 
@@ -430,7 +431,6 @@ def test_signs_commits_when_git_is_set_to(repo: Repo, tmp_path: pathlib.Path) ->
         assert "gpgsig -----BEGIN PGP SIGNATURE-----" in repo.git("cat-file", "commit", sha)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
 def test_runs_the_commit_msg_hook_on_new_and_reworded_messages(repo: Repo) -> None:
     feature_repo(repo)
     hooks = repo.path / ".git" / "hooks"
@@ -441,11 +441,14 @@ def test_runs_the_commit_msg_hook_on_new_and_reworded_messages(repo: Repo) -> No
     plan = session.plan
     plan.commits[1].message = "more wip, reworded"
     plan.add("mine")
-    messages = [repo.git("log", "-1", "--format=%B", sha) for sha in session.build()]
+    shas = session.build()
+    messages = [repo.git("log", "-1", "--format=%B", sha) for sha in shas]
     assert messages == ["wip", "more wip, reworded\n\nChange-Id: I123", "done", "mine\n\nChange-Id: I123"]
+    # As the hook left it, with no \r\n (e.g. on Windows).
+    raw = subprocess.run(["git", "cat-file", "commit", shas[3]], cwd=repo.path, capture_output=True, check=True).stdout
+    assert raw.endswith(b"\n\nmine\n\nChange-Id: I123\n")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
 def test_a_commit_msg_hook_can_refuse_a_message(repo: Repo) -> None:
     feature_repo(repo)
     hooks = repo.path / ".git" / "hooks"

@@ -257,6 +257,18 @@ def test_assigning_to_any_commit_by_number(repo: Repo) -> None:
     assert set(session.plan.assignment.values()) == {session.plan.commits[11].key}
 
 
+def test_the_sidebar_says_untracked_files_are_left_out(repo: Repo) -> None:
+    repo.commit("wip", a="a\n")
+    repo.write("new.txt", "new\n")
+    session = repo.session("HEAD~")
+
+    async def script(pilot: Pilot[Any]) -> None:
+        assert "1 untracked file left out" in str(pilot.app.screen.query_one("Sidebar").render())
+        await pilot.press("q", "y")
+
+    run(session, FakeTerminal(repo), script)
+
+
 def test_quit_changes_nothing(repo: Repo) -> None:
     session = two_files(repo)
 

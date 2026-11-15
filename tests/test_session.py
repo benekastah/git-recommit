@@ -497,3 +497,32 @@ def test_unassigned_new_files_that_look_like_patterns(repo: Repo) -> None:
     plan.assign(files_ids(session, "b1.txt"), plan.add("b1").key)
     session.finish(session.build())
     assert sorted(repo.git("status", "--porcelain").splitlines()) == ["A b[1].txt"]
+
+
+def test_including_untracked_files(repo: Repo) -> None:
+    feature_repo(repo)
+    repo.write(".gitignore", "*.log\n")
+    repo.git("add", ".gitignore")
+    repo.git("commit", "--quiet", "-m", "ignore logs")
+    repo.write("new.txt", "new\n")
+    repo.write("debug.log", "ignored\n")
+    plain = repo.session("HEAD~4")
+    assert "new.txt" not in [d.path for d in plain.files]
+    assert plain.untracked_left_out() == ["new.txt"]
+
+    session = Session.load(repo.client, "HEAD~4", include_untracked=True)
+    assert "new.txt" in [d.path for d in session.files] and "debug.log" not in [d.path for d in session.files]
+    assert session.untracked_left_out() == []
+    plan = session.plan
+    plan.assign(files_ids(session, "new.txt"), plan.add("Add new").key)
+    session.finish(session.build())
+    assert repo.show("HEAD", "new.txt") == "new\n" and repo.show("HEAD", "debug.log") is None
+
+
+def test_unassigned_untracked_files_stay_untracked(repo: Repo) -> None:
+    feature_repo(repo)
+    repo.write("new.txt", "new\n")
+    session = Session.load(repo.client, "HEAD~3", include_untracked=True)
+    session.restore_old_commits()
+    session.finish(session.build())
+    assert repo.git("status", "--porcelain") == "?? new.txt"

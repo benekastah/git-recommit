@@ -44,6 +44,12 @@ def parser() -> argparse.ArgumentParser:
         "--validate", metavar="COMMAND", help="a shell command to run with each new commit checked out, e.g. 'pytest'"
     )
     p.add_argument(
+        "-u",
+        "--include-untracked",
+        action="store_true",
+        help="also take untracked files (but not ignored ones), as git stash -u does",
+    )
+    p.add_argument(
         "--edit",
         metavar="COMMIT",
         help="instead, stop at COMMIT to change it, then replay the later commits on it (with git rebase)",
@@ -63,6 +69,12 @@ def subcommand_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="command", required=True)
     start = sub.add_parser("start", help="start a recommit of RANGE, from its commits as they are")
+    start.add_argument(
+        "-u",
+        "--include-untracked",
+        action="store_true",
+        help="also take untracked files (but not ignored ones), as git stash -u does",
+    )
     start.add_argument("range", metavar="RANGE")
     shown = sub.add_parser("show", help="the plan: the new commits, and the changes each takes")
     shown.add_argument("--json", action="store_true", help="as JSON")
@@ -125,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     git = GitClient(args.directory)
     if args.edit is not None:
         return _report(lambda: 0 if edit_commit(git, args.edit) else 1)
-    return _report(lambda: recommit(git, args.range, args.validate))
+    return _report(lambda: recommit(git, args.range, args.validate, args.include_untracked))
 
 
 def _report(run: Callable[[], int]) -> int:
@@ -140,7 +152,7 @@ def run_subcommand(git: GitClient, args: argparse.Namespace) -> int:
     if args.command == "start":
         if planfile.exists(git):
             raise RecommitError("a recommit is already in progress; carry on with it, or `git recommit abort` it")
-        session = start(git, args.range)
+        session = start(git, args.range, args.include_untracked)
         planfile.save(session)
         print("\n".join(show.summary(session)))
         return 0
@@ -232,9 +244,9 @@ def command(args: argparse.Namespace, session: Session) -> Command:
             return commands.Restore()
 
 
-def start(git: GitClient, spec: str) -> Session:
+def start(git: GitClient, spec: str, include_untracked: bool = False) -> Session:
     """A recommit of spec, starting from its commits as they are."""
-    session = Session.load(git, spec)
+    session = Session.load(git, spec, include_untracked)
     if not session.files:
         raise RecommitError(f"the commits in {spec} change nothing")
     session.restore_old_commits()
@@ -289,11 +301,11 @@ def tui(session: Session, validate_command: str | None) -> int:
     return 0
 
 
-def recommit(git: GitClient, spec: str, validate_command: str | None) -> int:
+def recommit(git: GitClient, spec: str, validate_command: str | None, include_untracked: bool = False) -> int:
     # Textual is slow to import; only load it when it's needed.
     from git_recommit.tui import RecommitApp, Terminal
 
-    session = start(git, spec)
+    session = start(git, spec, include_untracked)
     shas = RecommitApp(session, Terminal(git, validate_command)).run()
     if shas is None:
         print("git-recommit: nothing changed")

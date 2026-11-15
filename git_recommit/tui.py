@@ -19,7 +19,7 @@ from textual.scroll_view import ScrollView
 from textual.strip import Strip
 from textual.widgets import Input, Static
 
-from git_recommit import editor, validate
+from git_recommit import editor, show, validate
 from git_recommit.board import Board, line_text
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
@@ -435,6 +435,8 @@ class BoardScreen(Screen[None]):
         out.heading(f"Rebuilding {old} commit{'s' if old != 1 else ''} after {self.session.base[:7]}", "dim")
         if self.session.uncommitted:
             out.add("and the uncommitted changes\n", "dim")
+        if left_out := self.session.untracked_left_out():
+            out.add(show.untracked_note(len(left_out), "run") + "\n", "dim")
 
     def _files_section(self, out: SidebarText) -> None:
         out.heading("Files (click one to go to it)")

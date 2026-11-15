@@ -18,11 +18,19 @@ def _numbers(session: Session) -> dict[int, int]:
     return {i: numbers[key] for i, key in session.plan.assignment.items()}
 
 
+def untracked_note(count: int, how: str) -> str:
+    """That count untracked files are left out, and how to include them."""
+    them = "it" if count == 1 else "them"
+    return f"{_plural(count, 'untracked file')} left out ({how} with -u to include {them})"
+
+
 def summary(session: Session) -> list[str]:
     old = len(session.old_commits)
     lines = [f"Rebuilding {_plural(old, 'commit')} after {session.base[:7]}"]
     if session.uncommitted:
         lines[0] += ", and the uncommitted changes"
+    if left_out := session.untracked_left_out():
+        lines.append(untracked_note(len(left_out), "start"))
     lines += ["", "Commits:"]
     conflicts = {(c.commit.key, c.path) for c in session.conflicts()}
     for number, commit in enumerate(session.plan.commits, start=1):

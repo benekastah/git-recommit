@@ -160,3 +160,15 @@ def test_edit_takes_a_pathspec(repo: Repo) -> None:
     assert shown["commits"][0]["edits"] == ["src/api.py"]
     repo.recommit("drop-edit", "1", "src/api*")
     assert json.loads(repo.recommit("show", "--json").stdout)["commits"][0]["edits"] == []
+
+
+def test_start_include_untracked(repo: Repo) -> None:
+    repo.commit("wip", a="a\n")
+    repo.write("new.txt", "new\n")
+    repo.recommit("start", "HEAD~")
+    assert "1 untracked file left out (start with -u to include it)" in repo.recommit("show").stdout
+    repo.recommit("abort")
+    repo.recommit("start", "-u", "HEAD~")
+    # Kept with the plan, for the commands after.
+    shown = json.loads(repo.recommit("show", "--json").stdout)
+    assert [f["path"] for f in shown["files"]] == ["a", "new.txt"]

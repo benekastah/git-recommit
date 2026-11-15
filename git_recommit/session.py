@@ -80,23 +80,34 @@ def check_nothing_in_progress(git: GitClient) -> None:
         raise RecommitError("there are unresolved conflicts; resolve them first")
 
 
-def worktree_commit(git: GitClient, head: str) -> str | None:
+def untracked_files(git: GitClient) -> list[str]:
+    """The working tree's untracked files that aren't ignored, from the top."""
+    out = git.run_bytes("ls-files", "--others", "--exclude-standard", "--full-name", "-z", ":/")
+    return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
+
+
+def worktree_commit(git: GitClient, head: str, include_untracked: bool = False) -> str | None:
     """A commit, on head, of the working tree's tracked files (and whatever is
     staged), as `git stash` makes; or None if they have no uncommitted changes.
+    With include_untracked, as `git stash -u`: its untracked files too, but
+    for ignored ones.
 
     It isn't on any branch; recommit uses it as the end of the diff, so that
     uncommitted changes can be assigned to new commits like committed ones.
     """
+    untracked = "--untracked-files=all" if include_untracked else "--untracked-files=no"
     # --no-optional-locks: don't refresh (and so write) the user's index.
-    if not git.run("--no-optional-locks", "status", "--porcelain", "--untracked-files=no"):
+    if not git.run("--no-optional-locks", "status", "--porcelain", untracked):
         return None
     with tempfile.TemporaryDirectory() as scratch:
         # A copy of the real index, so `git add` sees what's staged, and only
-        # reads the files that changed since it was written.
+        # reads the files that changed since it was written. copy2 keeps its
+        # time, which git compares files' with: a file changed in the same
+        # second as the index was written has to be read, as git knows.
         index = os.path.join(scratch, "index")
-        shutil.copyfile(git.run("rev-parse", "--path-format=absolute", "--git-path", "index"), index)
+        shutil.copy2(git.run("rev-parse", "--path-format=absolute", "--git-path", "index"), index)
         env = {"GIT_INDEX_FILE": index}
-        git.run("add", "--update", env=env)
+        git.run("add", "--all" if include_untracked else "--update", "--", ":/", env=env)
         tree = git.run("write-tree", env=env)
     return git.run("commit-tree", tree, "-p", head, "-m", "Uncommitted changes")
 
@@ -113,11 +124,21 @@ class Conflict:
 
 
 class Session:
-    def __init__(self, git: GitClient, base: str, head: str, files: list[FileDiff], tip: str | None = None) -> None:
+    def __init__(
+        self,
+        git: GitClient,
+        base: str,
+        head: str,
+        files: list[FileDiff],
+        tip: str | None = None,
+        include_untracked: bool = False,
+    ) -> None:
         """Rebuild the commits after base up to head, from files, the diff from
         base to tip: head, or with uncommitted changes, worktree_commit's
-        commit on head."""
+        commit on head (of untracked files too, with include_untracked)."""
         self.git = git
+        self.include_untracked = include_untracked
+        self._untracked = untracked_files(git)
         self.base = base
         self.head = head
         self.tip = tip or head
@@ -130,13 +151,13 @@ class Session:
         self._conflicts: tuple[tuple[object, ...], list[Conflict]] | None = None
 
     @classmethod
-    def load(cls, git: GitClient, spec: str) -> "Session":
+    def load(cls, git: GitClient, spec: str, include_untracked: bool = False) -> "Session":
         check_nothing_in_progress(git)
         base, head = resolve_range(git, spec)
-        tip = worktree_commit(git, head)
+        tip = worktree_commit(git, head, include_untracked)
         if base == head and tip is None:
             raise RecommitError(f"{spec} has no commits in it, and there are no uncommitted changes")
-        return cls(git, base, head, diffs.load(git, base, tip or head), tip)
+        return cls(git, base, head, diffs.load(git, base, tip or head), tip, include_untracked)
 
     def reload(self) -> bool:
         """Load the diff again, to pick up changes the user made to the
@@ -147,7 +168,8 @@ class Session:
             base, head = resolve_range(self.git, self.base)
         except RecommitError as e:
             raise RecommitError(f"can't reload: {e}") from e
-        tip = worktree_commit(self.git, head) or head
+        self._untracked = untracked_files(self.git)
+        tip = worktree_commit(self.git, head, self.include_untracked) or head
         tree = self.git.run("rev-parse", f"{tip}^{{tree}}")
         if head == self.head and tree == self._tip_tree:
             return False
@@ -504,9 +526,16 @@ class Session:
             self.git.run("add", "--intent-to-add", "--", *map(literal, added))
 
     def _only_in_tip(self, diff: FileDiff) -> bool:
-        """Whether the file is at the tip but not in the last new commit."""
+        """Whether the file is at the tip but not in the last new commit (and
+        wasn't untracked to start with, which it then goes back to being)."""
+        if diff.path in self._untracked:
+            return False
         final = self.states(diff)[-1].version if self.plan.commits else pure_version(diff, set())
         return final is None and pure_version(diff, set(diff.ids)) is not None
+
+    def untracked_left_out(self) -> list[str]:
+        """The untracked files that aren't ignored, but aren't included."""
+        return [] if self.include_untracked else self._untracked
 
 
 def literal(path: str) -> str:

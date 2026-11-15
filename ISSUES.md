@@ -31,14 +31,6 @@ in the diff panel and the sidebar's files even though it has no changes, so
 its edits can be seen and dropped. Starting from the old commits would add
 the files they change, too.
 
-## Untracked files aren't included
-
-The diff runs to the working tree's tracked files, as `git stash` takes them.
-A file created while git recommit is suspended (`ctrl+z`), or before it
-started, doesn't show up until it's `git add`ed, which is easy to miss. An
-option to include untracked (but not ignored) files, or a note in the sidebar
-that there are some, would help.
-
 ## Commits the user creates take their author
 
 A commit that starts from an old one keeps its author and date, but one made

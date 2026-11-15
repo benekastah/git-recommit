@@ -82,7 +82,8 @@ def test_unassigned_uncommitted_changes_stay_uncommitted(repo: Repo) -> None:
 
     assert repo.git("log", "--format=%s", "-1") == "Add b"
     assert (repo.path / "a.py").read_text() == "changed\n"
-    assert repo.git("status", "--porcelain") == "?? a.py"
+    # Added with --intent-to-add (see test_unassigned_changes_are_left_uncommitted).
+    assert repo.git("status", "--porcelain") == "A a.py"
 
 
 def test_only_uncommitted_changes(repo: Repo) -> None:
@@ -182,8 +183,11 @@ def test_unassigned_changes_are_left_uncommitted(repo: Repo) -> None:
 
     assert repo.git("log", "--format=%s", "-1") == "Add a"
     assert repo.show("HEAD", "b.py") is None
-    # b.py is in the working tree, untracked; the index matches HEAD.
-    assert repo.git("status", "--porcelain") == "?? b.py"
+    # b.py is still a file git knows about (added with --intent-to-add), not
+    # an untracked one, so it's an uncommitted change, and the next recommit
+    # sees it.
+    assert repo.git("status", "--porcelain") == "A b.py"
+    assert [d.path for d in repo.session("HEAD").files] == ["b.py"]
 
 
 def test_mode_binary_and_deletions(repo: Repo) -> None:

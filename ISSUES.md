@@ -3,15 +3,6 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## An unassigned new file ends up untracked
-
-Unassigned changes are meant to be left uncommitted, but writing finishes with
-a mixed `git reset`, which unstages an added file the new commits don't have,
-so it becomes untracked. Untracked files aren't included, so it then vanishes
-from the next `git recommit` (and from `git stash`). Keep it staged (e.g.
-`git add --intent-to-add`, or reset only paths the new commits have), or at
-least say so in the summary.
-
 ## Slow on big ranges with overlapping commits
 
 Confirmed, with 60 files of 1,500 lines and 15 overlapping commits:

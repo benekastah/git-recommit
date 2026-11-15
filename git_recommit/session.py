@@ -393,6 +393,16 @@ class Session:
         )
         # Make the index match the new HEAD; the working tree keeps its changes.
         self.git.run("reset", "--quiet")
+        # Which would make a file the new commits don't have untracked, and so
+        # no longer an uncommitted change (git recommit leaves untracked files
+        # out): keep it known to git, as `git add --intent-to-add` does.
+        if added := [diff.path for diff in self.files if self._only_in_tip(diff)]:
+            self.git.run("add", "--intent-to-add", "--", *added, env={"GIT_LITERAL_PATHSPECS": "1"})
+
+    def _only_in_tip(self, diff: FileDiff) -> bool:
+        """Whether the file is at the tip but not in the last new commit."""
+        final = self.states(diff)[-1].version if self.plan.commits else pure_version(diff, set())
+        return final is None and pure_version(diff, set(diff.ids)) is not None
 
 
 def blob_id(content: bytes, object_format: str) -> str:

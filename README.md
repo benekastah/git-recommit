@@ -91,7 +91,8 @@ assigned keep their commits; new ones are unassigned.
 **Writing** (`w`) asks first, and warns about anything that isn't assigned to
 a commit. Changes you leave unassigned aren't lost: they're left as
 uncommitted changes in your working tree, which is never touched (though
-nothing is left staged). With
+nothing is left staged, but for new files, which are left `git add
+--intent-to-add`ed, so they're still new files rather than untracked ones). With
 `--validate`, the command runs in a scratch worktree with each new commit
 checked out in turn; if it fails, you choose to go back and **e**dit the
 commits, **a**bort, or **p**roceed anyway.

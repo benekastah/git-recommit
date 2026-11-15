@@ -14,12 +14,15 @@ each new commit before replacing the old ones.
 ```sh
 git recommit HEAD~6                       # rebuild the last 6 commits
 git recommit HEAD~6 --validate 'pytest'   # ...and run pytest on each new commit
-git recommit main..HEAD                   # or a range (either way round, .. or ...)
+git recommit main..HEAD                   # or a range, as git reads it (.. or ...)
 git recommit HEAD                         # split up only your uncommitted changes
 git recommit --edit HEAD~3                # change one commit, then replay the later ones on it
 ```
 
-The range must end at `HEAD`, and can't have merge commits in it. Your
+The range is read as git reads ranges: `a..b` is the commits in `b` but not
+`a` (so `main..HEAD` is those since your branch left `main`), `a...b` those
+on either side but not both, and `a` alone means `a..HEAD`. It must end at
+`HEAD`, and can't have merge commits in it. Your
 uncommitted changes to tracked files (staged or not) are included, after the
 last commit, so you can assign them to new commits too; untracked files
 aren't.

@@ -32,15 +32,36 @@ def test_resolve_range(repo: Repo) -> None:
     assert resolve_range(git, init) == (init, head)
     assert resolve_range(git, "HEAD~3") == (init, head)
     assert resolve_range(git, "HEAD~3..HEAD") == (init, head)
-    # Either way round, with two dots or three.
+    assert resolve_range(git, "HEAD~3..") == (init, head)
+    # As in git: a...b is the commits on either side but not both, so either
+    # way round...
     assert resolve_range(git, "HEAD...HEAD~3") == (init, head)
-    assert resolve_range(git, "HEAD..HEAD~2") == (first, head)
+    assert resolve_range(git, "HEAD~2...HEAD") == (first, head)
+    # ...but a..b is those in b and not a, so none, the wrong way round.
+    with pytest.raises(RecommitError, match="HEAD..HEAD~2 has no commits"):
+        resolve_range(git, "HEAD..HEAD~2")
     with pytest.raises(RecommitError, match="isn't a commit"):
         resolve_range(git, "nope")
     # No commits: only the uncommitted changes (see test_only_uncommitted_changes).
     assert resolve_range(git, "HEAD") == (head, head)
     with pytest.raises(RecommitError, match="doesn't end at HEAD"):
         resolve_range(git, "HEAD~3..HEAD~1")
+
+
+def test_resolve_range_of_another_branch(repo: Repo) -> None:
+    """a..b, where b is HEAD and a is on another branch, is the commits since
+    they forked, as in git (e.g. main..HEAD, after main moved on)."""
+    fork = repo.git("rev-parse", "HEAD")
+    repo.git("branch", "other")
+    repo.commit("mine", m="m\n")
+    repo.git("switch", "--quiet", "other")
+    repo.commit("theirs", t="t\n")
+    repo.git("switch", "--quiet", "-")
+    head = repo.git("rev-parse", "HEAD")
+    assert resolve_range(repo.client, "other..HEAD") == (fork, head)
+    assert resolve_range(repo.client, "other..") == (fork, head)
+    with pytest.raises(RecommitError, match="on two branches"):
+        resolve_range(repo.client, "other...HEAD")
 
 
 def test_resolve_range_refuses_merges(repo: Repo) -> None:

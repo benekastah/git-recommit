@@ -62,12 +62,6 @@ Some names are hard to follow: `head`, `tip` and `_tip_tree`; `pre`, `eff`,
 place and git's index in `Session.build`; and the module `diffs` beside
 variables named `diff`.
 
-## `a...b` means the same as `a..b`
-
-In git, `a...b` is the symmetric difference; git recommit takes either as "the
-commits between a and b, whichever way round". It's documented, but
-surprising.
-
 ## The range must end at HEAD
 
 Only the commits up to HEAD can be rebuilt. Rebuilding commits further down,

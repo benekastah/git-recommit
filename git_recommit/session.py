@@ -18,32 +18,39 @@ from git_recommit.snapshot import FileState, Version, file_states, pure_version
 
 
 def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
-    """The (base, tip) commits of a range: `<base>` (to HEAD), `<a>..<b>` or
-    `<a>...<b>`, whichever way round a and b are given.
+    """The (base, tip) commits of a range, read as git reads ranges:
+    `<a>..<b>` is the commits in b but not a (so after their merge base);
+    `<a>...<b>` those in either but not both, which must all be on one side;
+    and `<a>` alone means `<a>..HEAD`. An end left out is HEAD.
 
     The commits to rebuild are those after base, up to and including tip,
-    which is HEAD. base can be HEAD too, to make commits of only the
+    which must be HEAD. base can be HEAD too, to make commits of only the
     uncommitted changes.
     """
-    for separator in ("...", ".."):
-        if separator in spec:
-            a, _, b = spec.partition(separator)
-            break
-    else:
-        a, b = spec, "HEAD"
+    separator = "..." if "..." in spec else ".." if ".." in spec else None
+    a, _, b = spec.partition(separator) if separator else (spec, "", "HEAD")
     a, b = a or "HEAD", b or "HEAD"
     sha_a, sha_b = git.commit_sha(a), git.commit_sha(b)
     for rev, sha in ((a, sha_a), (b, sha_b)):
         if sha is None:
             raise RecommitError(f"{rev} isn't a commit")
     assert sha_a is not None and sha_b is not None
-    if git.is_ancestor(sha_a, sha_b):  # including when they're the same
-        base, tip = sha_a, sha_b
-    elif git.is_ancestor(sha_b, sha_a):
-        base, tip = sha_b, sha_a
+    if separator == "...":
+        if git.is_ancestor(sha_a, sha_b):  # including when they're the same
+            base, tip = sha_a, sha_b
+        elif git.is_ancestor(sha_b, sha_a):
+            base, tip = sha_b, sha_a
+        else:
+            raise RecommitError(f"{spec} has commits on two branches, which can't be rebuilt as one")
     else:
-        raise RecommitError(f"neither end of {spec} is an ancestor of the other")
-    if tip != git.commit_sha("HEAD"):
+        merge_base = git.run("merge-base", sha_a, sha_b, check=False)
+        if not merge_base:
+            raise RecommitError(f"{a} and {b} have no history in common")
+        base, tip = merge_base, sha_b
+    head = git.commit_sha("HEAD")
+    if base == tip and tip != head:
+        raise RecommitError(f"{spec} has no commits")
+    if tip != head:
         raise RecommitError(f"{spec} doesn't end at HEAD; only commits up to HEAD can be rebuilt")
     if git.run("rev-list", "--merges", f"{base}..{tip}"):
         raise RecommitError(f"{spec} has merge commits, which can't be rebuilt")

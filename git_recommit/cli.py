@@ -33,7 +33,8 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="git recommit",
         description="Rebuild a run of commits into new ones, choosing in a TUI which changes each new commit takes.",
-        epilog="RANGE is <base> (the commits after base, up to HEAD), <a>..<b> or <a>...<b>; e.g. HEAD~6. "
+        epilog="RANGE is read as git reads ranges: <a>..<b>, <a>...<b>, or <a> alone for <a>..HEAD (the "
+        "commits after a, up to HEAD); e.g. HEAD~6. "
         f"To do it from the command line instead, a step at a time, see `git recommit start -h` and the other "
         f"subcommands: {', '.join(SUBCOMMANDS)}.",
     )

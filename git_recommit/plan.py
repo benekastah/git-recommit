@@ -12,12 +12,14 @@ class Edit:
     content before changes (e.g. the commit takes more changes), the edit can be
     merged into the new content, as a rebase would. For a file that changes as
     a whole (a binary file or a symlink), which can't be merged, they're its
-    blob ids before and after instead (see snapshot._merge_blobs).
+    blob ids before and after instead, and blob is true (see
+    snapshot._merge_blobs).
     """
 
     basis: bytes
     # None deletes the file.
     content: bytes | None
+    blob: bool = False
 
 
 @dataclass(frozen=True)

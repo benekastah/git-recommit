@@ -1,10 +1,14 @@
 import os
+import re
 import subprocess
 import tempfile
 import threading
 from collections.abc import Mapping
 
 from git_recommit.errors import RecommitError
+
+# A full object id: SHA-1 or SHA-256.
+OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 class GitClient:
@@ -82,6 +86,10 @@ class GitClient:
     def blob(self, sha: str) -> bytes:
         """A blob's content, read with one `git cat-file --batch` process kept
         for all of them, rather than a process each."""
+        if not OBJECT_ID.fullmatch(sha):
+            # Anything else (e.g. a line ending) would put the process out of
+            # step with what's read back.
+            raise RecommitError(f"{sha!r} isn't an object id")
         with self._cat_file_lock:
             return self._read_blob(sha)
 

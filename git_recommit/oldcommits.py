@@ -29,7 +29,8 @@ def restore(session: "Session") -> None:
     Where a commit's changes overlap a later one's (e.g. it adds a line a
     later commit rewrites), the changes alone can't make the commit as it
     was, so it gets edits that do. Building the plan unchanged makes the
-    same trees, but where a submodule changes, which edits can't.
+    same trees, but where a submodule changes, or a file's mode changes and
+    changes back, which edits can't do (see ISSUES.md).
     """
     shas = session.git.run("rev-list", "--reverse", session.history).split()
     session.plan = plan = Plan()

@@ -110,3 +110,41 @@ What to decide:
   others, with its message, or left out if it makes no changes of its own.
 - **Saying so.** Dropping commits isn't something to do silently; the TUI
   and `start` should say which merges were dropped.
+
+## Editing a hunk
+
+Not planned for now: `e` edits the whole file, which covers everything, if
+clumsily for a long file. Opening only the hunk's part of the file was
+considered and set aside, since finding that part in the file as a commit has
+it (with the edits carried in) is fuzzy, and the editor wouldn't show the
+code around it.
+
+What would be simpler: with the cursor on a hunk (or lines selected), `e`
+first does what `a` does (assigns the hunk to the active commit), then opens
+the whole file as the commit now has it. Quitting the editor without saving
+(it exits non-zero) undoes both. On the file's own row, `e` would stay as it
+is, so pressing it doesn't assign anything by surprise. The command line
+could take it as `git recommit edit N path --with path:@3`, printing the file
+to start from.
+
+And to make a long file easy, the editor could zoom in on the hunk. Which
+editor it is comes from `git var GIT_EDITOR`, a shell command: split it as
+the shell does, and look at the first word's name. Only editors it knows get
+extra arguments; any other opens as now. (Each editor's flags should be
+checked against its documentation before relying on them.)
+
+- **vim, nvim** (and `gvim -f`, `view`): fold away the code before and after
+  the hunk, with `-c 'setlocal foldmethod=manual' -c 'normal! zE'`
+  `-c '1,{a-1}fold' -c '{b+1},$fold' -c '{a}' -c 'normal! zz'`, which run
+  after the file (and its ftplugin) loads.
+- **emacs**: narrow to the hunk (`C-x n w` widens again), with
+  `--eval '(progn (goto-char (point-min)) (forward-line {a-1}) ...)'` after
+  the file. emacsclient: only `+{a}`.
+- **vi** (nvi, busybox), **nano**, **micro**, **kakoune**: `+{a}`, the cursor
+  on the hunk, as they can't fold from the command line.
+- **helix**, **Sublime Text**, **Zed**: `file:{a}`; **VS Code**:
+  `--goto file:{a}`. Cursor only too.
+
+The hunk's lines in the file as the commit has it can be approximate (by a
+line diff from what the changes alone make it), since zooming in is only a
+view: the rest of the file is still there.

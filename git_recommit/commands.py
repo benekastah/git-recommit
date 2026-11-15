@@ -287,8 +287,13 @@ class Edit:
             # that stores Unix ones (cleaned as the file is where the commit
             # has it).
             content = session.git.clean(state.path, content)
-        # Saving what the editor opened (see Session.edit_text) changes nothing.
-        unchanged = state.version is None if content is None else content == session.edit_text(key, diff)
+        # Saving what the editor opened (see Session.edit_text) changes nothing;
+        # but for a file that changes as a whole, which opens with no conflict
+        # markers, it resolves a conflict, keeping the edits carried in.
+        if content is None:
+            unchanged = state.version is None
+        else:
+            unchanged = not (diff.whole and state.conflict) and content == session.edit_text(key, diff)
         if unchanged:
             return Result(f"{path} is unchanged in commit {self.commit}.", self.commit)
         session.set_edit(key, diff, content)

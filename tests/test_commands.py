@@ -266,3 +266,41 @@ def test_a_file_that_becomes_a_symlink_is_edited_as_what_it_is_in_the_commit(rep
     first, second = s.build()
     assert repo.show(first, "link") == "still a file\n"
     assert repo.git("ls-tree", second, "link").startswith("120000") and repo.show(second, "link") == "elsewhere"
+
+
+def test_a_binary_conflict_can_be_resolved_by_keeping_the_edit(repo: Repo) -> None:
+    s = binary_session(repo)
+    AddCommit("Stub data").run(s)
+    AddCommit("Change data").run(s)
+    Assign((Target("f"),), 1).run(s)
+    Assign((Target("data"),), 2).run(s)
+    Edit(1, "data", b"\0stub").run(s)
+    assert s.conflicts() != []
+    # What it opens with (the edit carried in), kept.
+    assert s.edit_text(s.plan.commits[1].key, s.files[0]) == b"\0stub"
+    Edit(2, "data", b"\0stub").run(s)
+    assert s.conflicts() == []
+    _, second = s.build()
+    assert repo.git("cat-file", "blob", f"{second}:data") == "\0stub"
+
+
+def test_deleting_a_binary_file_conflicts_with_a_later_change_to_it(repo: Repo) -> None:
+    s = binary_session(repo)
+    AddCommit("Delete data").run(s)
+    AddCommit("Change data").run(s)
+    Assign((Target("f"),), 1).run(s)
+    Assign((Target("data"),), 2).run(s)
+    Edit(1, "data", None).run(s)
+    assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs symlinks")
+def test_editing_a_symlink_the_range_doesnt_change(repo: Repo) -> None:
+    (repo.path / "link").symlink_to("README")
+    repo.commit("base")
+    repo.commit("change", f="f\n")
+    s = repo.session("HEAD~")
+    AddCommit("Point elsewhere").run(s)
+    Edit(1, "link", b"f\n").run(s)
+    (sha,) = s.build()
+    assert repo.git("ls-tree", sha, "link").startswith("120000") and repo.show(sha, "link") == "f"

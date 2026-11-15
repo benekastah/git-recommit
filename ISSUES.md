@@ -23,7 +23,9 @@ to the last commit to change the file, even if the mode changed only in the
 uncommitted changes, which so get committed. It should be unassigned then, as
 an uncommitted rename is, or a file that changes as a whole.
 
-## Edits are whole files
+## A mode that changes and changes back isn't reproduced
 
-`e` edits a whole file, not a hunk or a line. (And submodules can't be
-edited.)
+Starting from the old commits reproduces each file's content with edits, but
+an edit can't change a file's mode (or kind, e.g. a file to a symlink). So a
+file whose mode changes in one old commit and changes back in a later one
+(which the range's diff doesn't show) keeps its mode in every new commit.

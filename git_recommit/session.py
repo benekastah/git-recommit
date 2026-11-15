@@ -155,13 +155,26 @@ class Session:
     def drop_stale_edits(self) -> list[str]:
         """Drop the edits of files the range no longer changes (e.g. after
         the user undid their changes while git recommit was suspended), which
-        building would ignore, and say which."""
-        changed = {diff.path for diff in self.files}
+        building would ignore, or that are now another kind of file (text, or
+        a file that changes as a whole), whose edits are kept differently
+        (see plan.Edit); and say which."""
+        files = {diff.path: diff for diff in self.files}
         dropped = []
         for number, commit in enumerate(self.plan.commits, start=1):
-            for path in [path for path in commit.edits if path not in changed]:
+            for path, edit in list(commit.edits.items()):
+                diff = files.get(path)
+                if diff is None:
+                    why = "the range no longer changes"
+                elif edit.blob and not diff.whole:
+                    why = "is now a text file"
+                elif not edit.blob and diff.binary:
+                    why = "is now binary"
+                elif not edit.blob and diff.whole:
+                    why = "now changes as a whole"
+                else:
+                    continue
                 del commit.edits[path]
-                dropped.append(f"dropped commit {number}'s edit of {path}, which the range no longer changes")
+                dropped.append(f"dropped commit {number}'s edit of {path}, which {why}")
         return dropped
 
     def match(self, pathspec: str) -> list[str]:
@@ -257,10 +270,11 @@ class Session:
         return states
 
     def edit_text(self, key: int, diff: FileDiff) -> bytes:
-        """The file in the commit, as an edit starts from (with conflict markers
-        if it conflicts). If the commit doesn't have the file, its end state
-        (or if it ends up deleted, its start), to cut down to what the commit
-        should have."""
+        """The file in the commit, as an edit starts from (a text file with
+        conflict markers if it conflicts; a file that changes as a whole, as
+        the edits carried in made it). If the commit doesn't have the file,
+        its end state (or if it ends up deleted, its start), to cut down to
+        what the commit should have."""
         _check_editable(diff)
         index = self.plan.index(key)
         version = self.states(diff, upto=index)[index].version
@@ -283,10 +297,10 @@ class Session:
         commit.edits.pop(diff.path, None)
         if content is None:
             if state.version is not None:
-                commit.edits[diff.path] = Edit(state.basis, None)
+                commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
         # Even an edit that changes nothing resolves a conflict.
         elif content != state.basis or state.conflict or state.version is None:
-            commit.edits[diff.path] = Edit(state.basis, content)
+            commit.edits[diff.path] = Edit(state.basis, content, blob=diff.whole)
 
     def add_unchanged(self, path: str) -> FileDiff:
         """The file at path (from the top), added to the files as one the

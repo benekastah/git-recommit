@@ -1,7 +1,6 @@
 """The TUI, drawn with Textual. What it shows and does to the plan is in
 board.py; this is how it's drawn, and the keys."""
 
-import os
 from collections.abc import Callable
 from typing import ClassVar, Literal
 
@@ -668,21 +667,9 @@ class BoardScreen(Screen[None]):
         self._do()
 
     def _replace(self, diff: FileDiff) -> None:
-        """Replace a binary file in the active commit with another file,
-        which makes no sense to edit in an editor."""
-
-        def answered(path: str | None) -> None:
-            if not path or not path.strip():
-                self._do()
-                return
-            # Relative to where git recommit runs (-C and all), as git's paths are.
-            try:
-                with open(os.path.join(self.session.git.directory, os.path.expanduser(path.strip())), "rb") as f:
-                    content = f.read()
-            except OSError as e:
-                self._do(f"Can't read {path.strip()}: {e.strerror}.")
-                return
-            self.board.edit_active(diff.path, content)
+        def answered(replacement: str | None) -> None:
+            if replacement and replacement.strip():
+                self.board.replace_active(diff.path, replacement)
             self._do()
 
         prompt = f"Replace {diff.path} in the active commit with which file? (Esc to cancel)"

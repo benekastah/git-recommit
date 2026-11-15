@@ -5,6 +5,7 @@ It changes the plan only by running commands (commands.py), as the command
 line does, turning the cursor and selection into the commits and targets they
 name."""
 
+import os
 from dataclasses import dataclass
 from typing import Literal
 
@@ -302,6 +303,18 @@ class Board:
     def edit_active(self, path: str, content: bytes) -> None:
         """Make the file content in the active commit (see commands.Edit)."""
         self.run(commands.Edit(self.active_number(), path, content))
+
+    def replace_active(self, path: str, replacement: str) -> None:
+        """Make the file in the active commit the file at replacement
+        (relative to where git recommit runs, -C and all, as git's paths
+        are): for a binary file, which makes no sense to edit in an editor."""
+        try:
+            with open(os.path.join(self.session.git.directory, os.path.expanduser(replacement)), "rb") as f:
+                content = f.read()
+        except OSError as e:
+            self.message = f"Can't read {replacement}: {e.strerror}."
+            return
+        self.edit_active(path, content)
 
     def drop_edit(self, path: str) -> None:
         self.run(commands.DropEdit(self.active_number(), path))

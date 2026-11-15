@@ -668,3 +668,33 @@ def test_reloading_makes_files_from_the_new_diff(repo: Repo) -> None:
     repo.write("f", "1\nb\n2\n")
     assert session.reload()
     assert session.states(session.files[0])[0].version == Version("100644", content=b"1\nb\n2\n")
+
+
+def test_reloading_drops_edits_of_files_that_are_now_another_kind(repo: Repo) -> None:
+    # data is binary at the end only, which is enough for git to say the
+    # diff is binary.
+    repo.commit("base", f="1\n", data="one\n")
+    repo.commit("change", f="1\n2\n", data=b"\0two")
+    session = repo.session("HEAD~")
+    first = session.plan.add("first")
+    f, data = (next(d for d in session.files if d.path == path) for path in ("f", "data"))
+    session.set_edit(first.key, f, b"edited\n")
+    session.set_edit(first.key, data, b"\0stub")
+    # f becomes binary, and data text.
+    repo.write("f", b"\0now binary")
+    repo.write("data", "now text\n")
+    assert session.reload()
+    assert sorted(session.drop_stale_edits()) == [
+        "dropped commit 1's edit of data, which is now a text file",
+        "dropped commit 1's edit of f, which is now binary",
+    ]
+    assert first.edits == {}
+    assert session.conflicts() == []
+
+
+def test_reading_a_blob_by_something_that_isnt_an_id_is_refused(repo: Repo) -> None:
+    git = repo.client
+    with pytest.raises(RecommitError, match="isn't an object id"):
+        git.blob("x\ny\n")
+    # And blobs can still be read after.
+    assert git.blob(repo.git("rev-parse", "HEAD:README")) == b"readme\n"

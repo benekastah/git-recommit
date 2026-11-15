@@ -48,3 +48,22 @@ def test_there_is_one_plan_at_a_time(repo: Repo) -> None:
     assert planfile.exists(repo.client)
     planfile.remove(repo.client)
     assert not planfile.exists(repo.client)
+
+
+def test_a_replaced_binary_file_survives_garbage_collection(repo: Repo) -> None:
+    repo.commit("base", data=b"\0one", f="f\n")
+    repo.commit("change", data=b"\0two", f="f\ng\n")
+    session = repo.session("HEAD~")
+    AddCommit("Stub").run(session)
+    AddCommit("Real").run(session)
+    Assign((Target("f"),), 1).run(session)
+    Assign((Target("data"),), 2).run(session)
+    Edit(1, "data", b"\0stub").run(session)
+    Edit(2, "data", b"\0real").run(session)
+    planfile.save(session)
+    # Nothing refers to the replacements' blobs, so git can drop them.
+    repo.git("gc", "--quiet", "--prune=now")
+    loaded = planfile.load(repo.client)
+    first, second = loaded.build()
+    assert repo.git("cat-file", "blob", f"{first}:data") == "\0stub"
+    assert repo.git("cat-file", "blob", f"{second}:data") == "\0real"

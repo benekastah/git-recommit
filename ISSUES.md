@@ -12,13 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## `.` skips changes that aren't lines
-
-Confirmed. `.` (next unassigned change) only stops on line rows, so an
-unassigned binary file, mode change, symlink or empty file is never found:
-with a binary file and a `chmod`, it said "Every change is assigned" with two
-unassigned. It should also stop on file rows whose `meta_id` is unassigned.
-
 ## Commits aren't signed, and hooks don't run
 
 Suspected. `commit-tree` doesn't honor `commit.gpgSign` (only `-S`), so users

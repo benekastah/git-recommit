@@ -127,3 +127,22 @@ def test_next_unassigned(repo: Repo) -> None:
     b.next_unassigned()
     line = b.rows[b.cursor].line
     assert line is not None and line.id == 4
+
+
+def test_next_unassigned_finds_changes_that_arent_lines(repo: Repo) -> None:
+    repo.commit("base", data=b"\0old", script="echo\n")
+    repo.write("data", b"\0new")
+    (repo.path / "script").chmod(0o755)
+    repo.commit("change")
+    b = Board(repo.session("HEAD~"))
+    assert kinds(b) == "FF"
+    b.goto(1)
+    b.next_unassigned()
+    assert b.cursor == 0
+    b.next_unassigned()
+    assert b.cursor == 1
+    b.add_commit("one")
+    b.goto(0)
+    b.assign(b.active)
+    b.next_unassigned()
+    assert b.cursor == 1 and b.message != "Every change is assigned."

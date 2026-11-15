@@ -161,10 +161,13 @@ class Board:
                 return
 
     def next_unassigned(self) -> None:
+        """Move to the next unassigned change: a line, or a file's change to
+        itself (e.g. a binary file, or a mode), which is on the file's row."""
         for offset in range(1, len(self.rows) + 1):
             index = (self.cursor + offset) % len(self.rows)
             row = self.rows[index]
-            if row.line and row.line.id is not None and row.line.id not in self.plan.assignment:
+            change = row.line.id if row.line else self.session.files[row.file].meta_id if row.kind == "file" else None
+            if change is not None and change not in self.plan.assignment:
                 self.cursor = index
                 return
         self.message = "Every change is assigned."

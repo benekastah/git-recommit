@@ -198,7 +198,9 @@ git runs `git-recommit` on your `PATH` as `git recommit`.
 
 ## Development
 
-Clone the repository and run `./dev-install.sh`. It installs git-recommit in
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), which
+sets up the dev dependencies, then clone the repository and run
+`./dev-install.sh`. It installs git-recommit in
 editable mode into `~/.local/share/git-recommit/venv`, links `git-recommit`
 into `~/.local/bin`, sets up the clone's `.venv` with the dev dependencies,
 and makes the clone use the hooks in `git_hooks/` (the pre-commit hook formats
@@ -208,3 +210,8 @@ Run every check (shellcheck, Ruff's formatter and linter, mypy in strict mode,
 then the tests) with `./check.sh`; arguments are passed to pytest. `./lint.sh`
 runs every check but the tests, with the tools `./check.sh` (or
 `./dev-venv.sh`) installed in `.venv`.
+
+`./dev-venv.sh` installs the dev dependencies from `uv.lock`, at the versions
+locked there. If you change the dependencies in `pyproject.toml`, it updates
+`uv.lock` too; commit both. CI installs from `uv.lock` and fails if it's out of
+date. Dependabot proposes new versions weekly.

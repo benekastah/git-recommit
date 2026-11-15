@@ -40,6 +40,7 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument("-C", dest="directory", default=".", help="run in this directory, as git -C does")
     p.add_argument("range", nargs="?", metavar="RANGE", help="the commits to rebuild")
+    p.add_argument("--root", action="store_true", help="rebuild every commit up to HEAD, as git rebase --root")
     p.add_argument(
         "--validate", metavar="COMMAND", help="a shell command to run with each new commit checked out, e.g. 'pytest'"
     )
@@ -75,7 +76,8 @@ def subcommand_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also take untracked files (but not ignored ones), as git stash -u does",
     )
-    start.add_argument("range", metavar="RANGE")
+    start.add_argument("--root", action="store_true", help="every commit up to HEAD, as git rebase --root")
+    start.add_argument("range", nargs="?", metavar="RANGE")
     shown = sub.add_parser("show", help="the plan: the new commits, and the changes each takes")
     shown.add_argument("--json", action="store_true", help="as JSON")
     commit = sub.add_parser("commit", help="add, remove, move or reword a new commit")
@@ -135,14 +137,14 @@ def main(argv: list[str] | None = None) -> int:
         return _report(lambda: run_subcommand(GitClient(directory), args))
     p = parser()
     args = p.parse_args(argv)
-    if (args.range is None) == (args.edit is None):
-        p.error("give either a RANGE or --edit COMMIT")
+    if [args.range is not None, args.root, args.edit is not None].count(True) != 1:
+        p.error("give either a RANGE, --root, or --edit COMMIT")
     if args.edit is not None and args.validate is not None:
         p.error("--validate only applies to rebuilding a RANGE")
     git = GitClient(args.directory)
     if args.edit is not None:
         return _report(lambda: 0 if edit_commit(git, args.edit) else 1)
-    return _report(lambda: recommit(git, args.range, args.validate, args.include_untracked))
+    return _report(lambda: recommit(git, None if args.root else args.range, args.validate, args.include_untracked))
 
 
 def _report(run: Callable[[], int]) -> int:
@@ -157,7 +159,9 @@ def run_subcommand(git: GitClient, args: argparse.Namespace) -> int:
     if args.command == "start":
         if planfile.exists(git):
             raise RecommitError("a recommit is already in progress; carry on with it, or `git recommit abort` it")
-        session = start(git, args.range, args.include_untracked)
+        if (args.range is None) == (not args.root):
+            raise RecommitError("give either a RANGE or --root")
+        session = start(git, None if args.root else args.range, args.include_untracked)
         planfile.save(session)
         print("\n".join(show.summary(session)))
         return 0
@@ -256,7 +260,7 @@ def commit_command(args: argparse.Namespace) -> Command:
             return commands.Reword(args.number, args.message)
 
 
-def start(git: GitClient, spec: str, include_untracked: bool = False) -> Session:
+def start(git: GitClient, spec: str | None, include_untracked: bool = False) -> Session:
     """A recommit of spec, starting from its commits as they are."""
     session = Session.load(git, spec, include_untracked)
     if not session.files:
@@ -315,7 +319,7 @@ def tui(session: Session, validate_command: str | None) -> int:
     return 0
 
 
-def recommit(git: GitClient, spec: str, validate_command: str | None, include_untracked: bool = False) -> int:
+def recommit(git: GitClient, spec: str | None, validate_command: str | None, include_untracked: bool = False) -> int:
     # Textual is slow to import; only load it when it's needed.
     from git_recommit.tui import RecommitApp, Terminal
 

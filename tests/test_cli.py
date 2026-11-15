@@ -4,7 +4,7 @@ from tests.helpers import Repo
 
 
 def test_needs_a_range_or_edit(repo: Repo) -> None:
-    assert "give either a RANGE or --edit" in repo.recommit(expect_success=False).stderr
+    assert "give either a RANGE, --root, or --edit" in repo.recommit(expect_success=False).stderr
     assert "give either" in repo.recommit("HEAD~", "--edit", "HEAD", expect_success=False).stderr
 
 
@@ -192,3 +192,14 @@ def test_write_warns_as_the_tui_does(repo: Repo) -> None:
     assert "warning: 1 change isn't assigned to a commit" in stderr
     assert "warning: b will be left with uncommitted changes" in stderr
     assert "warning: commit 2 (empty) will be empty" in stderr
+
+
+def test_rebuilding_from_the_root(repo: Repo) -> None:
+    repo.commit("wip", a="a\n")
+    out = repo.recommit("start", "--root").stdout
+    assert "Rebuilding 2 commits from the root" in out
+    repo.recommit("commit", "remove", "2")
+    repo.recommit("assign", "1", "a")
+    repo.recommit("write")
+    assert repo.git("log", "--format=%s").splitlines() == ["init"]
+    assert repo.show("HEAD", "a") == "a\n"

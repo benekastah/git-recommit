@@ -11,7 +11,14 @@ from git_recommit.diff import FileDiff, change_keys, load_diff
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit, NewCommit, Plan
-from git_recommit.revisions import check_nothing_in_progress, literal, resolve_range, untracked_files, worktree_commit
+from git_recommit.revisions import (
+    check_nothing_in_progress,
+    literal,
+    resolve_range,
+    resolve_root,
+    untracked_files,
+    worktree_commit,
+)
 from git_recommit.snapshot import FileState, Version, file_states, pure_version
 
 
@@ -37,11 +44,14 @@ class Session:
         files: list[FileDiff],
         tip: str | None = None,
         include_untracked: bool = False,
+        root: bool = False,
     ) -> None:
         """Rebuild the commits after base up to head, from files, the diff from
         base to tip: head, or with uncommitted changes, worktree_commit's
         commit on head (of untracked files too, with include_untracked)."""
         self.git = git
+        # Whether rebuilding from the root commit: then base is the empty tree.
+        self.root = root
         self.include_untracked = include_untracked
         self._untracked = untracked_files(git)
         self.base = base
@@ -49,7 +59,7 @@ class Session:
         self.tip = tip or head
         self.files = files
         self.plan = Plan()
-        self.old_commits = git.run("log", "--format=%h %s", f"{base}..{head}").splitlines()
+        self.old_commits = git.run("log", "--format=%h %s", self.history).splitlines()
         self.uncommitted = self.tip != head
         self._tip_tree = git.run("rev-parse", f"{self.tip}^{{tree}}")
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
@@ -59,13 +69,26 @@ class Session:
         self._conflicts: tuple[tuple[object, ...], list[Conflict]] | None = None
 
     @classmethod
-    def load(cls, git: GitClient, spec: str, include_untracked: bool = False) -> "Session":
+    def load(cls, git: GitClient, spec: str | None, include_untracked: bool = False) -> "Session":
+        """The recommit of the commits spec names, or with None, every commit
+        up to HEAD (as `git rebase --root`)."""
         check_nothing_in_progress(git)
-        base, head = resolve_range(git, spec)
+        base, head = resolve_root(git) if spec is None else resolve_range(git, spec)
         tip = worktree_commit(git, head, include_untracked)
         if base == head and tip is None:
             raise RecommitError(f"{spec} has no commits in it, and there are no uncommitted changes")
-        return cls(git, base, head, load_diff(git, base, tip or head), tip, include_untracked)
+        session = cls(git, base, head, load_diff(git, base, tip or head), tip, include_untracked, root=spec is None)
+        return session
+
+    @property
+    def history(self) -> str:
+        """The commits being rebuilt, as a revision range for git log."""
+        return self.head if self.root else f"{self.base}..{self.head}"
+
+    def describe_range(self) -> str:
+        old = len(self.old_commits)
+        commits = f"{old} commit{'s' if old != 1 else ''}"
+        return f"Rebuilding {commits} from the root" if self.root else f"Rebuilding {commits} after {self.base[:7]}"
 
     def reload(self) -> bool:
         """Load the diff again, to pick up changes the user made to the
@@ -73,7 +96,7 @@ class Session:
         changes that are still there. Return whether anything changed."""
         try:
             check_nothing_in_progress(self.git)
-            base, head = resolve_range(self.git, self.base)
+            base, head = resolve_root(self.git) if self.root else resolve_range(self.git, self.base)
         except RecommitError as e:
             raise RecommitError(f"can't reload: {e}") from e
         self._untracked = untracked_files(self.git)
@@ -91,7 +114,7 @@ class Session:
         }
         self.origin = {new_ids[old_keys[i]]: author for i, author in self.origin.items() if old_keys[i] in new_ids}
         self.head, self.tip, self.files, self._tip_tree = head, tip, files, tree
-        self.old_commits = self.git.run("log", "--format=%h %s", f"{base}..{head}").splitlines()
+        self.old_commits = self.git.run("log", "--format=%h %s", self.history).splitlines()
         self.uncommitted = tip != head
         return True
 
@@ -263,7 +286,8 @@ class Session:
         with tempfile.TemporaryDirectory() as scratch:
             env = {"GIT_INDEX_FILE": os.path.join(scratch, "index")}
             self.git.run("read-tree", self.base, env=env)
-            parent = self.base
+            # From the root, the first new commit has no parent, as the root does.
+            parent: str | None = None if self.root else self.base
             previous = {diff.path: pure_version(diff, set()) for diff in self.files}
             for position, commit in enumerate(self.plan.commits):
                 updates = []
@@ -276,8 +300,9 @@ class Session:
                     self.git.run_bytes("update-index", "-z", "--index-info", input=b"".join(updates), env=env)
                 tree = self.git.run("write-tree", env=env)
                 message = self._message(position + 1, commit)
+                parents = [] if parent is None else ["-p", parent]
                 parent = self.git.run(
-                    "commit-tree", tree, "-p", parent, *sign, "-F", "-", input=message, env=_author_env(commit) | env
+                    "commit-tree", tree, *parents, *sign, "-F", "-", input=message, env=_author_env(commit) | env
                 )
                 shas.append(parent)
         return shas
@@ -322,6 +347,8 @@ class Session:
             # Moving HEAD, then finding the index can't be reset, would leave
             # them out of step; so check first.
             raise RecommitError(f"{lock} exists: another git process is running, or one crashed (then remove it)")
+        if not shas and self.root:
+            raise RecommitError("from the root, there must be a commit to write")
         new_tip = shas[-1] if shas else self.base
         if self.head_moved():
             # Moving the branch would drop what moved it; say where the work is.

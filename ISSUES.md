@@ -36,10 +36,10 @@ the files they change, too.
 Only the commits up to HEAD can be rebuilt. Rebuilding commits further down,
 and replaying the ones above on the result, isn't supported.
 
-## No root commits or merges
+## Merges can't be rebuilt
 
-The range can't include the root commit, since there's no commit before it to
-build on, or merge commits.
+The range can't include merge commits: the new commits are one line of
+history, so there's nowhere for a merge's other parent to go.
 
 ## Renames show as a deletion and an addition
 

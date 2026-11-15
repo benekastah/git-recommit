@@ -49,6 +49,17 @@ def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
     return base, tip
 
 
+def resolve_root(git: GitClient) -> tuple[str, str]:
+    """The (base, tip) of every commit up to HEAD, as `git rebase --root`
+    takes them: base is the empty tree, since there's no commit before."""
+    head = git.commit_sha("HEAD")
+    if head is None:
+        raise RecommitError("there are no commits yet")
+    if git.run("rev-list", "--merges", head):
+        raise RecommitError("HEAD's history has merge commits, which can't be rebuilt")
+    return git.run("mktree", input=""), head
+
+
 # What git keeps while another operation is in progress, and what to call it.
 IN_PROGRESS = {
     "MERGE_HEAD": "a merge",

@@ -27,7 +27,7 @@ def restore(session: "Session") -> None:
     was, so it gets edits that do. Building the plan unchanged makes the
     same trees, but for files that end up as they started (see ISSUES.md).
     """
-    shas = session.git.run("rev-list", "--reverse", f"{session.base}..{session.head}").split()
+    shas = session.git.run("rev-list", "--reverse", session.history).split()
     session.plan = plan = Plan()
     keys = {}
     for sha in shas:
@@ -103,7 +103,10 @@ def _made_by(session: "Session", diff: FileDiff, removed_by: dict[str, str]) -> 
 def _blame(session: "Session", path: str, reverse: bool) -> dict[int | None, str]:
     """For each line of the file (at tip, or with reverse, at base), the
     commit that last added it (or with reverse, the last that had it)."""
-    args = ["blame", "--porcelain", *(["--reverse"] if reverse else []), f"{session.base}..{session.tip}"]
+    # From the root, the whole history; reverse blame isn't needed then, as
+    # every file is added.
+    span = session.tip if session.root else f"{session.base}..{session.tip}"
+    args = ["blame", "--porcelain", *(["--reverse"] if reverse else []), span]
     lines: dict[int | None, str] = {}
     for entry in session.git.run_bytes(*args, "--", path).split(b"\n"):
         if match := BLAME_ENTRY.match(entry):

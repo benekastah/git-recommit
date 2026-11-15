@@ -17,6 +17,7 @@ git recommit HEAD~6 --validate 'pytest'   # ...and run pytest on each new commit
 git recommit main..HEAD                   # or a range, as git reads it (.. or ...)
 git recommit HEAD                         # split up only your uncommitted changes
 git recommit -u HEAD~2                    # with untracked files too
+git recommit --root                       # every commit, as git rebase --root
 git recommit --edit HEAD~3                # change one commit, then replay the later ones on it
 ```
 

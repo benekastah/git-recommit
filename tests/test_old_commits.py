@@ -179,3 +179,18 @@ def test_choosing_a_commits_author(repo: Repo) -> None:
     assert repo.git("log", "-1", "--format=%an", session.build()[3]) == "Test"
     with pytest.raises(RecommitError, match="isn't Name <email>"):
         SetAuthor(4, "nobody").run(session)
+
+
+def test_rebuilding_from_the_root(repo: Repo) -> None:
+    old = [repo.git("rev-list", "--max-parents=0", "HEAD"), *history(repo)]
+    old.insert(1, repo.git("rev-parse", "HEAD~3"))  # base, between init and history
+    session = Session.load(repo.client, None)
+    session.restore_old_commits()
+    assert [c.message for c in session.plan.commits] == ["init", "base", "first", "second", "third"]
+    shas = session.build()
+    assert trees(repo, shas) == trees(repo, old)
+    # The first has no parent, as the root commit it replaces.
+    assert repo.git("rev-list", "--parents", "-1", shas[0]) == shas[0]
+    session.finish(shas)
+    assert repo.git("rev-list", "--count", "HEAD") == "5"
+    assert repo.git("status", "--porcelain") == ""

@@ -435,8 +435,7 @@ class BoardScreen(Screen[None]):
     def _rebuilding_section(self, out: SidebarText) -> None:
         """Which commits writing replaces, which the new commits may no longer
         show (e.g. after C)."""
-        old = len(self.session.old_commits)
-        out.heading(f"Rebuilding {old} commit{'s' if old != 1 else ''} after {self.session.base[:7]}", "dim")
+        out.heading(self.session.describe_range(), "dim")
         if self.session.uncommitted:
             out.add("and the uncommitted changes\n", "dim")
         if left_out := self.session.untracked_left_out():

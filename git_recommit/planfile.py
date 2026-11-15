@@ -44,6 +44,7 @@ def save(session: Session) -> None:
         "base": session.base,
         "head": session.head,
         "include_untracked": session.include_untracked,
+        "root": session.root,
         "commits": [
             {
                 "message": commit.message,
@@ -81,7 +82,7 @@ def load(git: GitClient) -> Session:
         data: dict[str, Any] = json.load(f)
     if data.get("version") != VERSION:
         raise RecommitError(f"{path(git)} is from another version of git recommit; abort it and start again")
-    session = Session.load(git, data["base"], data.get("include_untracked", False))
+    session = Session.load(git, None if data.get("root") else data["base"], data.get("include_untracked", False))
     plan = session.plan
     for saved in data["commits"]:
         author = None if saved["author"] is None else Author(**saved["author"])

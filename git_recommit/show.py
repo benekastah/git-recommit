@@ -25,8 +25,7 @@ def untracked_note(count: int, how: str) -> str:
 
 
 def summary(session: Session) -> list[str]:
-    old = len(session.old_commits)
-    lines = [f"Rebuilding {_plural(old, 'commit')} after {session.base[:7]}"]
+    lines = [session.describe_range()]
     if session.uncommitted:
         lines[0] += ", and the uncommitted changes"
     if left_out := session.untracked_left_out():

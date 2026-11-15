@@ -65,6 +65,7 @@ are along the top.
 | `tab`/`shift+tab` | make the next/previous commit active (or click it in the sidebar) |
 | `J`/`K` | move the active commit later/earlier |
 | `r` | reword the active commit's message, in your editor |
+| `A` | set the active commit's author (`Name <email>`; empty for you) |
 | `D` | delete the active commit; its changes become unassigned |
 | `C` | clear every commit, to start from scratch |
 | `O` | go back to the commits being rebuilt, as they were at the start |
@@ -105,6 +106,11 @@ checked out in turn (with your `post-checkout` hook, as any checkout
 runs it, e.g. for Git LFS); if it fails, you choose to go back and **e**dit the
 commits, **a**bort, or **p**roceed anyway.
 
+A commit that starts from an old one keeps its author; one you create is
+yours, as with `git commit`. Writing warns about any commit whose author isn't
+who made some of its changes, and `A` (or `git recommit commit author`) sets a
+commit's author, as `git commit --author` does.
+
 New commits are signed if `commit.gpgSign` says to, and the `commit-msg` hook
 runs on the messages of commits you create or reword (not on old commits'
 messages you kept), as with `git rebase`; no other hooks run.
@@ -136,6 +142,7 @@ git recommit assign 3 src/api.py src/util.py:@2 src/main.py:+10-14
 git recommit unassign src/main.py:-3
 git recommit edit 3 src/api.py < stub.py    # the file in commit 3, by hand
 git recommit commit move 3 1                # or remove, or reword
+git recommit commit author 3 "Ana <ana@example.com>"
 git recommit write --validate 'pytest'
 git recommit tui                        # or carry on in the TUI (quitting keeps the plan)
 git recommit abort                      # or drop it

@@ -19,7 +19,7 @@ from textual.scroll_view import ScrollView
 from textual.strip import Strip
 from textual.widgets import Input, Static
 
-from git_recommit import editor, show, validate
+from git_recommit import commands, editor, show, validate
 from git_recommit.board import Board, line_text
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
@@ -309,6 +309,7 @@ HELP = """\
   tab/S-tab     make the next/previous commit active
   J/K           move the active commit later/earlier
   r             reword the active commit's message in your editor
+  A             set the active commit's author (Name <email>; empty for you)
   D             delete the active commit; its changes become unassigned
   e             edit this file as it is in the active commit, in your editor
                 (the edit is carried into later commits)
@@ -352,6 +353,7 @@ class BoardScreen(Screen[None]):
         Binding("J", "move_commit(1)", "Move commit later", show=False),
         Binding("K", "move_commit(-1)", "Move commit earlier", show=False),
         Binding("r", "reword", "Reword", show=False),
+        Binding("A", "author", "Set author", show=False),
         Binding("D", "delete", "Delete commit", show=False),
         Binding("e", "edit", "Edit file"),
         Binding("E", "drop_edit", "Drop edit", show=False),
@@ -416,6 +418,8 @@ class BoardScreen(Screen[None]):
             out.add(f"{number} ", commit_style(number), target)
             out.add(commit.subject or "(no message)", "reverse" if active else "", target)
             out.add(f"  {self.board.plan.count(commit.key)}\n", "dim", target)
+            if commit.author is not None and commit.author.email != self.session.me().email:
+                out.add(f"    by {commit.author.name}\n", "dim", target)
             for path in commit.edits:
                 out.add(f"    ✎ {path}\n", "yellow", target)
             for key, path in sorted(conflicts):
@@ -594,6 +598,24 @@ class BoardScreen(Screen[None]):
 
         self.app.push_screen(ConfirmScreen(question), answered)
 
+    def action_author(self) -> None:
+        try:
+            commit = self.board.active_commit()
+        except RecommitError as e:
+            self._do(str(e))
+            return
+        number = self.board.number(commit.key)
+
+        def answered(author: str | None) -> None:
+            if author is not None:
+                self.board.run(commands.SetAuthor(number, author.strip() or None))
+            self._do()
+
+        current = f" (now {commit.author or self.session.me()})"
+        self.app.push_screen(
+            InputScreen(f"Author of commit {number}{current}, as Name <email>; empty for you:"), answered
+        )
+
     def action_reword(self) -> None:
         try:
             commit = self.board.active_commit()
@@ -651,6 +673,9 @@ class BoardScreen(Screen[None]):
         if left := self.session.left_uncommitted():
             lines.append("These files will be left with uncommitted changes:")
             lines.extend(f"  {path}" for path in left)
+        if authorship := self.session.authorship_warnings():
+            lines.append("\nAuthors (A sets a commit's):")
+            lines.extend(f"  {warning}" for warning in authorship)
         if empty := self.session.empty_commits():
             lines.append("\nThese commits will be empty:")
             lines.extend(f"  {self.board.number(c.key)} {c.subject}" for c in empty)

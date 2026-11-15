@@ -2,6 +2,7 @@
 
 import pytest
 
+from git_recommit.errors import RecommitError
 from git_recommit.session import Session
 from tests.helpers import Repo
 
@@ -136,3 +137,44 @@ def test_paths_that_look_like_patterns(repo: Repo) -> None:
     session.plan.assign(next(d for d in session.files if d.path == "a[1].txt").ids, None)
     session.finish(session.build())
     assert repo.git("status", "--porcelain") == "M a[1].txt"
+
+
+def by_someone_else(repo: Repo) -> Session:
+    """The first of history's commits is by someone else."""
+    old = history(repo)
+    repo.git("reset", "--quiet", "--hard", old[0])
+    repo.git("commit", "--quiet", "--amend", "--no-edit", "--author=Someone Else <else@example.com>")
+    repo.git("cherry-pick", "--quiet", old[1], old[2])
+    return restored(repo, "HEAD~3")
+
+
+def test_warns_about_commits_taking_someone_elses_changes(repo: Repo) -> None:
+    session = by_someone_else(repo)
+    assert session.authorship_warnings() == []
+    plan = session.plan
+    mine = plan.add("mine")
+    plan.assign(next(d for d in session.files if d.path == "g").ids, mine.key)
+    (warning,) = session.authorship_warnings()
+    assert warning.startswith("commit 4 (mine) will be authored by Test <test@example.com>")
+    assert "Someone Else <else@example.com>" in warning
+
+
+def test_choosing_a_commits_author(repo: Repo) -> None:
+    from git_recommit.commands import AddCommit, SetAuthor
+
+    session = by_someone_else(repo)
+    AddCommit("mine").run(session)
+    plan = session.plan
+    theirs = [i for i, author in session.origin.items() if author.name == "Someone Else"]
+    plan.assign(theirs, plan.commits[3].key)
+    assert SetAuthor(4, "Someone Else <else@example.com>").run(session).message == (
+        "Commit 4 is now by Someone Else <else@example.com>."
+    )
+    assert session.authorship_warnings() == []
+    shas = session.build()
+    assert repo.git("log", "-1", "--format=%an <%ae>", shas[3]) == "Someone Else <else@example.com>"
+    # Back to whoever runs git recommit.
+    SetAuthor(4, None).run(session)
+    assert repo.git("log", "-1", "--format=%an", session.build()[3]) == "Test"
+    with pytest.raises(RecommitError, match="isn't Name <email>"):
+        SetAuthor(4, "nobody").run(session)

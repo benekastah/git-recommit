@@ -21,8 +21,12 @@ class Edit:
 class Author:
     name: str
     email: str
-    # In a form GIT_AUTHOR_DATE takes, e.g. git's raw "<seconds> <offset>".
-    date: str
+    # In a form GIT_AUTHOR_DATE takes, e.g. git's raw "<seconds> <offset>";
+    # None for when the commit is written, as git commit --author does.
+    date: str | None = None
+
+    def __str__(self) -> str:
+        return f"{self.name} <{self.email}>"
 
 
 @dataclass

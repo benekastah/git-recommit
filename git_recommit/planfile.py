@@ -56,6 +56,10 @@ def save(session: Session) -> None:
             }
             for commit in plan.commits
         ],
+        "origin": [
+            {"change": [*keys[i][:2], _encode(keys[i][2]), keys[i][3]], "author": vars(author)}
+            for i, author in session.origin.items()
+        ],
         "assignment": [
             {"change": [*keys[i][:2], _encode(keys[i][2]), keys[i][3]], "commit": plan.index(key) + 1}
             for i, key in plan.assignment.items()
@@ -86,6 +90,11 @@ def load(git: GitClient) -> Session:
         for edited, edit in saved["edits"].items():
             commit.edits[edited] = Edit(_decode(edit["basis"]), _decode(edit["content"]))
     ids = {key: i for i, key in diffs.change_keys(session.files).items()}
+    for made in data.get("origin", []):
+        file, kind, text, n = made["change"]
+        i = ids.get((file, kind, _decode(text), n))
+        if i is not None:
+            session.origin[i] = Author(**made["author"])
     for assigned in data["assignment"]:
         file, kind, text, n = assigned["change"]
         i = ids.get((file, kind, _decode(text), n))

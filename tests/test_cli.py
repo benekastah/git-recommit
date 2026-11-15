@@ -172,3 +172,11 @@ def test_start_include_untracked(repo: Repo) -> None:
     # Kept with the plan, for the commands after.
     shown = json.loads(repo.recommit("show", "--json").stdout)
     assert [f["path"] for f in shown["files"]] == ["a", "new.txt"]
+
+
+def test_choosing_an_author(repo: Repo) -> None:
+    repo.commit("wip", a="a\n")
+    repo.recommit("start", "HEAD~")
+    repo.recommit("commit", "author", "1", "Someone Else <else@example.com>")
+    repo.recommit("write")
+    assert repo.git("log", "-1", "--format=%an <%ae>") == "Someone Else <else@example.com>"

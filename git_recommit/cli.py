@@ -88,6 +88,11 @@ def subcommand_parser() -> argparse.ArgumentParser:
     move = commit_sub.add_parser("move", help="move commit NUMBER to be commit TO")
     move.add_argument("number", type=int)
     move.add_argument("to", type=int)
+    author = commit_sub.add_parser(
+        "author", help="make a commit's author AUTHOR ('Name <email>'), or with none, whoever writes it"
+    )
+    author.add_argument("number", type=int)
+    author.add_argument("author", nargs="?")
     reword = commit_sub.add_parser("reword", help="change a commit's message")
     reword.add_argument("number", type=int)
     reword.add_argument("message")
@@ -220,15 +225,7 @@ def one_path(session: Session, pathspec: str) -> str:
 def command(args: argparse.Namespace, session: Session) -> Command:
     """The command a subcommand that changes the plan stands for."""
     if args.command == "commit":
-        match args.action:
-            case "add":
-                return commands.AddCommit(args.message, args.after)
-            case "remove":
-                return commands.RemoveCommit(args.number)
-            case "move":
-                return commands.MoveCommit(args.number, args.to)
-            case _:
-                return commands.Reword(args.number, args.message)
+        return commit_command(args)
     match args.command:
         case "assign":
             return commands.Assign(targets(session, args.targets), args.number)
@@ -242,6 +239,21 @@ def command(args: argparse.Namespace, session: Session) -> Command:
             return commands.Clear()
         case _:
             return commands.Restore()
+
+
+def commit_command(args: argparse.Namespace) -> Command:
+    """The command `git recommit commit <action>` stands for."""
+    match args.action:
+        case "add":
+            return commands.AddCommit(args.message, args.after)
+        case "remove":
+            return commands.RemoveCommit(args.number)
+        case "move":
+            return commands.MoveCommit(args.number, args.to)
+        case "author":
+            return commands.SetAuthor(args.number, args.author)
+        case _:
+            return commands.Reword(args.number, args.message)
 
 
 def start(git: GitClient, spec: str, include_untracked: bool = False) -> Session:
@@ -259,6 +271,8 @@ def write(session: Session, validate_command: str | None) -> None:
     if conflicts := session.conflicts():
         where = ", ".join(f"{c.path} in commit {session.plan.index(c.commit.key) + 1}" for c in conflicts)
         raise RecommitError(f"resolve the conflicts first: {where}")
+    for warning in session.authorship_warnings():
+        print(f"git-recommit: warning: {warning}", file=sys.stderr)
     shas = session.build()
     if validate_command is not None:
         subjects = [commit.subject for commit in session.plan.commits]

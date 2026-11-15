@@ -31,12 +31,6 @@ in the diff panel and the sidebar's files even though it has no changes, so
 its edits can be seen and dropped. Starting from the old commits would add
 the files they change, too.
 
-## Commits the user creates take their author
-
-A commit that starts from an old one keeps its author and date, but one made
-with `c` gets the current user and time, even when it takes someone else's
-changes. ROADMAP.md lists ways to do better.
-
 ## Logic has leaked out of board.py, and session.py does too much
 
 AGENTS.md says to keep the TUI's logic in `board.py` or the commands, where

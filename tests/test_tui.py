@@ -269,6 +269,32 @@ def test_the_sidebar_says_untracked_files_are_left_out(repo: Repo) -> None:
     run(session, FakeTerminal(repo), script)
 
 
+def test_authors(repo: Repo) -> None:
+    repo.commit("wip", a="a\n")
+    repo.git("commit", "--quiet", "--amend", "--no-edit", "--author=Someone Else <else@example.com>")
+    session = repo.session("HEAD~")
+    session.restore_old_commits()
+
+    async def script(pilot: Pilot[Any]) -> None:
+        sidebar = pilot.app.screen.query_one("Sidebar")
+        assert "by Someone Else" in str(sidebar.render())
+        # A commit of mine taking their change: writing warns.
+        await create(pilot, "mine")
+        await pilot.press("f", "w")
+        dialog = str(pilot.app.screen.query_one("Static").render())
+        assert "commit 2 (mine) will be authored by Test <test@example.com>, but has changes by Someone Else" in dialog
+        await pilot.press("n")
+        # So make it theirs.
+        await pilot.press("A")
+        await pilot.press(*"Someone Else <else@example.com>")
+        await pilot.press("enter")
+        await pilot.press("q", "y")
+
+    run(session, FakeTerminal(repo), script)
+    assert str(session.plan.commits[1].author) == "Someone Else <else@example.com>"
+    assert session.authorship_warnings() == []
+
+
 def test_quit_changes_nothing(repo: Repo) -> None:
     session = two_files(repo)
 

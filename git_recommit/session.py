@@ -148,6 +148,9 @@ class Session:
         self.uncommitted = self.tip != head
         self._tip_tree = git.run("rev-parse", f"{self.tip}^{{tree}}")
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
+        # The author of the old commit that made each change, where known.
+        self.origin: dict[int, Author] = {}
+        self._me: Author | None = None
         self._conflicts: tuple[tuple[object, ...], list[Conflict]] | None = None
 
     @classmethod
@@ -181,6 +184,7 @@ class Session:
         self.plan.assignment = {
             new_ids[old_keys[i]]: key for i, key in self.plan.assignment.items() if old_keys[i] in new_ids
         }
+        self.origin = {new_ids[old_keys[i]]: author for i, author in self.origin.items() if old_keys[i] in new_ids}
         self.head, self.tip, self.files, self._tip_tree = head, tip, files, tree
         self.old_commits = self.git.run("log", "--format=%h %s", f"{base}..{head}").splitlines()
         self.uncommitted = tip != head
@@ -205,6 +209,35 @@ class Session:
             "diff-tree", "-r", "--no-renames", "--name-only", "-z", self.base, self.tip, "--", pathspec
         )
         return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
+
+    def me(self) -> Author:
+        """Who commits git recommit writes are by, unless they say otherwise."""
+        if self._me is None:
+            ident = self.git.run("var", "GIT_AUTHOR_IDENT")
+            name, _, rest = ident.partition(" <")
+            self._me = Author(name, rest.partition(">")[0])
+        return self._me
+
+    def authorship_warnings(self) -> list[str]:
+        """For each commit that will be authored by one person but takes
+        changes another made, a warning saying so."""
+        warnings = []
+        me = self.me()
+        for number, commit in enumerate(self.plan.commits, start=1):
+            author = commit.author or me
+            others = {
+                str(origin)
+                for i, key in self.plan.assignment.items()
+                if key == commit.key
+                and (origin := self.origin.get(i)) is not None
+                and (origin.name, origin.email) != (author.name, author.email)
+            }
+            if others:
+                warnings.append(
+                    f"commit {number} ({commit.subject}) will be authored by {author}, but has changes by "
+                    f"{', '.join(sorted(others))}"
+                )
+        return warnings
 
     def head_moved(self) -> bool:
         """Whether HEAD has moved since the diff was loaded (e.g. the user
@@ -255,6 +288,10 @@ class Session:
                 continue
             for i, made_by in self._made_by(diff, removed_by).items():
                 plan.assign([i], keys.get(made_by or "", last))
+        # Who made each change, for warning when a commit will be authored by
+        # someone else (see authorship_warnings).
+        authors = {commit.key: commit.author for commit in plan.commits}
+        self.origin = {i: author for i, key in plan.assignment.items() if (author := authors[key]) is not None}
         self._reproduce(shas)
 
     def _changed_paths(self, old: str, new: str) -> list[str]:
@@ -454,28 +491,21 @@ class Session:
                 if updates:
                     self.git.run_bytes("update-index", "-z", "--index-info", input=b"".join(updates), env=env)
                 tree = self.git.run("write-tree", env=env)
-                # An old commit's message is kept exactly; a new or changed one
-                # is ended with a newline, and given to the commit-msg hook.
-                if commit.old_message is not None and commit.message == commit.old_message.removesuffix("\n"):
-                    message = commit.old_message
-                else:
-                    message = commit.message if commit.message.endswith("\n") else commit.message + "\n"
-                    message = self._commit_msg_hook(index + 1, commit, message)
-                author = commit.author
-                author_env = (
-                    {}
-                    if author is None
-                    else {
-                        "GIT_AUTHOR_NAME": author.name,
-                        "GIT_AUTHOR_EMAIL": author.email,
-                        "GIT_AUTHOR_DATE": author.date,
-                    }
-                )
+                message = self._message(index + 1, commit)
                 parent = self.git.run(
-                    "commit-tree", tree, "-p", parent, *sign, "-F", "-", input=message, env=author_env | env
+                    "commit-tree", tree, "-p", parent, *sign, "-F", "-", input=message, env=_author_env(commit) | env
                 )
                 shas.append(parent)
         return shas
+
+    def _message(self, number: int, commit: NewCommit) -> str:
+        """The message to write for commit, number number. An old commit's
+        message is kept exactly; a new or changed one is ended with a newline,
+        and given to the commit-msg hook."""
+        if commit.old_message is not None and commit.message == commit.old_message.removesuffix("\n"):
+            return commit.old_message
+        message = commit.message if commit.message.endswith("\n") else commit.message + "\n"
+        return self._commit_msg_hook(number, commit, message)
 
     def _commit_msg_hook(self, number: int, commit: NewCommit, message: str) -> str:
         """message, after the repository's commit-msg hook (if any) has had
@@ -536,6 +566,18 @@ class Session:
     def untracked_left_out(self) -> list[str]:
         """The untracked files that aren't ignored, but aren't included."""
         return [] if self.include_untracked else self._untracked
+
+
+def _author_env(commit: NewCommit) -> dict[str, str]:
+    """What tells commit-tree who wrote commit, and when (none: whoever runs
+    git recommit, now)."""
+    author = commit.author
+    if author is None:
+        return {}
+    env = {"GIT_AUTHOR_NAME": author.name, "GIT_AUTHOR_EMAIL": author.email}
+    if author.date is not None:
+        env["GIT_AUTHOR_DATE"] = author.date
+    return env
 
 
 def literal(path: str) -> str:

@@ -12,6 +12,7 @@ from typing import Literal
 
 from git_recommit.diff import FileDiff, numbered
 from git_recommit.errors import RecommitError
+from git_recommit.plan import Author
 from git_recommit.session import Session
 
 Side = Literal["+", "-"]
@@ -217,6 +218,29 @@ class Reword:
         return Result(f"Reworded commit {self.commit}.", self.commit)
 
 
+AUTHOR = re.compile(r"^(?P<name>[^<>]+?)\s*<(?P<email>[^<>]*)>$")
+
+
+@dataclass(frozen=True)
+class SetAuthor:
+    """Make a commit's author "Name <email>" (dated when it's written), as
+    git commit --author does, or with None, whoever writes it."""
+
+    commit: int
+    author: str | None
+
+    def run(self, session: Session) -> Result:
+        commit = session.plan.get(commit_key(session, self.commit))
+        if self.author is None:
+            commit.author = None
+            return Result(f"Commit {self.commit} is now by whoever writes it ({session.me()}).", self.commit)
+        match = AUTHOR.match(self.author.strip())
+        if match is None:
+            raise RecommitError(f"{self.author!r} isn't Name <email>")
+        commit.author = Author(match["name"], match["email"])
+        return Result(f"Commit {self.commit} is now by {commit.author}.", self.commit)
+
+
 @dataclass(frozen=True)
 class Assign:
     """Have a commit take the targets' changes, or with None, unassign them."""
@@ -289,5 +313,5 @@ class Restore:
         return Result("Back to the commits being rebuilt.", 1 if session.plan.commits else None)
 
 
-Command = AddCommit | RemoveCommit | MoveCommit | Reword | Assign | Edit | DropEdit | Clear | Restore
-ALL = (AddCommit, RemoveCommit, MoveCommit, Reword, Assign, Edit, DropEdit, Clear, Restore)
+Command = AddCommit | RemoveCommit | MoveCommit | Reword | SetAuthor | Assign | Edit | DropEdit | Clear | Restore
+ALL = (AddCommit, RemoveCommit, MoveCommit, Reword, SetAuthor, Assign, Edit, DropEdit, Clear, Restore)

@@ -4,34 +4,25 @@ Planned upgrades, and the options for them. Known problems are in ISSUES.md.
 
 ## Preserving authorship
 
-Each new commit that starts from an old one keeps that commit's author and
-author date (the committer is always whoever runs git recommit, as with a
-rebase). A commit created with `c` gets the current user, even if every change
-it takes is someone else's. Ways to do better, which can be combined:
+Done so far: a commit that starts from an old one keeps its author and date;
+writing warns about any commit authored by someone other than who made some
+of its changes (git recommit knows who made each, from git blame); and `A`, or
+`git recommit commit author`, sets a commit's author, as `git commit --author`
+does. Ways to do more, which ask nothing of the user but change commits
+without being asked, so would need to be options:
 
-1. **Inherit from the changes' commits.** Give a commit the author of the old
-   commit most of its changes came from (by changed lines, which git blame
-   already tells us), and its latest author date. It needs no input, and is
-   right when one person's work is being reorganized; with mixed authors, the
-   majority wins, which may not be who should be credited.
+1. **Inherit from the changes' commits.** Give a commit the user creates the
+   author of the old commit most of its changes came from (by changed lines),
+   and its latest author date. Right when one person's work is reorganized;
+   with mixed authors, the majority wins, which may not be who should be
+   credited.
 2. **Co-authored-by trailers.** Add a `Co-authored-by: Name <email>` trailer
    for each other author whose changes a commit takes, as GitHub and GitLab
-   show. It credits everyone without choosing one, and pairs well with 1.
-   The message editor (`r`) would show them, so they can be removed.
-3. **Choose the author.** A key to set the active commit's author: from a list
-   of the range's authors, or typed. Explicit, and the fallback when 1 picks
-   wrongly. The sidebar would show each commit's author when it isn't the
-   current user, so a wrong one is noticed before writing.
-4. **Follow the commit a new one replaces.** When a commit is split (its
-   changes moved to a new commit after it), the new one inherits its author.
-   Covers the common case of splitting a commit, but depends on how the new
-   commit was made, which is harder to explain than 1.
-5. **Warn when writing.** List the commits whose changes came from someone else
-   but which will be authored by the current user, in the confirmation, so
-   nothing is reattributed by accident. Cheap, and worth doing whatever else
-   is chosen.
-
-A reasonable path: 5 first, then 1 with 2 for the other authors, then 3.
+   show, crediting everyone without choosing one. Pairs well with 1.
+3. **Follow the commit a new one is split from.** When a commit's changes are
+   moved to a new commit after it, the new one inherits its author. Covers
+   splitting a commit, but depends on how the new commit was made, which is
+   harder to explain than 1.
 
 ## A command line for everything the TUI does
 

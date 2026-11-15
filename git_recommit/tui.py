@@ -280,7 +280,7 @@ class HelpScreen(ModalScreen[None]):
 
 # The key bar along the top.
 KEYS = (
-    "[b]space[/b] assign line/range  [b]a[/b] hunk  [b]f[/b] file  [b]1-9[/b] to commit n  [b]x[/b] unassign  "
+    "[b]space[/b] assign line/range  [b]a[/b] hunk  [b]f[/b] file  [b]1-9[/b]/[b]#[/b] to commit n  [b]x[/b] unassign  "
     "[b]V[/b] select lines  [b]}/{[/b] next/previous hunk  [b].[/b] next unassigned\n"
     "[b]c[/b] new commit  [b]tab/shift+tab[/b] next/previous commit  [b]J/K[/b] move commit  [b]r[/b] reword  [b]D[/b] delete  "
     "[b]e[/b] edit file  [b]C[/b] clear  [b]O[/b] original  [b]w[/b] write  [b]q[/b] quit  [b]?[/b] help"
@@ -299,6 +299,7 @@ HELP = """\
   a             the whole hunk the cursor is in
   f             the whole file the cursor is in
   1-9           the row or range, to that commit (and make it active)
+  #             the row or range, to the commit whose number you type
   x/0           unassign the row or range
 
 [b]Commits[/b] (the active one is marked ▶)
@@ -341,6 +342,7 @@ class BoardScreen(Screen[None]):
         Binding("l,right", "scroll_sideways(1)", "Right", show=False),
         Binding("escape", "clear", "Clear selection", show=False),
         *(Binding(str(n), f"assign_number({n})", f"Assign to {n}", show=False) for n in range(1, 10)),
+        Binding("number_sign", "assign_to", "Assign to commit n"),
         Binding("x,0", "unassign", "Unassign"),
         Binding("c", "create", "New commit"),
         Binding("C", "clear_commits", "Clear commits", show=False),
@@ -528,6 +530,19 @@ class BoardScreen(Screen[None]):
     def action_assign_number(self, number: int) -> None:
         self.board.assign_number(number)
         self._do()
+
+    def action_assign_to(self) -> None:
+        """Ask for a commit's number, and assign to it (for when there are
+        more than 9)."""
+
+        def answered(number: str | None) -> None:
+            if number and number.strip().isdigit():
+                self.board.assign_number(int(number))
+            elif number is not None:
+                self.board.message = f"{number!r} isn't a commit's number."
+            self._do()
+
+        self.app.push_screen(InputScreen("Assign to commit number (Esc to cancel):"), answered)
 
     def action_unassign(self) -> None:
         self.board.assign(None)

@@ -56,6 +56,7 @@ are along the top.
 | `space`/`enter` | assign the line (or the selected lines, or on a header, its hunk or file) to the active commit |
 | `a` / `f` | assign the whole hunk / file the cursor is in to the active commit |
 | `1`-`9` | assign to that commit (and make it active) |
+| `#` | assign to the commit whose number you type (for commit 10 and on) |
 | `x`/`0` | unassign |
 | `c` | create a commit, after the active one |
 | `tab`/`shift+tab` | make the next/previous commit active (or click it in the sidebar) |

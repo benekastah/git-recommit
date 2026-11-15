@@ -81,8 +81,3 @@ an added one, and assigning the rename to one commit means assigning both.
 
 `e` edits a whole file, not a hunk or a line, and binary files, symlinks and
 submodules can't be edited.
-
-## Only nine commits have number keys
-
-`1`-`9` assign to the first nine commits; later ones are reached with `tab` or
-by clicking them.

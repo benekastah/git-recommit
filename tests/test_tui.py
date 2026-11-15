@@ -242,6 +242,21 @@ def test_dropping_an_edit_asks_first(repo: Repo) -> None:
     run(session, FakeTerminal(repo, lambda content: b"edited\n"), script)
 
 
+def test_assigning_to_any_commit_by_number(repo: Repo) -> None:
+    session = two_files(repo)
+    for n in range(1, 13):
+        session.plan.add(f"commit {n}")
+
+    async def script(pilot: Pilot[Any]) -> None:
+        assert isinstance(pilot.app, RecommitApp)
+        await pilot.press("number_sign", "1", "2", "enter")
+        assert pilot.app.board.active == session.plan.commits[11].key
+        await pilot.press("q", "y")
+
+    run(session, FakeTerminal(repo), script)
+    assert set(session.plan.assignment.values()) == {session.plan.commits[11].key}
+
+
 def test_quit_changes_nothing(repo: Repo) -> None:
     session = two_files(repo)
 

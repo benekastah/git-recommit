@@ -1,10 +1,11 @@
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 
 from git_recommit.errors import RecommitError
-from git_recommit.git import GitClient
+from git_recommit.git import GitClient, encode
 
 
 def shell_quote(arg: str) -> str:
@@ -19,13 +20,27 @@ def edit(git: GitClient, content: bytes, filename: str) -> bytes:
     they saved."""
     editor = git.run("var", "GIT_EDITOR")
     with tempfile.TemporaryDirectory() as scratch:
-        path = os.path.join(scratch, os.path.basename(filename) or "file")
+        path = os.path.join(scratch, _local_name(filename))
         with open(path, "wb") as f:
             f.write(content)
         if subprocess.run(f"{editor} {shell_quote(path)}", shell=True, check=False).returncode != 0:
             raise RecommitError("the editor failed, so nothing was changed")
         with open(path, "rb") as f:
             return f.read()
+
+
+def _local_name(path: str) -> str:
+    """The name of a path git gave (as text), as a name in the filesystem:
+    with the same bytes, whatever the locale's encoding; or on Windows, if it
+    isn't UTF-8 (which a name there must be), just "file"."""
+    name = os.path.basename(path) or "file"
+    if sys.platform != "win32":
+        return os.fsdecode(encode(name))
+    try:
+        name.encode("utf-8")
+    except UnicodeEncodeError:
+        return "file"
+    return name
 
 
 # git's scissors line (for commit.cleanup=scissors), after the comment character.

@@ -1,3 +1,7 @@
+import os
+import subprocess
+import sys
+
 import pytest
 
 from git_recommit.editor import MessageCleanup
@@ -55,3 +59,13 @@ def test_commit_cleanup_scissors(repo: Repo) -> None:
     opened, kept = edited(repo)
     assert ">8" in opened
     assert kept == "Fix the parser\n\n#123 was the bug."
+
+
+def test_editing_a_file_whose_name_isnt_ascii_whatever_the_locale(repo: Repo) -> None:
+    # In a process of its own, since the locale's encoding is set as Python starts.
+    script = "from git_recommit.editor import edit\nfrom git_recommit.git import GitClient\n"
+    script += "import sys\nsys.stdout.buffer.write(edit(GitClient(sys.argv[1]), b'kept', 'dir/caf\\u00e9.txt'))\n"
+    env = {**os.environ, "PYTHONUTF8": "0", "LC_ALL": "C", "LANG": "C", "GIT_EDITOR": "true"}
+    result = subprocess.run([sys.executable, "-c", script, str(repo.path)], capture_output=True, env=env, check=False)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert result.stdout == b"kept"

@@ -156,3 +156,15 @@ def test_editing_a_renamed_file_by_its_old_path(repo: Repo) -> None:
     result = Edit(1, "old", b"edited\n").run(s)
     assert result.message == "Edited new in commit 1; later commits carry the edit."
     assert list(s.plan.commits[0].edits) == ["new"]
+
+
+def test_an_edit_before_the_rename_is_cleaned_as_the_old_path(repo: Repo) -> None:
+    # git add would normalize new's line endings, but not old's.
+    repo.commit("base", **{".gitattributes": "new text\n", "old": LINES})
+    repo.commit("rename", old=None, new=LINES)
+    s = repo.session("HEAD~")
+    AddCommit("Before").run(s)
+    AddCommit("Rename").run(s)
+    Assign((Target("new"),), 2).run(s)
+    Edit(1, "new", b"crlf\r\n").run(s)
+    assert s.plan.commits[0].edits["new"].content == b"crlf\r\n"

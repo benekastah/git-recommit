@@ -62,13 +62,17 @@ def restore(session: "Session") -> None:
         touched = [sha for sha in shas if any(sha in touched_by.get(path, []) for path in paths)]
         last = keys.get(touched[-1]) if touched else None
         if diff.meta_id is not None:
-            meta_by = last
+            # A file that changes as a whole, and has uncommitted changes, has
+            # them in its one change, which so stays uncommitted.
+            meta_by = None if diff.whole and paths & uncommitted else last
             if diff.old_path is not None and not diff.whole:
-                # The rename goes to the first commit to have the new path. (A
-                # binary file's rename is all of its change, so it stays with
-                # the last commit, as the rest of such a file's change does.)
+                # The rename goes to the first commit to have the new path, or
+                # if none does, it's uncommitted, so to none. (The rename of a
+                # file that changes as a whole, e.g. a binary file or a
+                # symlink, is all of its change, so it stays with the last
+                # commit, as the rest of such a file's change does.)
                 renamed_in = next((sha for sha, blobs in zip(shas, trees, strict=True) if diff.path in blobs), None)
-                meta_by = keys.get(renamed_in or "", last)
+                meta_by = keys.get(renamed_in) if renamed_in else None
             plan.assign([diff.meta_id], meta_by)
         if diff.whole:
             continue

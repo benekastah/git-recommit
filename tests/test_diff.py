@@ -151,3 +151,51 @@ def test_renames_are_found_unless_diff_renames_is_off(repo: Repo) -> None:
     assert {path: f.status for path, f in load(repo).items()} == {"new": "R"}
     repo.git("config", "diff.renames", "false")
     assert {path: f.status for path, f in load(repo).items()} == {"new": "A", "old": "D"}
+
+
+def test_a_renamed_submodule_changes_as_a_whole(repo: Repo) -> None:
+    sha = repo.git("rev-parse", "HEAD")
+    repo.git("update-index", "--add", "--cacheinfo", f"160000,{sha},sub")
+    repo.git("commit", "--quiet", "-m", "base")
+    repo.git("update-index", "--force-remove", "sub")
+    repo.git("update-index", "--add", "--cacheinfo", f"160000,{sha},sub2")
+    repo.git("commit", "--quiet", "-m", "rename")
+    sub2 = load(repo)["sub2"]
+    assert sub2.status == "R" and sub2.whole and sub2.ids == [sub2.meta_id]
+    assert sub2.describe_meta() == "renamed from sub"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="needs symlinks")
+def test_a_renamed_symlink_says_so(repo: Repo) -> None:
+    (repo.path / "link").symlink_to("README")
+    repo.commit("base")
+    (repo.path / "link").rename(repo.path / "link2")
+    repo.commit("rename")
+    link2 = load(repo)["link2"]
+    assert link2.status == "R" and link2.whole and link2.describe_meta() == "renamed from link"
+
+
+def test_a_rename_and_a_mode_change_are_one_change(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    repo.git("mv", "old", "new")
+    (repo.path / "new").chmod(0o755)
+    repo.commit("rename")
+    new = load(repo)["new"]
+    assert new.ids == [new.meta_id]
+    assert new.describe_meta() == "renamed from old, mode 100644 -> 100755"
+
+
+def test_a_renamed_file_is_binary_if_its_attributes_say_so(repo: Repo) -> None:
+    repo.commit("base", **{".gitattributes": "*.dat binary\n", "old.dat": LINES})
+    repo.commit("rename", **{"old.dat": None, "new.dat": LINES})
+    new = load(repo)["new.dat"]
+    assert new.status == "R" and new.binary and new.whole
+
+
+def test_an_empty_diff_renames_is_off_as_git_reads_it(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    repo.commit("rename", old=None, new=LINES)
+    repo.git("config", "diff.renames", "")
+    assert {path: f.status for path, f in load(repo).items()} == {"new": "A", "old": "D"}
+    repo.git("config", "diff.renames", "copies")
+    assert {path: f.status for path, f in load(repo).items()} == {"new": "R"}

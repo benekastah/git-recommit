@@ -242,3 +242,25 @@ def test_a_rename_with_changes_in_the_same_commit(repo: Repo) -> None:
     session = restored(repo, "HEAD~2")
     assert session.unassigned() == []
     assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_an_uncommitted_rename_starts_unassigned(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    old = [repo.commit("change old", old=LINES.replace("line 3\n", "three\n"))]
+    repo.git("mv", "old", "new")
+    session = restored(repo, "HEAD~")
+    (new,) = session.files
+    assert new.status == "R" and new.meta_id in session.unassigned()
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:
+    repo.commit("base", data=b"\0one")
+    old = [repo.commit("change data", data=b"\0two")]
+    repo.write("data", b"\0three")
+    session = restored(repo, "HEAD~")
+    (data,) = session.files
+    # The commit doesn't take what's uncommitted, though without it, it can't
+    # be as it was.
+    assert session.unassigned() == [data.meta_id]
+    assert repo.show(session.build()[0], "data") == "\0one" != repo.show(old[0], "data")

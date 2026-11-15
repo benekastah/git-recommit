@@ -640,3 +640,17 @@ def test_an_unassigned_rename_is_left_uncommitted(repo: Repo) -> None:
     assert repo.git("status", "--porcelain") == "R old -> new"
     (new,) = repo.session("HEAD").files
     assert new.status == "R" and new.old_path == "old"
+
+
+def test_building_a_rename_and_a_mode_change(repo: Repo) -> None:
+    repo.commit("base", old=RENAMED)
+    repo.git("mv", "old", "new")
+    (repo.path / "new").chmod(0o755)
+    repo.commit("rename")
+    session = repo.session("HEAD~")
+    plan = session.plan
+    plan.add("Before")
+    plan.assign(files_ids(session, "new"), plan.add("Rename").key)
+    first, second = session.build()
+    assert repo.git("ls-tree", first).endswith("\told") and "100644" in repo.git("ls-tree", first, "old")
+    assert "100755" in repo.git("ls-tree", second, "new") and repo.show(second, "old") is None

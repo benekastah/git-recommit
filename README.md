@@ -205,4 +205,5 @@ and makes the clone use the hooks in `git_hooks/` (the pre-commit hook formats
 staged Python files, and the pre-push hook runs the checks).
 
 Run every check (shellcheck, Ruff's formatter and linter, mypy in strict mode,
-then the tests) with `./check.sh`; arguments are passed to pytest.
+then the tests) with `./check.sh`; arguments are passed to pytest. `./lint.sh`
+runs every check but the tests.

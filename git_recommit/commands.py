@@ -248,9 +248,12 @@ class Edit:
         diff = file_diff(session, self.path)
         if diff.whole:
             raise RecommitError(f"{self.path} isn't a text file, so it can't be edited")
-        if self.content == session.edit_text(key, diff):
+        # E.g. an editor that saved Windows line endings, in a repository that
+        # stores Unix ones.
+        content = session.git.clean(self.path, self.content)
+        if content == session.edit_text(key, diff):
             return Result(f"{self.path} is unchanged in commit {self.commit}.", self.commit)
-        session.set_edit(key, diff, self.content)
+        session.set_edit(key, diff, content)
         if self.path in session.plan.get(key).edits:
             return Result(f"Edited {self.path} in commit {self.commit}; later commits carry the edit.", self.commit)
         return Result(f"{self.path} in commit {self.commit} has no edits.", self.commit)

@@ -137,3 +137,12 @@ def test_every_command_is_data() -> None:
     for command in commands.ALL:
         # A frozen dataclass refuses changes with its own __setattr__.
         assert dataclasses.is_dataclass(command) and "__setattr__" in vars(command)
+
+
+def test_edits_are_normalized_as_git_add_would(repo: Repo) -> None:
+    s = session(repo)
+    repo.git("config", "core.autocrlf", "true")
+    AddCommit("one").run(s)
+    # An editor that saves Windows line endings.
+    Edit(1, "g", b"stub\r\n").run(s)
+    assert s.plan.commits[0].edits["g"].content == b"stub\n"

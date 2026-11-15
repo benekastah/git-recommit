@@ -1,4 +1,5 @@
 import argparse
+import io
 import json
 import sys
 from collections.abc import Callable
@@ -98,6 +99,11 @@ def subcommand_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Print what the terminal's encoding can't show as placeholders, rather
+    # than failing (e.g. a commit message with é, where the locale is ASCII).
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="replace")
     argv = sys.argv[1:] if argv is None else argv
     rest, directory = list(argv), "."
     while len(rest) >= 2 and rest[0] == "-C":

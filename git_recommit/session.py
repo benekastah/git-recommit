@@ -443,7 +443,8 @@ class Session:
             result = subprocess.run(
                 ["git", "-C", self.git.directory, "hook", "run", "--ignore-missing", "commit-msg", "--", path],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
             if result.returncode != 0:

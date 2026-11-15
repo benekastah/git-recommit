@@ -1,3 +1,4 @@
+import os
 import pathlib
 import subprocess
 import sys
@@ -50,15 +51,21 @@ class Repo:
         return Session.load(self.client, spec)
 
     def recommit(
-        self, *args: str, expect_success: bool = True, input: str | None = None
+        self,
+        *args: str,
+        expect_success: bool = True,
+        input: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Run `git recommit <args>` as a separate process (without a terminal),
-        with input on its stdin."""
+        with input on its stdin, and env added to its environment."""
         result = subprocess.run(
             [sys.executable, "-m", "git_recommit", "-C", str(self.path), *args],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             input=input,
+            env={**os.environ, **(env or {})},
             timeout=60,
             check=False,
         )

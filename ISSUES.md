@@ -12,16 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## Windows: text encoding, and line endings in edits
-
-Suspected. `GitClient.run` decodes with the locale's encoding (cp1252 on
-Windows), so author names and messages read from `git log`, and messages
-written with `commit-tree -F -`, can be mangled: use `encoding="utf-8",
-errors="surrogateescape"`. And edits are hashed as they are (`hash-object
---stdin` applies no filters), so on Windows with `core.autocrlf`, an editor
-that saves CRLF commits CRLF into a repository that stores LF: consider
-`hash-object --path=<path>`, so attributes apply.
-
 ## `--edit` with `rebase.autosquash`
 
 Suspected. If `rebase.autosquash` reorders the todo list, the commit to edit

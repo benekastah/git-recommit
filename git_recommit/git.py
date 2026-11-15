@@ -37,8 +37,16 @@ class GitClient:
         self, *args: str, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None
     ) -> str:
         """Run git and return stripped stdout."""
+        # UTF-8, as git writes (not the locale's encoding, e.g. cp1252 on
+        # Windows), keeping what isn't as surrogates, as paths are.
         result = subprocess.run(
-            self._command(*args), capture_output=True, text=True, input=input, env=self._env(env), check=False
+            self._command(*args),
+            capture_output=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            input=input,
+            env=self._env(env),
+            check=False,
         )
         if check and result.returncode != 0:
             raise RecommitError(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
@@ -85,6 +93,12 @@ class GitClient:
         content = self._cat_file.stdout.read(int(header[2]))
         self._cat_file.stdout.read(1)
         return content
+
+    def clean(self, path: str, content: bytes) -> bytes:
+        """content as `git add` would commit it at path: through the clean
+        filters and line-ending conversion its attributes and config ask for
+        (e.g. CRLF to LF with core.autocrlf)."""
+        return self.blob(self.run_bytes("hash-object", "-w", "--path", path, "--stdin", input=content).decode().strip())
 
     def hash_blob(self, content: bytes) -> str:
         """Write content to the object database, and return its id."""

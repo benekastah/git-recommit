@@ -25,30 +25,20 @@ jobs:
           cache-dependency-glob: pyproject.toml
           activate-environment: true
       - run: uv pip install --group dev --editable .
-      - name: One slow test, profiled
+      - name: Git processes on C (the default temp directory), timed
         shell: bash
         run: |
-          python -m cProfile -o prof.out -m pytest -q -n 0 -p no:randomly "tests/test_old_commits.py::test_choosing_a_commits_author" "tests/test_session.py::test_reload_keeps_assignments"
-          python -c "import pstats; p = pstats.Stats('prof.out'); p.sort_stats('tottime').print_stats(25); p.sort_stats('cumtime').print_stats(40)"
-      - name: Serial, slowest
-        run: python -m pytest -q -n 0 -p no:randomly --durations=15 tests/test_old_commits.py tests/test_session.py
-      - name: Git processes, timed
+          echo "TEMP=$TEMP"
+          mkdir trace-c
+          GIT_TRACE2_EVENT="$PWD/trace-c" python -m pytest -q -n 0 -p no:randomly tests/test_old_commits.py
+          python .github/workflows/git_times.py trace-c
+      - name: Git processes on D, timed
         shell: bash
         run: |
-          mkdir trace
-          GIT_TRACE2_EVENT="$PWD/trace" python -m pytest -q -n 0 -p no:randomly tests/test_old_commits.py
-          ls trace | wc -l
-          python - <<'PY'
-          import json, os, datetime
-          total = 0.0
-          for name in os.listdir("trace"):
-              times = {}
-              for line in open(os.path.join("trace", name), encoding="utf-8", errors="replace"):
-                  e = json.loads(line)
-                  if e.get("event") in ("version", "exit", "atexit"):
-                      times.setdefault(e["event"], e["time"])
-              if "version" in times and "atexit" in times:
-                  f = lambda s: datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
-                  total += (f(times["atexit"]) - f(times["version"])).total_seconds()
-          print(f"time inside git processes (from start to exit): {total:.1f}s")
-          PY
+          mkdir -p /d/tmp trace-d
+          GIT_TRACE2_EVENT="$PWD/trace-d" python -m pytest -q -n 0 -p no:randomly --basetemp=D:/tmp/pytest tests/test_old_commits.py
+          python .github/workflows/git_times.py trace-d
+      - name: Whole suite on D
+        run: python -m pytest -q -p no:randomly --basetemp=D:/tmp/pytest-all
+      - name: Whole suite on C
+        run: python -m pytest -q -p no:randomly

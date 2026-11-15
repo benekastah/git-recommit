@@ -83,3 +83,30 @@ What to decide:
 - **The TUI on a plan.** `git recommit tui` could open the plan in the TUI,
   and leave it as a plan on quitting, so a person can finish what an agent
   started, or the reverse.
+
+## Rebuilding a range with merges
+
+Today a range with merge commits in it (or after it, up to HEAD) is refused:
+the new commits are one line of history, so there's nowhere for a merge's
+other parent to go. `git rebase` (without `--rebase-merges`) has the same
+problem, and drops the merges, putting the other commits in one line.
+git recommit could do the same.
+
+The common case is merging the branch a feature started from back into it,
+then rebuilding the feature: `git recommit main..HEAD`. The range's base is
+then main's tip, and main's commits aren't in the range, so the diff is just
+the feature's changes, and the new commits go in one line on main: a rebase
+and a recombine at once. Dropping a merge whose other side has commits in
+the range puts them in one line too, as rebase does.
+
+What to decide:
+
+- **Starting from the old commits.** Commits before the merge were made on
+  the old base, so reproducing their files exactly (`oldcommits._reproduce`)
+  would undo the merged changes. Those commits could take their changes by
+  git blame alone, without edits that reproduce them.
+- **The merge's own changes.** Conflict resolutions (and any other change the
+  merge itself makes) blame to the merge; it could be an old commit like the
+  others, with its message, or left out if it makes no changes of its own.
+- **Saying so.** Dropping commits isn't something to do silently; the TUI
+  and `start` should say which merges were dropped.

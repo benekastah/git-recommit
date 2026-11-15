@@ -7,15 +7,15 @@ it was found by reading the code and still needs checking.
 
 With 60 files of 1,500 lines, each rewritten by all of 15 commits (so every
 commit needs an edit for every file, 900 in all), starting from the old
-commits takes a few seconds, though files are now reproduced in parallel:
-most of it is one `git merge-file` per carried edit. Merging in-process would
-be faster, but would have to agree with git's merges; or the TUI could open
-first, and show progress.
-
-## Merges can't be rebuilt
-
-The range can't include merge commits: the new commits are one line of
-history, so there's nowhere for a merge's other parent to go.
+commits takes about 15 seconds. Little of it is `git merge-file` (about 2.5
+seconds of 840 merges); most is Python. For each old commit,
+`oldcommits._reproduce` replays the file through every earlier commit from
+scratch (`Session.states` with `upto`), so the work grows with the square of
+the number of commits, and each replay rebuilds the file with `diff.apply` for
+every commit (16,200 times here). `FileDiff.ids` rebuilds its list each time
+it's read, which `file_states` does in its loop. Since that work holds the
+GIL, reproducing files in parallel barely helps. Going through each file once,
+keeping its state as it goes, and caching the ids should fix it.
 
 ## Renames show as a deletion and an addition
 

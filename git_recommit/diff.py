@@ -212,7 +212,7 @@ def change_keys(files: list[FileDiff]) -> dict[int, ChangeKey]:
     return keys
 
 
-def load(git: GitClient, base: str, tip: str) -> list[FileDiff]:
+def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
     """The changes from base to tip, file by file."""
     common = ("diff-tree", "-r", "--no-renames", "--no-abbrev", base, tip)
     raw = git.run_bytes(*common, "--raw", "-z")
@@ -227,7 +227,7 @@ def load(git: GitClient, base: str, tip: str) -> list[FileDiff]:
         raise RecommitError(f"git diff-tree listed {len(entries)} files, but its patch doesn't match")
     remaining = iter(parts)
     ids = count()
-    diffs = []
+    files = []
     for old_mode, new_mode, old_blob, new_blob, status, path in entries:
         part = next(remaining)
         if status == "T":
@@ -249,5 +249,5 @@ def load(git: GitClient, base: str, tip: str) -> list[FileDiff]:
                 diff.old_lines = split_lines(git.blob(diff.old_blob))
             if (status in "AD" and not diff.hunks) or (status == "M" and diff.old_mode != diff.new_mode):
                 diff.meta_id = next(ids)
-        diffs.append(diff)
-    return diffs
+        files.append(diff)
+    return files

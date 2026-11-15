@@ -61,7 +61,8 @@ def test_editing_from_stdin_and_rewording(repo: Repo) -> None:
     assert "Edited a in commit 1" in subprocess_result.stdout
     repo.recommit("commit", "reword", "2", "Real a")
     # The stub is carried into commit 2, where it overlaps a's real line.
-    assert "resolve the conflicts first: a in commit 2" in repo.recommit("write", expect_success=False).stderr
+    stderr = repo.recommit("write", expect_success=False).stderr
+    assert "resolve the conflicts first" in stderr and "a in commit 2" in stderr
     repo.recommit("edit", "2", "a", input="real\n")
     repo.recommit("write")
     assert repo.git("log", "--format=%s", "-2").splitlines() == ["Real a", "stub"]
@@ -180,3 +181,14 @@ def test_choosing_an_author(repo: Repo) -> None:
     repo.recommit("commit", "author", "1", "Someone Else <else@example.com>")
     repo.recommit("write")
     assert repo.git("log", "-1", "--format=%an <%ae>") == "Someone Else <else@example.com>"
+
+
+def test_write_warns_as_the_tui_does(repo: Repo) -> None:
+    repo.commit("wip", a="a\n", b="b\n")
+    repo.recommit("start", "HEAD~")
+    repo.recommit("commit", "add", "empty")
+    repo.recommit("unassign", "b")
+    stderr = repo.recommit("write").stderr
+    assert "warning: 1 change isn't assigned to a commit" in stderr
+    assert "warning: b will be left with uncommitted changes" in stderr
+    assert "warning: commit 2 (empty) will be empty" in stderr

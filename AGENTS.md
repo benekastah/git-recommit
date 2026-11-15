@@ -26,9 +26,14 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
 - `git_recommit/plan.py` is the new commits and which change ids each takes.
 - `git_recommit/snapshot.py` says what each file is in each new commit:
   everything assigned to it or an earlier one, plus the user's edits.
-- `git_recommit/session.py` ties those to a repository: loading the range,
-  building the new commits (with plumbing, in a temporary index, never touching
-  the working tree), and moving HEAD's branch to them.
+- `git_recommit/session.py` ties those to a repository: the range's diff,
+  the plan, building the new commits (with plumbing, in a temporary index,
+  never touching the working tree), and moving HEAD's branch to them.
+  `git_recommit/revisions.py` reads the range, and makes the uncommitted
+  changes a commit; `git_recommit/oldcommits.py` starts the plan from the old
+  commits (by git blame, with edits where that isn't enough).
+- `git_recommit/writing.py` is writing, as the TUI and `git recommit write`
+  share it: what stops it, the warnings, building and validating.
 - `git_recommit/commands.py` is every change to the plan, as a command: a
   frozen dataclass with `run(session)`, naming commits by number and changes
   by `Target`s (`path`, `path:@2`, `path:+10-14`). The command line's

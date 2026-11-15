@@ -6,7 +6,7 @@ import os
 import sys
 from collections.abc import Callable
 
-from git_recommit import commands, planfile, show, validate
+from git_recommit import commands, planfile, show, validate, writing
 from git_recommit.commands import Command, Target
 from git_recommit.edit_commit import edit_commit
 from git_recommit.errors import RecommitError
@@ -268,21 +268,21 @@ def start(git: GitClient, spec: str, include_untracked: bool = False) -> Session
 def write(session: Session, validate_command: str | None) -> None:
     """Build the new commits, validate them (stopping if that fails), and move
     the branch to them."""
-    if conflicts := session.conflicts():
-        where = ", ".join(f"{c.path} in commit {session.plan.index(c.commit.key) + 1}" for c in conflicts)
-        raise RecommitError(f"resolve the conflicts first: {where}")
-    for warning in session.authorship_warnings():
+    if problem := writing.blocker(session):
+        raise RecommitError(problem)
+    for warning in writing.warnings(session):
         print(f"git-recommit: warning: {warning}", file=sys.stderr)
-    shas = session.build()
-    if validate_command is not None:
-        subjects = [commit.subject for commit in session.plan.commits]
+
+    def run_validation(commits: list[tuple[str, str]]) -> validate.Outcome:
         # Stop at the first failure (as if the user chose to edit).
-        outcome = validate.run(session.git, validate_command, list(zip(shas, subjects, strict=True)), ask=lambda _: "e")
-        if outcome.action != "ok":
-            assert outcome.index is not None
-            raise RecommitError(
-                f"validation failed for commit {outcome.index + 1} ({subjects[outcome.index]}); nothing was changed"
-            )
+        assert validate_command is not None
+        return validate.run(session.git, validate_command, commits, ask=lambda _: "e")
+
+    shas, outcome = writing.build(session, run_validation if validate_command is not None else None)
+    if outcome.action != "ok":
+        assert outcome.index is not None
+        subject = session.plan.commits[outcome.index].subject
+        raise RecommitError(f"validation failed for commit {outcome.index + 1} ({subject}); nothing was changed")
     finish(session, shas)
 
 

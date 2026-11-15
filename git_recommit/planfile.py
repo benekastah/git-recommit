@@ -11,7 +11,7 @@ import json
 import os
 from typing import Any
 
-from git_recommit import diff as diffs
+from git_recommit.diff import change_keys
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit
@@ -38,7 +38,7 @@ def _decode(text: str) -> bytes:
 
 def save(session: Session) -> None:
     plan = session.plan
-    keys = diffs.change_keys(session.files)
+    keys = change_keys(session.files)
     data = {
         "version": VERSION,
         "base": session.base,
@@ -89,7 +89,7 @@ def load(git: GitClient) -> Session:
         commit.old_message = saved.get("old_message")
         for edited, edit in saved["edits"].items():
             commit.edits[edited] = Edit(_decode(edit["basis"]), _decode(edit["content"]))
-    ids = {key: i for i, key in diffs.change_keys(session.files).items()}
+    ids = {key: i for i, key in change_keys(session.files).items()}
     for made in data.get("origin", []):
         file, kind, text, n = made["change"]
         i = ids.get((file, kind, _decode(text), n))

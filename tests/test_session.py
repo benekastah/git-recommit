@@ -5,7 +5,8 @@ import subprocess
 import pytest
 
 from git_recommit.errors import RecommitError
-from git_recommit.session import Session, resolve_range
+from git_recommit.revisions import resolve_range
+from git_recommit.session import Session
 from tests.helpers import Repo
 
 FEATURE = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"

@@ -3,14 +3,13 @@ import random
 
 import pytest
 
-from git_recommit import diff as diffs
-from git_recommit.diff import FileDiff, apply, join_lines, split_lines
+from git_recommit.diff import FileDiff, apply, join_lines, load_diff, split_lines
 from tests.helpers import Repo
 
 
 def load(repo: Repo, base: str = "HEAD~", tip: str = "HEAD") -> dict[str, FileDiff]:
     client = repo.client
-    return {d.path: d for d in diffs.load(client, client.run("rev-parse", base), client.run("rev-parse", tip))}
+    return {d.path: d for d in load_diff(client, client.run("rev-parse", base), client.run("rev-parse", tip))}
 
 
 def test_split_and_join_lines_keep_line_endings() -> None:

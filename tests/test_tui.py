@@ -312,7 +312,7 @@ def test_writing_with_unassigned_changes_warns(repo: Repo) -> None:
         await create(pilot, "add-a")
         await pilot.press("f", "w")
         text = str(pilot.app.screen.query_one("Static").render())
-        assert "1 changes aren't assigned" in text and "  b" in text
+        assert "1 change isn't assigned" in text and "b will be left with uncommitted changes" in text
         await pilot.press("y")
 
     assert len(run(session, FakeTerminal(repo), script)) == 1

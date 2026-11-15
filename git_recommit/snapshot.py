@@ -62,38 +62,47 @@ def _content(version: Version | None) -> bytes:
 
 
 def file_states(diff: FileDiff, commits: list[NewCommit], assignment: dict[int, int], merge: Merge) -> list[FileState]:
-    """The file in each of the commits, in order."""
+    """The file in each of the commits, in order.
+
+    For each commit: `assigned` is the file with only the changes assigned to
+    it and earlier commits; `carried` is that with the edits of earlier
+    commits carried in (merged); and `result` is that with this commit's own
+    edit, if any, which is the file in the commit.
+    """
     selected: set[int] = set()
     states = []
     edited = not diff.whole and any(diff.path in commit.edits for commit in commits)
-    prev_pure = prev_eff = pure_version(diff, selected)
+    prev_assigned = prev_result = pure_version(diff, selected)
     prev_conflict = False
     for commit in commits:
         selected.update(i for i in diff.ids if assignment.get(i) == commit.key)
-        pure = pure_version(diff, selected)
+        assigned = pure_version(diff, selected)
         if not edited:
-            states.append(FileState(pure, basis=_content(pure)))
+            states.append(FileState(assigned, basis=_content(assigned)))
             continue
         # Carry the edits so far into this commit.
-        if prev_eff == prev_pure:
-            pre, conflict = pure, False
-        elif pure == prev_pure:
-            pre, conflict = prev_eff, prev_conflict
+        if prev_result == prev_assigned:
+            carried, conflict = assigned, False
+        elif assigned == prev_assigned:
+            carried, conflict = prev_result, prev_conflict
         else:
-            merged, conflict = merge(_content(prev_pure), _content(prev_eff), _content(pure))
+            merged, conflict = merge(_content(prev_assigned), _content(prev_result), _content(assigned))
             conflict = conflict or prev_conflict
-            mode = (pure or prev_eff or prev_pure or Version(diff.old_mode or diff.new_mode or "100644")).mode
-            pre = None if pure is None and not merged and not conflict else Version(mode, content=merged)
+            mode = (
+                assigned or prev_result or prev_assigned or Version(diff.old_mode or diff.new_mode or "100644")
+            ).mode
+            gone = assigned is None and not merged and not conflict
+            carried = None if gone else Version(mode, content=merged)
         # A conflicted file is no basis for an edit, which resolves it.
-        basis = _content(pure if conflict else pre)
-        eff = pre
+        basis = _content(assigned if conflict else carried)
+        result = carried
         if edit := commit.edits.get(diff.path):
             if edit.basis == basis:
                 content, conflict = edit.content, False
             else:
                 content, conflict = merge(edit.basis, edit.content, basis)
-            mode = (pre or pure or Version(diff.new_mode or diff.old_mode or "100644")).mode
-            eff = Version(mode, content=content)
-        states.append(FileState(eff, conflict, eff != pure, basis))
-        prev_pure, prev_eff, prev_conflict = pure, eff, conflict
+            mode = (carried or assigned or Version(diff.new_mode or diff.old_mode or "100644")).mode
+            result = Version(mode, content=content)
+        states.append(FileState(result, conflict, result != assigned, basis))
+        prev_assigned, prev_result, prev_conflict = assigned, result, conflict
     return states

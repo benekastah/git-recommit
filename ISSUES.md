@@ -31,23 +31,6 @@ in the diff panel and the sidebar's files even though it has no changes, so
 its edits can be seen and dropped. Starting from the old commits would add
 the files they change, too.
 
-## Logic has leaked out of board.py, and session.py does too much
-
-AGENTS.md says to keep the TUI's logic in `board.py` or the commands, where
-it's tested without Textual. Changing the plan now goes through the commands,
-but `tui.py` still decides things: `action_write` works out the warnings
-(which `git recommit write` doesn't give), and `_build` runs the validation
-flow, which `cli.write` does its own way. Writing could be a command too, with
-the TUI and the command line differing only in how they ask what to do when
-validation fails. And `session.py` does five jobs (resolving the range, the
-working tree's commit, starting from the old commits, building, finishing):
-starting from the old commits (~100 lines) could be a module of its own.
-
-Some names are hard to follow: `head`, `tip` and `_tip_tree`; `pre`, `eff`,
-`pure` and `prev_*` in `snapshot.file_states`; `index` for both a commit's
-place and git's index in `Session.build`; and the module `diffs` beside
-variables named `diff`.
-
 ## The range must end at HEAD
 
 Only the commits up to HEAD can be rebuilt. Rebuilding commits further down,

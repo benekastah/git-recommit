@@ -19,7 +19,7 @@ from textual.scroll_view import ScrollView
 from textual.strip import Strip
 from textual.widgets import Input, Static
 
-from git_recommit import commands, editor, show, validate
+from git_recommit import commands, editor, show, validate, writing
 from git_recommit.board import Board, line_text
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
@@ -657,28 +657,13 @@ class BoardScreen(Screen[None]):
     # Finishing.
 
     def action_write(self) -> None:
-        plan = self.board.plan
-        if not plan.commits:
-            self._do("There are no commits to make; press c to create one.")
+        if problem := writing.blocker(self.session):
+            self._do(problem[0].upper() + problem[1:] + ".")
             return
-        if conflicts := self.session.conflicts():
-            where = ", ".join(f"{c.path} in commit {self.board.number(c.commit.key)}" for c in conflicts)
-            self._do(f"Resolve the conflicts first (edit the file in that commit with e): {where}")
-            return
-        old = len(self.session.old_commits)
-        replace = f"Replace the {old} commit{'s' if old != 1 else ''}" if old else "Make"
-        lines = [f"{replace} with these {len(plan.commits)}?"]
-        if unassigned := self.session.unassigned():
-            lines.append(f"\nWarning: {len(unassigned)} changes aren't assigned to a commit.")
-        if left := self.session.left_uncommitted():
-            lines.append("These files will be left with uncommitted changes:")
-            lines.extend(f"  {path}" for path in left)
-        if authorship := self.session.authorship_warnings():
-            lines.append("\nAuthors (A sets a commit's):")
-            lines.extend(f"  {warning}" for warning in authorship)
-        if empty := self.session.empty_commits():
-            lines.append("\nThese commits will be empty:")
-            lines.extend(f"  {self.board.number(c.key)} {c.subject}" for c in empty)
+        lines = [writing.question(self.session)]
+        if warnings := writing.warnings(self.session):
+            lines.append("\nWarnings (A sets a commit's author):")
+            lines.extend(f"  {warning}" for warning in warnings)
 
         def confirmed(yes: bool | None) -> None:
             if yes:
@@ -691,23 +676,25 @@ class BoardScreen(Screen[None]):
             self.action_reload()
             self._do("HEAD moved since the changes were loaded, so they're reloaded: check them, then write again.")
             return
+
+        def run_validation(commits: list[tuple[str, str]]) -> validate.Outcome:
+            return self.terminal.validate(self.app, commits)
+
         try:
-            shas = self.session.build()
+            shas, outcome = writing.build(
+                self.session, run_validation if self.terminal.validate_command is not None else None
+            )
         except RecommitError as e:
             self._do(str(e))
             return
-        if self.terminal.validate_command is not None:
-            commits = self.board.plan.commits
-            outcome = self.terminal.validate(self.app, [(sha, c.subject) for sha, c in zip(shas, commits, strict=True)])
-            if outcome.action == "edit":
-                assert outcome.index is not None
-                self.board.active = commits[outcome.index].key
-                self._do(f"Commit {outcome.index + 1} failed validation; change it, then press w to try again.")
-                return
-            if outcome.action == "abort":
-                self.app.exit(None)
-                return
-        self.app.exit(shas)
+        if outcome.action == "edit":
+            assert outcome.index is not None
+            self.board.active = self.board.plan.commits[outcome.index].key
+            self._do(f"Commit {outcome.index + 1} failed validation; change it, then press w to try again.")
+        elif outcome.action == "abort":
+            self.app.exit(None)
+        else:
+            self.app.exit(shas)
 
     def action_clear_commits(self) -> None:
         self._confirm("Clear every commit, to start from scratch?", self.board.clear)

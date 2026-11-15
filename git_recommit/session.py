@@ -1,120 +1,18 @@
 """A recommit: the commits being rebuilt, the plan for the new ones, and
 building them."""
 
-import hashlib
 import os
-import re
-import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 
-from git_recommit import diff as diffs
-from git_recommit.diff import FileDiff, numbered
+from git_recommit import oldcommits
+from git_recommit.diff import FileDiff, change_keys, load_diff
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit, NewCommit, Plan
+from git_recommit.revisions import check_nothing_in_progress, literal, resolve_range, untracked_files, worktree_commit
 from git_recommit.snapshot import FileState, Version, file_states, pure_version
-
-
-def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
-    """The (base, tip) commits of a range, read as git reads ranges:
-    `<a>..<b>` is the commits in b but not a (so after their merge base);
-    `<a>...<b>` those in either but not both, which must all be on one side;
-    and `<a>` alone means `<a>..HEAD`. An end left out is HEAD.
-
-    The commits to rebuild are those after base, up to and including tip,
-    which must be HEAD. base can be HEAD too, to make commits of only the
-    uncommitted changes.
-    """
-    separator = "..." if "..." in spec else ".." if ".." in spec else None
-    a, _, b = spec.partition(separator) if separator else (spec, "", "HEAD")
-    a, b = a or "HEAD", b or "HEAD"
-    sha_a, sha_b = git.commit_sha(a), git.commit_sha(b)
-    for rev, sha in ((a, sha_a), (b, sha_b)):
-        if sha is None:
-            raise RecommitError(f"{rev} isn't a commit")
-    assert sha_a is not None and sha_b is not None
-    if separator == "...":
-        if git.is_ancestor(sha_a, sha_b):  # including when they're the same
-            base, tip = sha_a, sha_b
-        elif git.is_ancestor(sha_b, sha_a):
-            base, tip = sha_b, sha_a
-        else:
-            raise RecommitError(f"{spec} has commits on two branches, which can't be rebuilt as one")
-    else:
-        merge_base = git.run("merge-base", sha_a, sha_b, check=False)
-        if not merge_base:
-            raise RecommitError(f"{a} and {b} have no history in common")
-        base, tip = merge_base, sha_b
-    head = git.commit_sha("HEAD")
-    if base == tip and tip != head:
-        raise RecommitError(f"{spec} has no commits")
-    if tip != head:
-        raise RecommitError(f"{spec} doesn't end at HEAD; only commits up to HEAD can be rebuilt")
-    if git.run("rev-list", "--merges", f"{base}..{tip}"):
-        raise RecommitError(f"{spec} has merge commits, which can't be rebuilt")
-    return base, tip
-
-
-# What git keeps while another operation is in progress, and what to call it.
-IN_PROGRESS = {
-    "MERGE_HEAD": "a merge",
-    "CHERRY_PICK_HEAD": "a cherry-pick",
-    "REVERT_HEAD": "a revert",
-    "rebase-merge": "a rebase",
-    "rebase-apply": "a rebase (or git am)",
-}
-
-
-def check_nothing_in_progress(git: GitClient) -> None:
-    """Refuse while another operation (a merge, cherry-pick, revert or rebase)
-    is in progress, or the index has unresolved conflicts: taking the working
-    tree as uncommitted changes would take the conflict markers, and writing
-    (which resets the index) would end the operation."""
-    paths = git.run("rev-parse", "--path-format=absolute", *(a for name in IN_PROGRESS for a in ("--git-path", name)))
-    for path, what in zip(paths.splitlines(), IN_PROGRESS.values(), strict=True):
-        if os.path.exists(path):
-            raise RecommitError(f"{what} is in progress; finish it or abort it first")
-    if git.run("ls-files", "--unmerged"):
-        raise RecommitError("there are unresolved conflicts; resolve them first")
-
-
-def untracked_files(git: GitClient) -> list[str]:
-    """The working tree's untracked files that aren't ignored, from the top."""
-    out = git.run_bytes("ls-files", "--others", "--exclude-standard", "--full-name", "-z", ":/")
-    return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
-
-
-def worktree_commit(git: GitClient, head: str, include_untracked: bool = False) -> str | None:
-    """A commit, on head, of the working tree's tracked files (and whatever is
-    staged), as `git stash` makes; or None if they have no uncommitted changes.
-    With include_untracked, as `git stash -u`: its untracked files too, but
-    for ignored ones.
-
-    It isn't on any branch; recommit uses it as the end of the diff, so that
-    uncommitted changes can be assigned to new commits like committed ones.
-    """
-    untracked = "--untracked-files=all" if include_untracked else "--untracked-files=no"
-    # --no-optional-locks: don't refresh (and so write) the user's index.
-    if not git.run("--no-optional-locks", "status", "--porcelain", untracked):
-        return None
-    with tempfile.TemporaryDirectory() as scratch:
-        # A copy of the real index, so `git add` sees what's staged, and only
-        # reads the files that changed since it was written. copy2 keeps its
-        # time, which git compares files' with: a file changed in the same
-        # second as the index was written has to be read, as git knows.
-        index = os.path.join(scratch, "index")
-        shutil.copy2(git.run("rev-parse", "--path-format=absolute", "--git-path", "index"), index)
-        env = {"GIT_INDEX_FILE": index}
-        git.run("add", "--all" if include_untracked else "--update", "--", ":/", env=env)
-        tree = git.run("write-tree", env=env)
-    return git.run("commit-tree", tree, "-p", head, "-m", "Uncommitted changes")
-
-
-# A line of `git blame --porcelain` that starts a line's entry: the commit,
-# then the line's number in the commit, then its number in the file blamed.
-BLAME_ENTRY = re.compile(rb"^([0-9a-f]{40,64}) \d+ (\d+)")
 
 
 @dataclass(frozen=True)
@@ -124,6 +22,13 @@ class Conflict:
 
 
 class Session:
+    """A recommit: the commits after `base` up to `head` (HEAD, when it was
+    loaded) being rebuilt, from the diff from `base` to `tip`: `head`, or a
+    commit of the uncommitted changes on it (see revisions.worktree_commit),
+    whose tree (`_tip_tree`) says whether reloading finds anything new. And
+    the plan for the new commits.
+    """
+
     def __init__(
         self,
         git: GitClient,
@@ -160,7 +65,7 @@ class Session:
         tip = worktree_commit(git, head, include_untracked)
         if base == head and tip is None:
             raise RecommitError(f"{spec} has no commits in it, and there are no uncommitted changes")
-        return cls(git, base, head, diffs.load(git, base, tip or head), tip, include_untracked)
+        return cls(git, base, head, load_diff(git, base, tip or head), tip, include_untracked)
 
     def reload(self) -> bool:
         """Load the diff again, to pick up changes the user made to the
@@ -176,11 +81,11 @@ class Session:
         tree = self.git.run("rev-parse", f"{tip}^{{tree}}")
         if head == self.head and tree == self._tip_tree:
             return False
-        files = diffs.load(self.git, base, tip)
+        files = load_diff(self.git, base, tip)
         if not files:
             raise RecommitError("can't reload: there are no changes any more")
-        old_keys = diffs.change_keys(self.files)
-        new_ids = {key: i for i, key in diffs.change_keys(files).items()}
+        old_keys = change_keys(self.files)
+        new_ids = {key: i for i, key in change_keys(files).items()}
         self.plan.assignment = {
             new_ids[old_keys[i]]: key for i, key in self.plan.assignment.items() if old_keys[i] in new_ids
         }
@@ -249,129 +154,8 @@ class Session:
         self.plan = Plan()
 
     def restore_old_commits(self) -> None:
-        """Start from the commits being rebuilt: one new commit for each, with
-        its message and author, taking the changes it made (by git blame).
-
-        Where a commit's changes overlap a later one's (e.g. it adds a line a
-        later commit rewrites), the changes alone can't make the commit as it
-        was, so it gets edits that do. Building the plan unchanged makes the
-        same trees, but for files that end up as they started (see ISSUES.md).
-        """
-        shas = self.git.run("rev-list", "--reverse", f"{self.base}..{self.head}").split()
-        self.plan = plan = Plan()
-        keys = {}
-        for sha in shas:
-            # Exactly as it is in the commit (git log would trim it), for
-            # writing it unchanged; in the plan, without its final newline,
-            # as messages the user writes are.
-            exact = self.git.run_bytes("cat-file", "commit", sha).partition(b"\n\n")[2].decode(errors="surrogateescape")
-            name, email, date = self.git.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha).split("\0")
-            commit = plan.add(exact.removesuffix("\n"), author=Author(name, email, date))
-            commit.old_message = exact
-            keys[sha] = commit.key
-        # A line last there in a commit (or base) was removed by the next one.
-        removed_by = dict(zip([self.base, *shas], shas, strict=False))
-        touched_by = self._touched_by(shas)
-        uncommitted = set(self._changed_paths(self.head, self.tip)) if self.uncommitted else set()
-        for diff in self.files:
-            # The last commit to change the file takes what blame can't say
-            # who made, as well as what blame doesn't cover.
-            touched = touched_by.get(diff.path, [])
-            last = keys.get(touched[-1]) if touched else None
-            if diff.meta_id is not None:
-                plan.assign([diff.meta_id], last)
-            if diff.whole:
-                continue
-            if len(touched) == 1 and diff.path not in uncommitted:
-                # Only one commit changed it, so it made every change.
-                plan.assign([i for i in diff.ids if i != diff.meta_id], last)
-                continue
-            for i, made_by in self._made_by(diff, removed_by).items():
-                plan.assign([i], keys.get(made_by or "", last))
-        # Who made each change, for warning when a commit will be authored by
-        # someone else (see authorship_warnings).
-        authors = {commit.key: commit.author for commit in plan.commits}
-        self.origin = {i: author for i, key in plan.assignment.items() if (author := authors[key]) is not None}
-        self._reproduce(shas)
-
-    def _changed_paths(self, old: str, new: str) -> list[str]:
-        out = self.git.run_bytes("diff-tree", "-r", "--no-renames", "--name-only", "-z", old, new)
-        return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
-
-    def _touched_by(self, shas: list[str]) -> dict[str, list[str]]:
-        """For each path, the commits of shas (in order) that changed it."""
-        touched: dict[str, list[str]] = {}
-        for parent, sha in zip([self.base, *shas], shas, strict=False):
-            for path in self._changed_paths(parent, sha):
-                touched.setdefault(path, []).append(sha)
-        return touched
-
-    def _made_by(self, diff: FileDiff, removed_by: dict[str, str]) -> dict[int, str | None]:
-        """For each of a text file's changes that was made before HEAD, the
-        old commit that made it, by git blame, or None where blame and the
-        diff disagree about the line (e.g. a blank line that moved)."""
-        added = self._blame(diff.path, reverse=False) if diff.new_blob else {}
-        removed = self._blame(diff.path, reverse=True) if diff.old_blob else {}
-        made_by: dict[int, str | None] = {}
-        for hunk in diff.hunks:
-            for line, old, new in numbered(hunk):
-                if line.id is None:
-                    continue
-                if line.kind == "+":
-                    # Added by an old commit, or after HEAD.
-                    by = added.get(new)
-                    if by == self.tip and self.uncommitted:
-                        continue
-                    made_by[line.id] = by
-                else:
-                    # Last there in base or an old commit, or in HEAD.
-                    there = removed.get(old)
-                    if there == self.head and self.uncommitted:
-                        continue
-                    made_by[line.id] = removed_by.get(there or "")
-        return made_by
-
-    def _blame(self, path: str, reverse: bool) -> dict[int | None, str]:
-        """For each line of the file (at tip, or with reverse, at base), the
-        commit that last added it (or with reverse, the last that had it)."""
-        args = ["blame", "--porcelain", *(["--reverse"] if reverse else []), f"{self.base}..{self.tip}"]
-        lines: dict[int | None, str] = {}
-        for entry in self.git.run_bytes(*args, "--", path).split(b"\n"):
-            if match := BLAME_ENTRY.match(entry):
-                lines[int(match[2])] = match[1].decode()
-        return lines
-
-    def _reproduce(self, shas: list[str]) -> None:
-        """Give each commit of the plan the edits it needs to have each text
-        file as old commit shas[i] does."""
-        object_format = self.git.run("rev-parse", "--show-object-format")
-        trees = [self._blobs(sha) for sha in shas]
-        for diff in self.files:
-            # An edit can't change a binary file.
-            if diff.whole:
-                continue
-            for index, (commit, blobs) in enumerate(zip(self.plan.commits, trees, strict=True)):
-                actual = blobs.get(diff.path)
-                # Nor delete a file.
-                if actual is None:
-                    continue
-                # Only up to this commit: an edit here changes the later ones.
-                version = self.states(diff, upto=index)[index].version
-                content = None if version is None else version.content
-                if content is not None and blob_id(content, object_format) == actual:
-                    continue
-                self.set_edit(commit.key, diff, self.git.blob(actual))
-
-    def _blobs(self, sha: str) -> dict[str, str]:
-        """Each file's blob in the commit."""
-        blobs = {}
-        for entry in self.git.run_bytes("ls-tree", "-r", "-z", "--full-tree", sha).split(b"\0"):
-            if entry:
-                meta, _, path = entry.partition(b"\t")
-                _, kind, blob = meta.decode().split(" ")
-                if kind == "blob":
-                    blobs[path.decode(errors="surrogateescape")] = blob
-        return blobs
+        """Start from the commits being rebuilt (see oldcommits.restore)."""
+        oldcommits.restore(self)
 
     def merge(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         key = (basis, ours, theirs)
@@ -481,17 +265,17 @@ class Session:
             self.git.run("read-tree", self.base, env=env)
             parent = self.base
             previous = {diff.path: pure_version(diff, set()) for diff in self.files}
-            for index, commit in enumerate(self.plan.commits):
+            for position, commit in enumerate(self.plan.commits):
                 updates = []
                 for diff in self.files:
-                    version = states[diff.path][index].version
+                    version = states[diff.path][position].version
                     if version != previous[diff.path]:
                         updates.append(entry(diff.path, version))
                         previous[diff.path] = version
                 if updates:
                     self.git.run_bytes("update-index", "-z", "--index-info", input=b"".join(updates), env=env)
                 tree = self.git.run("write-tree", env=env)
-                message = self._message(index + 1, commit)
+                message = self._message(position + 1, commit)
                 parent = self.git.run(
                     "commit-tree", tree, "-p", parent, *sign, "-F", "-", input=message, env=_author_env(commit) | env
                 )
@@ -578,14 +362,3 @@ def _author_env(commit: NewCommit) -> dict[str, str]:
     if author.date is not None:
         env["GIT_AUTHOR_DATE"] = author.date
     return env
-
-
-def literal(path: str) -> str:
-    """A pathspec for exactly the file at path (a path git reported, from the
-    top of the worktree), not a pattern: a[1].txt mustn't match a1.txt."""
-    return f":(top,literal){path}"
-
-
-def blob_id(content: bytes, object_format: str) -> str:
-    """The id git gives a blob of content, without asking it."""
-    return hashlib.new(object_format, b"blob %d\0" % len(content) + content).hexdigest()

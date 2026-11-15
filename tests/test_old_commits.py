@@ -2,6 +2,7 @@
 
 import pytest
 
+from git_recommit import oldcommits
 from git_recommit.errors import RecommitError
 from git_recommit.session import Session
 from tests.helpers import Repo
@@ -114,7 +115,7 @@ def test_changes_blame_cant_attribute_go_to_the_last_commit_to_change_the_file(
     # git blame and the diff can match lines differently (e.g. a blank line
     # that moves), leaving blame nothing to say about a change.
     old = history(repo)
-    monkeypatch.setattr(Session, "_blame", lambda self, path, reverse: {})
+    monkeypatch.setattr(oldcommits, "_blame", lambda session, path, reverse: {})
     session = restored(repo, "HEAD~3")
     assert session.unassigned() == []
     _, second, third = session.plan.commits

@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 import pytest
 
@@ -333,3 +334,25 @@ def test_building_a_change_of_kind(repo: Repo) -> None:
     session.restore_old_commits()
     (sha,) = session.build()
     assert repo.git("ls-tree", sha, "link").startswith("120000 blob")
+
+
+def test_building_a_file_whose_name_isnt_utf8(repo: Repo) -> None:
+    # Made with plumbing, since some filesystems (e.g. macOS's) refuse such
+    # names; skip-worktree keeps git from seeing it as deleted from the
+    # working tree.
+    name = b"caf\xe9.txt"
+    blob = repo.client.hash_blob(b"x\n")
+    subprocess.run(
+        ["git", "update-index", "--add", "--cacheinfo", b"100644," + blob.encode() + b"," + name],
+        cwd=repo.path,
+        check=True,
+    )
+    repo.git("commit", "--quiet", "-m", "add")
+    subprocess.run(["git", "update-index", "--skip-worktree", name], cwd=repo.path, check=True)
+    session = repo.session("HEAD~")
+    session.restore_old_commits()
+    (sha,) = session.build()
+    listed = subprocess.run(
+        ["git", "ls-tree", "-z", "--name-only", sha], cwd=repo.path, capture_output=True, check=True
+    )
+    assert name in listed.stdout.split(b"\0")

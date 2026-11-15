@@ -3,15 +3,6 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## File names that aren't UTF-8 crash writing
-
-Confirmed. Paths are decoded with `surrogateescape`, but `Session.build` sends
-`update-index --index-info` its input through `GitClient.run(text=True)`,
-which encodes strictly: a commit adding `caf\xe9.txt` raises
-`UnicodeEncodeError` on writing. Nothing is written, but the TUI dies.
-
-Fix: build the input as bytes (`os.fsencode`) and send it with `run_bytes`.
-
 ## `D` and `E` throw work away without asking
 
 `C`, `O` and `q` ask first, but `D` (delete the active commit, with its edits)

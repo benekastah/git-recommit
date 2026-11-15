@@ -320,15 +320,19 @@ class Session:
         zero = "0" * len(self.base)
         blobs: dict[bytes, str] = {}
 
-        def entry(path: str, version: Version | None) -> str:
+        def entry(path: str, version: Version | None) -> bytes:
+            # Paths were decoded with surrogateescape, which os.fsencode undoes,
+            # so a name that isn't UTF-8 is written back as it was.
             if version is None:
-                return f"0 {zero}\t{path}\0"
-            if version.sha is None:
+                mode, blob = "0", zero
+            elif version.sha is None:
                 assert version.content is not None
                 if version.content not in blobs:
                     blobs[version.content] = self.git.hash_blob(version.content)
-                return f"{version.mode} {blobs[version.content]}\t{path}\0"
-            return f"{version.mode} {version.sha}\t{path}\0"
+                mode, blob = version.mode, blobs[version.content]
+            else:
+                mode, blob = version.mode, version.sha
+            return f"{mode} {blob}\t".encode() + os.fsencode(path) + b"\0"
 
         shas = []
         with tempfile.TemporaryDirectory() as scratch:
@@ -344,7 +348,7 @@ class Session:
                         updates.append(entry(diff.path, version))
                         previous[diff.path] = version
                 if updates:
-                    self.git.run("update-index", "-z", "--index-info", input="".join(updates), env=env)
+                    self.git.run_bytes("update-index", "-z", "--index-info", input=b"".join(updates), env=env)
                 tree = self.git.run("write-tree", env=env)
                 message = commit.message if commit.message.endswith("\n") else commit.message + "\n"
                 author = commit.author

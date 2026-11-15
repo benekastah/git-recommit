@@ -1,0 +1,54 @@
+name: Profile
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: windows-latest
+    steps:
+      - name: Turn off Defender's real-time scanning
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: "3.15"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+          activate-environment: true
+      - run: uv pip install --group dev --editable .
+      - name: One slow test, profiled
+        shell: bash
+        run: |
+          python -m cProfile -o prof.out -m pytest -q -p no:xdist -p no:randomly "tests/test_old_commits.py::test_choosing_a_commits_author" "tests/test_session.py::test_reload_keeps_assignments"
+          python -c "import pstats; p = pstats.Stats('prof.out'); p.sort_stats('tottime').print_stats(25); p.sort_stats('cumtime').print_stats(40)"
+      - name: Serial, slowest
+        run: python -m pytest -q -p no:xdist -p no:randomly --durations=15 tests/test_old_commits.py tests/test_session.py
+      - name: Git processes, timed
+        shell: bash
+        run: |
+          mkdir trace
+          GIT_TRACE2_EVENT="$PWD/trace" python -m pytest -q -p no:xdist -p no:randomly tests/test_old_commits.py
+          ls trace | wc -l
+          python - <<'PY'
+          import json, os, datetime
+          total = 0.0
+          for name in os.listdir("trace"):
+              times = {}
+              for line in open(os.path.join("trace", name), encoding="utf-8", errors="replace"):
+                  e = json.loads(line)
+                  if e.get("event") in ("version", "exit", "atexit"):
+                      times.setdefault(e["event"], e["time"])
+              if "version" in times and "atexit" in times:
+                  f = lambda s: datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+                  total += (f(times["atexit"]) - f(times["version"])).total_seconds()
+          print(f"time inside git processes (from start to exit): {total:.1f}s")
+          PY

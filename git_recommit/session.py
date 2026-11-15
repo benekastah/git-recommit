@@ -1,16 +1,18 @@
 """A recommit: the commits being rebuilt, the plan for the new ones, and
 building them."""
 
+import hashlib
 import os
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass
 
 from git_recommit import diff as diffs
-from git_recommit.diff import FileDiff
+from git_recommit.diff import FileDiff, numbered
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
-from git_recommit.plan import Edit, NewCommit, Plan
+from git_recommit.plan import Author, Edit, NewCommit, Plan
 from git_recommit.snapshot import FileState, Version, file_states, pure_version
 
 
@@ -67,6 +69,11 @@ def worktree_commit(git: GitClient, head: str) -> str | None:
     return git.run("commit-tree", tree, "-p", head, "-m", "Uncommitted changes")
 
 
+# A line of `git blame --porcelain` that starts a line's entry: the commit,
+# then the line's number in the commit, then its number in the file blamed.
+BLAME_ENTRY = re.compile(rb"^([0-9a-f]{40,64}) \d+ (\d+)")
+
+
 @dataclass(frozen=True)
 class Conflict:
     commit: NewCommit
@@ -121,6 +128,103 @@ class Session:
         self.old_commits = self.git.run("log", "--format=%h %s", f"{base}..{head}").splitlines()
         self.uncommitted = tip != head
         return True
+
+    def clear(self) -> None:
+        """Start from scratch, with no commits."""
+        self.plan = Plan()
+
+    def restore_old_commits(self) -> None:
+        """Start from the commits being rebuilt: one new commit for each, with
+        its message and author, taking the changes it made (by git blame).
+
+        Where a commit's changes overlap a later one's (e.g. it adds a line a
+        later commit rewrites), the changes alone can't make the commit as it
+        was, so it gets edits that do. Building the plan unchanged makes the
+        same trees, but for files that end up as they started (see ISSUES.md).
+        """
+        shas = self.git.run("rev-list", "--reverse", f"{self.base}..{self.head}").split()
+        self.plan = plan = Plan()
+        keys = {}
+        for sha in shas:
+            message = self.git.run("log", "-1", "--format=%B", sha)
+            name, email, date = self.git.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha).split("\0")
+            keys[sha] = plan.add(message, author=Author(name, email, date)).key
+        # A line last there in a commit (or base) was removed by the next one.
+        removed_by = dict(zip([self.base, *shas], shas, strict=False))
+        for diff in self.files:
+            # The last commit to change the file takes what blame can't say
+            # who made, as well as what blame doesn't cover.
+            last = keys.get(self.git.run("log", "-1", "--format=%H", f"{self.base}..{self.head}", "--", diff.path))
+            if diff.meta_id is not None:
+                plan.assign([diff.meta_id], last)
+            if not diff.whole:
+                for i, made_by in self._made_by(diff, removed_by).items():
+                    plan.assign([i], keys.get(made_by or "", last))
+        self._reproduce(shas)
+
+    def _made_by(self, diff: FileDiff, removed_by: dict[str, str]) -> dict[int, str | None]:
+        """For each of a text file's changes that was made before HEAD, the
+        old commit that made it, by git blame, or None where blame and the
+        diff disagree about the line (e.g. a blank line that moved)."""
+        added = self._blame(diff.path, reverse=False) if diff.new_blob else {}
+        removed = self._blame(diff.path, reverse=True) if diff.old_blob else {}
+        made_by: dict[int, str | None] = {}
+        for hunk in diff.hunks:
+            for line, old, new in numbered(hunk):
+                if line.id is None:
+                    continue
+                if line.kind == "+":
+                    # Added by an old commit, or after HEAD.
+                    by = added.get(new)
+                    if by == self.tip and self.uncommitted:
+                        continue
+                    made_by[line.id] = by
+                else:
+                    # Last there in base or an old commit, or in HEAD.
+                    there = removed.get(old)
+                    if there == self.head and self.uncommitted:
+                        continue
+                    made_by[line.id] = removed_by.get(there or "")
+        return made_by
+
+    def _blame(self, path: str, reverse: bool) -> dict[int | None, str]:
+        """For each line of the file (at tip, or with reverse, at base), the
+        commit that last added it (or with reverse, the last that had it)."""
+        args = ["blame", "--porcelain", *(["--reverse"] if reverse else []), f"{self.base}..{self.tip}"]
+        lines: dict[int | None, str] = {}
+        for entry in self.git.run_bytes(*args, "--", path).split(b"\n"):
+            if match := BLAME_ENTRY.match(entry):
+                lines[int(match[2])] = match[1].decode()
+        return lines
+
+    def _reproduce(self, shas: list[str]) -> None:
+        """Give each commit of the plan the edits it needs to have each text
+        file as old commit shas[i] does."""
+        object_format = self.git.run("rev-parse", "--show-object-format")
+        for commit, sha in zip(self.plan.commits, shas, strict=True):
+            index = self.plan.index(commit.key)
+            blobs = self._blobs(sha)
+            for diff in self.files:
+                actual = blobs.get(diff.path)
+                # An edit can't delete a file, nor change a binary one.
+                if diff.whole or actual is None:
+                    continue
+                version = self.states(diff)[index].version
+                content = None if version is None else version.content
+                if content is not None and blob_id(content, object_format) == actual:
+                    continue
+                self.set_edit(commit.key, diff, self.git.blob(actual))
+
+    def _blobs(self, sha: str) -> dict[str, str]:
+        """Each file's blob in the commit."""
+        blobs = {}
+        for entry in self.git.run_bytes("ls-tree", "-r", "-z", "--full-tree", sha).split(b"\0"):
+            if entry:
+                meta, _, path = entry.partition(b"\t")
+                _, kind, blob = meta.decode().split(" ")
+                if kind == "blob":
+                    blobs[path.decode(errors="surrogateescape")] = blob
+        return blobs
 
     def merge(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         key = (basis, ours, theirs)
@@ -213,7 +317,17 @@ class Session:
                     self.git.run("update-index", "-z", "--index-info", input="".join(updates), env=env)
                 tree = self.git.run("write-tree", env=env)
                 message = commit.message if commit.message.endswith("\n") else commit.message + "\n"
-                parent = self.git.run("commit-tree", tree, "-p", parent, "-F", "-", input=message)
+                author = commit.author
+                author_env = (
+                    {}
+                    if author is None
+                    else {
+                        "GIT_AUTHOR_NAME": author.name,
+                        "GIT_AUTHOR_EMAIL": author.email,
+                        "GIT_AUTHOR_DATE": author.date,
+                    }
+                )
+                parent = self.git.run("commit-tree", tree, "-p", parent, "-F", "-", input=message, env=author_env | env)
                 shas.append(parent)
         return shas
 
@@ -227,3 +341,8 @@ class Session:
         )
         # Make the index match the new HEAD; the working tree keeps its changes.
         self.git.run("reset", "--quiet")
+
+
+def blob_id(content: bytes, object_format: str) -> str:
+    """The id git gives a blob of content, without asking it."""
+    return hashlib.new(object_format, b"blob %d\0" % len(content) + content).hexdigest()

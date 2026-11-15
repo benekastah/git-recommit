@@ -27,9 +27,17 @@ aren't.
 ### The TUI
 
 The sidebar on the left lists the new commits you're building; the one marked
-▶ is the *active* commit; click one to make it active. Below them are the
-commits being replaced (check they're the ones you meant), then the files,
-each with how many of its changes are assigned; click one to go to it.
+▶ is the *active* commit; click one to make it active. Below them is the
+range being replaced (check it's the one you meant), then the files, each
+with how many of its changes are assigned; click one to go to it.
+
+The new commits start out as the commits being rebuilt, with their messages
+and authors, each taking the changes it made. Where an old commit's changes
+overlap a later one's (e.g. it added a line a later commit rewrote), it gets
+an edit (✎) so that it's as it was. Writing them unchanged makes the same
+commits again. Change what you like: drop an edit (`E`), move changes, add or
+delete commits. `C` clears them all, to start from scratch, and `O` brings
+them back as they were.
 The sidebar scrolls when it's too long. The main panel is the diff from the start of the
 range to the end, with each line's numbers before and after, and a rule
 across the panel where each hunk starts. Each change is marked, at the far
@@ -51,6 +59,8 @@ are along the top.
 | `J`/`K` | move the active commit later/earlier |
 | `r` | reword the active commit's message, in your editor |
 | `D` | delete the active commit; its changes become unassigned |
+| `C` | clear every commit, to start from scratch |
+| `O` | go back to the commits being rebuilt, as they were at the start |
 | `e` | edit the file as it is in the active commit, in your editor |
 | `E` | drop the active commit's edit of the file |
 | `ctrl+z` | suspend, to change files; when you bring it back (`fg`), it reloads the changes |

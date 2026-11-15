@@ -277,7 +277,7 @@ KEYS = (
     "[b]space[/b] assign line/range  [b]a[/b] hunk  [b]f[/b] file  [b]1-9[/b] to commit n  [b]x[/b] unassign  "
     "[b]V[/b] select lines  [b]}/{[/b] next/previous hunk  [b].[/b] next unassigned\n"
     "[b]c[/b] new commit  [b]tab/shift+tab[/b] next/previous commit  [b]J/K[/b] move commit  [b]r[/b] reword  [b]D[/b] delete  "
-    "[b]e[/b] edit file  [b]w[/b] write  [b]q[/b] quit  [b]?[/b] help"
+    "[b]e[/b] edit file  [b]C[/b] clear  [b]O[/b] original  [b]w[/b] write  [b]q[/b] quit  [b]?[/b] help"
 )
 
 HELP = """\
@@ -297,6 +297,8 @@ HELP = """\
 
 [b]Commits[/b] (the active one is marked ▶)
   c             create a commit after the active one
+  C             clear every commit, to start from scratch
+  O             go back to the commits being rebuilt (as they were at the start)
   tab/S-tab     make the next/previous commit active
   J/K           move the active commit later/earlier
   r             reword the active commit's message in your editor
@@ -335,6 +337,8 @@ class BoardScreen(Screen[None]):
         *(Binding(str(n), f"assign_number({n})", f"Assign to {n}", show=False) for n in range(1, 10)),
         Binding("x,0", "unassign", "Unassign"),
         Binding("c", "create", "New commit"),
+        Binding("C", "clear_commits", "Clear commits", show=False),
+        Binding("O", "restore_commits", "Original commits", show=False),
         Binding("tab", "cycle(1)", "Next commit", priority=True),
         Binding("shift+tab", "cycle(-1)", "Previous commit", show=False, priority=True),
         Binding("J", "move_commit(1)", "Move commit later", show=False),
@@ -389,8 +393,8 @@ class BoardScreen(Screen[None]):
         """The sidebar's sections, in order."""
         out = SidebarText()
         self._new_commits_section(out)
-        self._unassigned_section(out)
         self._rebuilding_section(out)
+        self._unassigned_section(out)
         self._files_section(out)
         return out
 
@@ -417,11 +421,12 @@ class BoardScreen(Screen[None]):
         out.heading(f"Unassigned: {unassigned}", "bold" if unassigned else "dim")
 
     def _rebuilding_section(self, out: SidebarText) -> None:
-        out.heading("Rebuilding")
-        for line in self.session.old_commits:
-            out.add(f"  {line}\n", "dim")
+        """Which commits writing replaces, which the new commits may no longer
+        show (e.g. after C)."""
+        old = len(self.session.old_commits)
+        out.heading(f"Rebuilding {old} commit{'s' if old != 1 else ''} after {self.session.base[:7]}", "dim")
         if self.session.uncommitted:
-            out.add("  and the uncommitted changes\n", "dim")
+            out.add("and the uncommitted changes\n", "dim")
 
     def _files_section(self, out: SidebarText) -> None:
         out.heading("Files (click one to go to it)")
@@ -645,6 +650,25 @@ class BoardScreen(Screen[None]):
                 self.app.exit(None)
                 return
         self.app.exit(shas)
+
+    def action_clear_commits(self) -> None:
+        def confirmed(yes: bool | None) -> None:
+            if yes:
+                self.board.clear()
+                self._do()
+
+        self.app.push_screen(ConfirmScreen("Clear every commit, to start from scratch?"), confirmed)
+
+    def action_restore_commits(self) -> None:
+        def confirmed(yes: bool | None) -> None:
+            if yes:
+                self.board.restore()
+                self._do()
+
+        self.app.push_screen(
+            ConfirmScreen("Go back to the commits being rebuilt, as they were at the start? Changes to them are lost."),
+            confirmed,
+        )
 
     def action_quit_recommit(self) -> None:
         def confirmed(yes: bool | None) -> None:

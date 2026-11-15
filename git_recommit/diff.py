@@ -72,6 +72,17 @@ class FileDiff:
         return ids if self.meta_id is None else [*ids, self.meta_id]
 
 
+def numbered(hunk: Hunk) -> Iterator[tuple[Line, int | None, int | None]]:
+    """Each line of the hunk, with its line numbers before and after the
+    changes (None for a line that's only on one side)."""
+    # A hunk that adds to an empty file starts at line 0.
+    old, new = max(hunk.old_start, 1), max(hunk.new_start, 1)
+    for line in hunk.lines:
+        yield line, old if line.kind != "+" else None, new if line.kind != "-" else None
+        old += line.kind != "+"
+        new += line.kind != "-"
+
+
 def split_lines(data: bytes) -> list[bytes]:
     """Split data into lines as git does, at each \\n, keeping it."""
     lines = data.split(b"\n")

@@ -17,12 +17,23 @@ class Edit:
     content: bytes
 
 
+@dataclass(frozen=True)
+class Author:
+    name: str
+    email: str
+    # In a form GIT_AUTHOR_DATE takes, e.g. git's raw "<seconds> <offset>".
+    date: str
+
+
 @dataclass
 class NewCommit:
     # Stays the same when commits are added, removed or moved.
     key: int
     message: str
     edits: dict[str, Edit] = field(default_factory=dict)
+    # Who wrote it and when, for one that starts from an old commit; for one
+    # the user made, None, which means them, now.
+    author: Author | None = None
 
     @property
     def subject(self) -> str:
@@ -36,9 +47,9 @@ class Plan:
         self.assignment: dict[int, int] = {}
         self._next_key = 1
 
-    def add(self, message: str, after: int | None = None) -> NewCommit:
+    def add(self, message: str, after: int | None = None, author: Author | None = None) -> NewCommit:
         """Add a commit after the one with key after, or last."""
-        commit = NewCommit(self._next_key, message)
+        commit = NewCommit(self._next_key, message, author=author)
         self._next_key += 1
         self.commits.insert(len(self.commits) if after is None else self.index(after) + 1, commit)
         return commit

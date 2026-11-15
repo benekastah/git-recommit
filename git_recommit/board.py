@@ -4,9 +4,9 @@ cursor and selection, and the commit being worked on."""
 from dataclasses import dataclass
 from typing import Literal
 
-from git_recommit.diff import FileDiff, Line
+from git_recommit.diff import FileDiff, Line, numbered
 from git_recommit.errors import RecommitError
-from git_recommit.plan import NewCommit
+from git_recommit.plan import NewCommit, Plan
 from git_recommit.session import Session
 
 RowKind = Literal["file", "hunk", "line"]
@@ -32,14 +32,7 @@ def build_rows(files: list[FileDiff]) -> list[Row]:
         rows.append(Row("file", f))
         for h, hunk in enumerate(diff.hunks):
             rows.append(Row("hunk", f, h))
-            # A hunk that adds to an empty file starts at line 0.
-            old, new = max(hunk.old_start, 1), max(hunk.new_start, 1)
-            for line in hunk.lines:
-                rows.append(
-                    Row("line", f, h, line, old if line.kind != "+" else None, new if line.kind != "-" else None)
-                )
-                old += line.kind != "+"
-                new += line.kind != "-"
+            rows.extend(Row("line", f, h, line, old, new) for line, old, new in numbered(hunk))
     return rows
 
 
@@ -50,16 +43,25 @@ def line_text(line: Line) -> str:
 class Board:
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.plan = session.plan
         self.rows = build_rows(session.files)
         self.cursor = 0
         # Where a range selection (from `v`) started, if one is going.
         self.anchor: int | None = None
         # The key of the commit that space assigns to, edits apply to, and so on.
-        self.active: int | None = None
-        self.message = "Press c to create a commit, then assign changes to it. ? shows every key."
+        self.active: int | None = session.plan.commits[0].key if session.plan.commits else None
+        if session.plan.commits:
+            self.message = (
+                "Starting from the commits being rebuilt: change them, or press C to clear them and start from "
+                "scratch. ? shows every key."
+            )
+        else:
+            self.message = "Press c to create a commit, then assign changes to it. ? shows every key."
         # A row to scroll to the top of the screen, once; the view clears it.
         self.scroll_top: int | None = None
+
+    @property
+    def plan(self) -> Plan:
+        return self.session.plan
 
     # Where things are.
 
@@ -219,6 +221,18 @@ class Board:
             return
         self.active = self.plan.commits[number - 1].key
         self.assign(self.active)
+
+    def clear(self) -> None:
+        """Remove every commit, to start from scratch."""
+        self.session.clear()
+        self.active = None
+        self.message = "Cleared every commit. Press c to create one."
+
+    def restore(self) -> None:
+        """Go back to the commits being rebuilt."""
+        self.session.restore_old_commits()
+        self.active = self.plan.commits[0].key if self.plan.commits else None
+        self.message = "Back to the commits being rebuilt."
 
     def add_commit(self, message: str) -> None:
         """Add a commit after the active one, and make it active."""

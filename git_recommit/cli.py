@@ -50,6 +50,7 @@ def recommit(git: GitClient, spec: str, validate_command: str | None) -> int:
     session = Session.load(git, spec)
     if not session.files:
         raise RecommitError(f"the commits in {spec} change nothing")
+    session.restore_old_commits()
     shas = RecommitApp(session, Terminal(git, validate_command)).run()
     if shas is None:
         print("git-recommit: nothing changed")

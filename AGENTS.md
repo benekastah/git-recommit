@@ -2,8 +2,8 @@
 
 Notes for agents (and people) changing this repo. The README is the user
 documentation; its Development section says how to set up a clone and run the
-checks. `ISSUES.md` lists known issues and planned upgrades, most important
-first; keep it up to date.
+checks. `ISSUES.md` lists known issues, most important first, and `ROADMAP.md`
+planned upgrades and the options for them; keep them up to date.
 
 ## What it does
 
@@ -65,6 +65,11 @@ These were the user's choices for v0; ask before changing them.
   working tree (tracked files, as `git stash` would), so they're changes like
   any other, and those left unassigned simply stay uncommitted.
 - `--edit <commit>` wraps `git rebase -i`.
+- The plan starts as the old commits (`Session.restore_old_commits`): each
+  keeps its message and author, takes the changes git blame says it made, and
+  gets edits where that alone wouldn't reproduce it. `C` clears the plan, `O`
+  restores it. Commits the user creates are authored by them. Ideas for
+  authorship beyond that are in `ROADMAP.md`.
 - `ctrl+z` suspends; on resuming (and on `R`), the diff is reloaded from the
   working tree and HEAD, and assignments carry over by matching changes on
   `diff.change_keys` (path, kind, text, which occurrence), since ids change.

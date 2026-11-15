@@ -135,9 +135,11 @@ git-recommit should run on all three (CI runs the tests on each).
   as few as you can: names and objects through `GitClient`'s one `cat-file`
   process (`head`, `tree`, `read_object`; not names the user typed, which
   can make it exit), and one git command for many things (e.g. one `git log`
-  for every commit) over one each. Porcelain commands (`log`, `status`) read
-  config the plumbing ignores (e.g. `diff.relative`,
-  `diff.ignoreSubmodules`), so give them the flags that undo it.
+  for every commit) over one each.
+- Read plumbing's output (`rev-list`, `diff-tree`, `ls-tree`, `cat-file`),
+  not porcelain's (e.g. `git log`), which the user's config changes (e.g.
+  `diff.relative`). Where there's no plumbing for it, use the format git
+  keeps for scripts (`status --porcelain=v2`, `blame --porcelain`).
 - Don't assume `\n` line endings in files: diff.py keeps every line's own
   ending, and splits only at `\n`, as git does.
 - Shell scripts (`check.sh`, `lint.sh`, the hooks) are for development only.

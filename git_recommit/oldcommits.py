@@ -129,26 +129,25 @@ def _touched_by(commits: list[_OldCommit]) -> dict[str, list[str]]:
 
 def _old_commits(session: "Session") -> list[_OldCommit]:
     """The commits being rebuilt, oldest first, then the commit of the
-    uncommitted changes, if any: read with one git process."""
+    uncommitted changes, if any: with two git processes, not some for each."""
     span = session.tip if session.root else f"{session.base}..{session.tip}"
+    shas = session.git.run_bytes("rev-list", "--reverse", span)
+    if not shas:
+        return []
+    # Plumbing, rather than git log, whose output the user's config changes.
+    # --always: even a commit that changes nothing.
     out = session.git.run_bytes(
-        "log",
-        "--reverse",
-        "--root",
-        "--raw",
+        "diff-tree",
+        "--stdin",
+        "--always",
         "-r",
+        "--root",
         "--no-renames",
         "--no-abbrev",
-        "--no-show-signature",
-        # Unlike the plumbing, git log reads config that would leave out
-        # submodules (diff.ignoreSubmodules, submodule.<name>.ignore), or
-        # give paths from the current directory, and only those (diff.relative).
-        "--ignore-submodules=none",
-        "--no-relative",
         "-z",
         "--format=%H%x00%an%x00%ae%x00%ad",
         "--date=raw",
-        span,
+        input=shas,
     )
     # Each commit's id, author's name, email and date, then for each path it
     # changes, ":<old mode> <new mode> <old blob> <new blob> <status>" (after

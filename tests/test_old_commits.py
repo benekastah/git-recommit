@@ -47,6 +47,13 @@ def test_rebuilding_them_unchanged_makes_the_same_trees(repo: Repo) -> None:
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+def test_a_commit_that_changes_nothing_is_kept(repo: Repo) -> None:
+    old = [repo.commit("first", f="f\n"), repo.commit("empty"), repo.commit("third", g="g\n")]
+    session = restored(repo, "HEAD~3")
+    assert [c.message for c in session.plan.commits] == ["first", "empty", "third"]
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
 def test_rebuilding_them_unchanged_in_a_sha256_repository(repo: Repo) -> None:
     sha256 = Repo(repo.path.parent / "sha256")
     sha256.path.mkdir()

@@ -65,7 +65,7 @@ class Session:
         self.tip = tip or self.end
         self.files = files
         self.plan = Plan()
-        self.old_commits = git.run("log", "--format=%h %s", self.history).splitlines()
+        self.old_commits = self._old_commits()
         self.uncommitted = self.tip != self.end
         self._tip_tree = git.tree(self.tip)
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
@@ -99,6 +99,10 @@ class Session:
         return (
             [] if self.end == self.head else self.git.run("rev-list", "--reverse", f"{self.end}..{self.head}").split()
         )
+
+    def _old_commits(self) -> list[str]:
+        """The commits being rebuilt, newest first, as "<short id> <subject>"."""
+        return self.git.run("rev-list", "--no-commit-header", "--format=%h %s", self.history).splitlines()
 
     @property
     def history(self) -> str:
@@ -152,7 +156,7 @@ class Session:
         for path in sorted(self.unchanged - changed):
             self.unchanged.discard(path)
             self.add_unchanged(path)
-        self.old_commits = self.git.run("log", "--format=%h %s", self.history).splitlines()
+        self.old_commits = self._old_commits()
         self.uncommitted = tip != end
         return True
 
@@ -526,9 +530,9 @@ class Session:
             return onto
         sign = ["-S"] if self.git.run("config", "--type=bool", "commit.gpgSign", check=False) == "true" else []
         later = self.git.run(
-            "log",
+            "rev-list",
             "--reverse",
-            "--no-show-signature",
+            "--no-commit-header",
             "--format=%H%x00%an%x00%ae%x00%ad",
             "--date=raw",
             f"{self.end}..{self.head}",

@@ -18,8 +18,9 @@ concurrency:
   cancel-in-progress: true
 
 # Each job's time limit (timeout-minutes) is about 20% over the longest it
-# has taken, so a hung job fails soon. If a job runs into it, speed the job
-# up if possible, and only then raise the limit (see AGENTS.md).
+# has taken, rounded up to whole minutes (GitHub doesn't honor fractions), so
+# a hung job fails soon. If a job runs into it, speed the job up if
+# possible, and only then raise the limit (see AGENTS.md).
 jobs:
   # Linting and type checking give the same answer everywhere (mypy checks for
   # Windows too, and for the oldest Python pyproject.toml allows), so they run
@@ -28,7 +29,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     # 24s.
-    timeout-minutes: 0.5
+    timeout-minutes: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -61,11 +62,11 @@ jobs:
         # Each OS's time limit, in minutes (from 55s, 2m39s and 3m35s).
         include:
           - os: ubuntu-latest
-            timeout: 1.1
+            timeout: 2
           - os: macos-latest
-            timeout: 3.2
+            timeout: 4
           - os: windows-latest
-            timeout: 4.3
+            timeout: 5
     steps:
       # Defender scans every file and process the tests make (each a git
       # repository, run with many git commands), which slows them down a lot;
@@ -99,7 +100,7 @@ jobs:
     needs: [lint, test]
     runs-on: ubuntu-latest
     # 4s.
-    timeout-minutes: 0.5
+    timeout-minutes: 1
     steps:
       - name: Fail unless every check passed
         if: needs.lint.result != 'success' || needs.test.result != 'success'

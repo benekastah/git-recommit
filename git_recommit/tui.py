@@ -575,12 +575,13 @@ class BoardScreen(Screen[None]):
     def action_reword(self) -> None:
         try:
             commit = self.board.active_commit()
-            help_text = "\n# Write the commit's message. Lines starting with # are left out.\n"
-            saved = self.terminal.edit(self.app, (commit.message + "\n" + help_text).encode(), "COMMIT_EDITMSG")
+            cleanup = editor.MessageCleanup(self.session.git, commit.message)
+            saved = self.terminal.edit(self.app, cleanup.template().encode(), "COMMIT_EDITMSG")
+            message = cleanup.clean(saved.decode(errors="replace"))
         except RecommitError as e:
             self._do(str(e))
             return
-        self.board.reword_active(editor.strip_comments(saved.decode(errors="replace")))
+        self.board.reword_active(message)
         self._do()
 
     def action_edit(self) -> None:

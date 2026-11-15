@@ -12,16 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## Rewording ignores git's comment settings
-
-`r` removes the lines that start with `#` from the message it opens
-(`editor.strip_comments`), as git does when it opens an editor for a message
-(e.g. `git commit --amend`). But it ignores the settings that change that:
-`core.commentChar` (including `auto`, which picks a character the message
-doesn't use) and `commit.cleanup` (e.g. `whitespace` or `verbatim`, which
-keep `#` lines). Read them, as git does, e.g. by having git clean up the
-message (`git stripspace`, with `--comment-lines` for the help text).
-
 ## Writing isn't atomic, and has side effects
 
 - `finish` runs `update-ref`, then `git reset`; if `index.lock` is held, HEAD

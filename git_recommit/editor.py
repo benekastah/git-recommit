@@ -27,6 +27,45 @@ def edit(git: GitClient, content: bytes, filename: str) -> bytes:
             return f.read()
 
 
-def strip_comments(message: str) -> str:
-    """A commit message as git would keep it: without # lines, trimmed."""
-    return "\n".join(line for line in message.splitlines() if not line.startswith("#")).strip()
+# git's scissors line (for commit.cleanup=scissors), after the comment character.
+SCISSORS = "------------------------ >8 ------------------------"
+# What core.commentChar=auto chooses from, in order, as git does.
+AUTO_COMMENT_CHARS = "#;@!$%^&|:"
+
+
+class MessageCleanup:
+    """A commit message as it opens in the user's editor, and as it's kept
+    after, as `git commit` does it: by commit.cleanup, with core.commentChar
+    (or the first character no line of the message starts with, for auto)."""
+
+    def __init__(self, git: GitClient, message: str) -> None:
+        self.git = git
+        self.message = message
+        self.mode = git.run("config", "commit.cleanup", check=False) or "default"
+        comment = git.run("config", "core.commentChar", check=False) or "#"
+        if comment == "auto":
+            starts = {line[:1] for line in message.splitlines()}
+            comment = next((c for c in AUTO_COMMENT_CHARS if c not in starts), "#")
+        self.comment = comment
+
+    def template(self) -> str:
+        """The message, and help for the user, as comments that are left out."""
+        c = self.comment
+        message = self.message if self.message.endswith("\n") else self.message + "\n"
+        if self.mode in ("whitespace", "verbatim"):
+            # Comments are kept, so there's no help to show.
+            return message
+        if self.mode == "scissors":
+            return f"{message}\n{c} {SCISSORS}\n{c} Everything below the line above is left out.\n"
+        return f"{message}\n{c} Write the commit's message. Lines starting with {c} are left out.\n"
+
+    def clean(self, text: str) -> str:
+        """The message kept from what the user saved."""
+        if self.mode == "verbatim":
+            return text
+        if self.mode == "scissors":
+            lines = text.splitlines(keepends=True)
+            cut = next((i for i, line in enumerate(lines) if line.rstrip("\n") == f"{self.comment} {SCISSORS}"), None)
+            text = "".join(lines[:cut])
+        strip = ["--strip-comments"] if self.mode not in ("whitespace", "scissors") else []
+        return self.git.run("-c", f"core.commentChar={self.comment}", "stripspace", *strip, input=text)

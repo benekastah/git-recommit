@@ -3,20 +3,6 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## Writing during a conflicted merge or cherry-pick drops its state
-
-Confirmed. `worktree_commit` (session.py) runs `git add -u` on a copy of the
-index, which stages conflicted files with their conflict markers, so the
-markers show up as changes to assign. Writing then runs a mixed `git reset`
-(`Session.finish`), which deletes `MERGE_HEAD` and the index's conflict
-stages: in a repository with `UU f` from a merge, writing left ` M f`, markers
-still in the file, and `git merge --abort` no longer possible.
-
-Fix: refuse to start (and to reload) when the index has unmerged entries
-(`git ls-files -u`), or a merge, cherry-pick, revert or rebase is in progress
-(`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge/`,
-`rebase-apply/`).
-
 ## The plan is lost if HEAD moved since the last reload
 
 Confirmed. The new commits are written (`Session.finish`, called from cli.py)

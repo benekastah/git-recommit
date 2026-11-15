@@ -49,6 +49,29 @@ def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
     return base, tip
 
 
+# What git keeps while another operation is in progress, and what to call it.
+IN_PROGRESS = {
+    "MERGE_HEAD": "a merge",
+    "CHERRY_PICK_HEAD": "a cherry-pick",
+    "REVERT_HEAD": "a revert",
+    "rebase-merge": "a rebase",
+    "rebase-apply": "a rebase (or git am)",
+}
+
+
+def check_nothing_in_progress(git: GitClient) -> None:
+    """Refuse while another operation (a merge, cherry-pick, revert or rebase)
+    is in progress, or the index has unresolved conflicts: taking the working
+    tree as uncommitted changes would take the conflict markers, and writing
+    (which resets the index) would end the operation."""
+    paths = git.run("rev-parse", "--path-format=absolute", *(a for name in IN_PROGRESS for a in ("--git-path", name)))
+    for path, what in zip(paths.splitlines(), IN_PROGRESS.values(), strict=True):
+        if os.path.exists(path):
+            raise RecommitError(f"{what} is in progress; finish it or abort it first")
+    if git.run("ls-files", "--unmerged"):
+        raise RecommitError("there are unresolved conflicts; resolve them first")
+
+
 def worktree_commit(git: GitClient, head: str) -> str | None:
     """A commit, on head, of the working tree's tracked files (and whatever is
     staged), as `git stash` makes; or None if they have no uncommitted changes.
@@ -98,6 +121,7 @@ class Session:
 
     @classmethod
     def load(cls, git: GitClient, spec: str) -> "Session":
+        check_nothing_in_progress(git)
         base, head = resolve_range(git, spec)
         tip = worktree_commit(git, head)
         if base == head and tip is None:
@@ -109,6 +133,7 @@ class Session:
         working tree or HEAD's branch since, and keep the assignments of the
         changes that are still there. Return whether anything changed."""
         try:
+            check_nothing_in_progress(self.git)
             base, head = resolve_range(self.git, self.base)
         except RecommitError as e:
             raise RecommitError(f"can't reload: {e}") from e
@@ -335,6 +360,7 @@ class Session:
         """Move the current branch (or HEAD) to the new commits, leaving the
         working tree as it is: what the new commits don't have is left as
         uncommitted changes."""
+        check_nothing_in_progress(self.git)
         new_tip = shas[-1] if shas else self.base
         self.git.run(
             "update-ref", "-m", f"recommit: rebuild {len(self.old_commits)} commits", "HEAD", new_tip, self.head

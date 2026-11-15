@@ -251,3 +251,60 @@ def test_an_overlapping_change_conflicts_until_resolved(repo: Repo) -> None:
     _, two = session.build()
     assert repo.show(two, "f") == "def a():\n    return compute()\n"
     assert session.left_uncommitted() == []
+
+
+def diverge(repo: Repo) -> None:
+    """main and side both change f, so merging or cherry-picking side
+    conflicts; clean changes g, which merges cleanly."""
+    repo.commit("base", f="1\n", g="g\n")
+    repo.git("switch", "--quiet", "-c", "side")
+    repo.commit("side", f="side\n")
+    repo.git("switch", "--quiet", "-c", "clean", "main")
+    repo.commit("clean", g="clean\n")
+    repo.git("switch", "--quiet", "main")
+    repo.commit("main", f="main\n")
+
+
+@pytest.mark.parametrize(
+    ("start", "error"),
+    [
+        (["merge", "side"], "a merge is in progress"),
+        (["merge", "--no-commit", "--no-ff", "clean"], "a merge is in progress"),
+        (["cherry-pick", "side"], "a cherry-pick is in progress"),
+        (["revert", "--no-commit", "HEAD"], "a revert is in progress"),
+    ],
+)
+def test_refuses_to_start_in_the_middle_of_another_operation(repo: Repo, start: list[str], error: str) -> None:
+    diverge(repo)
+    repo.client.ok(*start)
+    with pytest.raises(RecommitError, match=error):
+        repo.session("HEAD~2")
+
+
+def test_refuses_to_start_with_unresolved_conflicts(repo: Repo) -> None:
+    # A conflicted `git stash pop` leaves conflicts, but no MERGE_HEAD.
+    diverge(repo)
+    repo.write("f", "stashed\n")
+    repo.git("stash", "--quiet")
+    repo.write("f", "different\n")
+    repo.git("commit", "--quiet", "-am", "different")
+    repo.client.ok("stash", "pop")
+    assert repo.git("ls-files", "--unmerged")
+    with pytest.raises(RecommitError, match="unresolved conflicts"):
+        repo.session("HEAD~3")
+
+
+def test_reloading_and_writing_refuse_once_another_operation_starts(repo: Repo) -> None:
+    diverge(repo)
+    session = repo.session("HEAD~2")
+    session.restore_old_commits()
+    shas = session.build()
+    head = repo.git("rev-parse", "HEAD")
+    repo.client.ok("merge", "side")
+    with pytest.raises(RecommitError, match="a merge is in progress"):
+        session.reload()
+    with pytest.raises(RecommitError, match="a merge is in progress"):
+        session.finish(shas)
+    # Nothing changed: the merge can still be aborted.
+    assert repo.git("rev-parse", "HEAD") == head
+    repo.git("merge", "--abort")

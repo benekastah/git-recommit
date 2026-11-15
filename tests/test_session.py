@@ -1,6 +1,5 @@
 import os
 import pathlib
-import subprocess
 
 import pytest
 
@@ -371,20 +370,13 @@ def test_building_a_file_whose_name_isnt_utf8(repo: Repo) -> None:
     # working tree.
     name = b"caf\xe9.txt"
     blob = repo.client.hash_blob(b"x\n")
-    subprocess.run(
-        ["git", "update-index", "--add", "--cacheinfo", b"100644," + blob.encode() + b"," + name],
-        cwd=repo.path,
-        check=True,
-    )
+    repo.client.run_bytes("update-index", "--add", "--cacheinfo", b"100644," + blob.encode() + b"," + name)
     repo.git("commit", "--quiet", "-m", "add")
-    subprocess.run(["git", "update-index", "--skip-worktree", name], cwd=repo.path, check=True)
+    repo.client.run_bytes("update-index", "--skip-worktree", name)
     session = repo.session("HEAD~")
     session.restore_old_commits()
     (sha,) = session.build()
-    listed = subprocess.run(
-        ["git", "ls-tree", "-z", "--name-only", sha], cwd=repo.path, capture_output=True, check=True
-    )
-    assert name in listed.stdout.split(b"\0")
+    assert name in repo.client.run_bytes("ls-tree", "-z", "--name-only", sha).split(b"\0")
 
 
 def test_reloading_drops_edits_of_files_no_longer_changed(repo: Repo) -> None:
@@ -445,7 +437,7 @@ def test_runs_the_commit_msg_hook_on_new_and_reworded_messages(repo: Repo) -> No
     messages = [repo.git("log", "-1", "--format=%B", sha) for sha in shas]
     assert messages == ["wip", "more wip, reworded\n\nChange-Id: I123", "done", "mine\n\nChange-Id: I123"]
     # As the hook left it, with no \r\n (e.g. on Windows).
-    raw = subprocess.run(["git", "cat-file", "commit", shas[3]], cwd=repo.path, capture_output=True, check=True).stdout
+    raw = repo.client.read_object(shas[3], "commit")
     assert raw.endswith(b"\n\nmine\n\nChange-Id: I123\n")
 
 
@@ -491,7 +483,7 @@ def test_old_messages_are_kept_exactly(repo: Repo) -> None:
     session.restore_old_commits()
     (sha,) = session.build()
     assert repo.git("log", "-1", "--format=%B", sha) == repo.git("log", "-1", "--format=%B", "HEAD")
-    raw = subprocess.run(["git", "cat-file", "commit", sha], cwd=repo.path, capture_output=True, check=True).stdout
+    raw = repo.client.read_object(sha, "commit")
     assert raw.endswith(b"\n\n" + message.encode())
 
 

@@ -8,10 +8,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
-def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Repo:
+def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]) -> Repo:
     """An empty repository on main with a first commit (README). git, and git
-    recommit run as a separate process, see an isolated git config and
-    identity for the rest of the test."""
+    recommit, see an isolated git config and identity for the rest of the
+    test."""
     global_config = tmp_path / "gitconfig"
     # Without auto-maintenance, which would otherwise start a `git maintenance
     # run --auto` after each commit, fetch, merge and push: hundreds of
@@ -29,7 +29,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Repo:
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("GIT_SEQUENCE_EDITOR", raising=False)
-    repo = Repo(tmp_path / "repo")
+    repo = Repo(tmp_path / "repo", capfd)
     repo.path.mkdir()
     repo.git("init", "--quiet")
     repo.commit("init", README="readme\n")

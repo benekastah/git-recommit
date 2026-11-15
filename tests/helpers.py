@@ -1,3 +1,4 @@
+import io
 import os
 import pathlib
 import re
@@ -7,6 +8,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from git_recommit import cli
 from git_recommit.git import GitClient
 from git_recommit.session import Session
 
@@ -14,6 +16,9 @@ from git_recommit.session import Session
 @dataclass
 class Repo:
     path: pathlib.Path
+    # What git recommit prints when it runs in the test's process (see
+    # recommit), by file descriptor, so with what git's children print too.
+    capture: pytest.CaptureFixture[str] | None = None
 
     @property
     def client(self) -> GitClient:
@@ -71,23 +76,54 @@ class Repo:
         input: str | None = None,
         env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        """Run `git recommit <args>` as a separate process (without a terminal),
-        with input on its stdin (as UTF-8, with its line endings as they are,
-        as a file piped in would be), and env added to its environment. What
-        it prints is read as text, with Windows' line endings as \\n."""
+        """Run `git recommit <args>` (without a terminal), with input on its
+        stdin (as UTF-8, with its line endings as they are, as a file piped in
+        would be), and env added to its environment. What it prints is read
+        as text, with Windows' line endings as \\n.
+
+        It runs in the test's process, as starting Python is slow (on macOS
+        and Windows most of all); but as a separate one with env (e.g. a
+        locale, which Python only reads as it starts), or without capture."""
+        argv = ["-C", str(self.path), *args]
+        if env is None and self.capture is not None:
+            result = self._recommit_here(argv, input, self.capture)
+        else:
+            result = self._recommit_apart(argv, input, env)
+        if expect_success != (result.returncode == 0):
+            pytest.fail(f"git recommit {' '.join(args)} exited {result.returncode}:\n{result.stdout}{result.stderr}")
+        return result
+
+    def _recommit_here(
+        self, argv: list[str], input: str | None, capture: pytest.CaptureFixture[str]
+    ) -> subprocess.CompletedProcess[str]:
+        stdin = sys.stdin
+        sys.stdin = io.TextIOWrapper(io.BytesIO(b"" if input is None else input.encode()))
+        capture.readouterr()
+        try:
+            returncode = cli.main(argv)
+        except SystemExit as e:
+            # argparse's, for a bad command line.
+            returncode = e.code if isinstance(e.code, int) else 1
+        finally:
+            sys.stdin = stdin
+        out, err = capture.readouterr()
+        return subprocess.CompletedProcess(argv, returncode, _text(out), _text(err))
+
+    def _recommit_apart(
+        self, argv: list[str], input: str | None, env: dict[str, str] | None
+    ) -> subprocess.CompletedProcess[str]:
         raw = subprocess.run(
-            [sys.executable, "-m", "git_recommit", "-C", str(self.path), *args],
+            [sys.executable, "-m", "git_recommit", *argv],
             capture_output=True,
             input=None if input is None else input.encode(),
             env={**os.environ, **(env or {})},
             timeout=60,
             check=False,
         )
+        out, err = (output.decode("utf-8", errors="replace") for output in (raw.stdout, raw.stderr))
+        return subprocess.CompletedProcess(raw.args, raw.returncode, _text(out), _text(err))
 
-        def text(output: bytes) -> str:
-            return output.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
-        result = subprocess.CompletedProcess(raw.args, raw.returncode, text(raw.stdout), text(raw.stderr))
-        if expect_success != (result.returncode == 0):
-            pytest.fail(f"git recommit {' '.join(args)} exited {result.returncode}:\n{result.stdout}{result.stderr}")
-        return result
+def _text(output: str) -> str:
+    """What git recommit printed, with Windows' line endings as \\n."""
+    return output.replace("\r\n", "\n")

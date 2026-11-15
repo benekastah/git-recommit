@@ -47,6 +47,7 @@ def save(session: Session) -> None:
             {
                 "message": commit.message,
                 "author": None if commit.author is None else vars(commit.author),
+                "old_message": commit.old_message,
                 "edits": {
                     path: {"basis": _encode(edit.basis), "content": _encode(edit.content)}
                     for path, edit in commit.edits.items()
@@ -80,6 +81,7 @@ def load(git: GitClient) -> Session:
     for saved in data["commits"]:
         author = None if saved["author"] is None else Author(**saved["author"])
         commit = plan.add(saved["message"], author=author)
+        commit.old_message = saved.get("old_message")
         for edited, edit in saved["edits"].items():
             commit.edits[edited] = Edit(_decode(edit["basis"]), _decode(edit["content"]))
     ids = {key: i for i, key in diffs.change_keys(session.files).items()}

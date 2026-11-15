@@ -12,13 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## Commits aren't signed, and hooks don't run
-
-Suspected. `commit-tree` doesn't honor `commit.gpgSign` (only `-S`), so users
-who sign their commits get unsigned ones, and `commit-msg` hooks (e.g.
-Gerrit's Change-Id) don't run. At least document it; pass `-S` when
-`commit.gpgSign` is set.
-
 ## Paths are read as pathspecs
 
 Suspected. `git log -- <path>` (in `restore_old_commits`) treats `[`, `*` and a

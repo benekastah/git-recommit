@@ -97,6 +97,10 @@ nothing is left staged, but for new files, which are left `git add
 checked out in turn; if it fails, you choose to go back and **e**dit the
 commits, **a**bort, or **p**roceed anyway.
 
+New commits are signed if `commit.gpgSign` says to, and the `commit-msg` hook
+runs on the messages of commits you create or reword (not on old commits'
+messages you kept), as with `git rebase`; no other hooks run.
+
 The old commits are replaced, and the command prints how to get them back
 (`git reset <old HEAD>`, which leaves your working tree as it is); they're
 also in the reflog.

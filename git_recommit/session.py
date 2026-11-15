@@ -5,6 +5,7 @@ import hashlib
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass
 
@@ -191,7 +192,9 @@ class Session:
         for sha in shas:
             message = self.git.run("log", "-1", "--format=%B", sha)
             name, email, date = self.git.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha).split("\0")
-            keys[sha] = plan.add(message, author=Author(name, email, date)).key
+            commit = plan.add(message, author=Author(name, email, date))
+            commit.old_message = message
+            keys[sha] = commit.key
         # A line last there in a commit (or base) was removed by the next one.
         removed_by = dict(zip([self.base, *shas], shas, strict=False))
         touched_by = self._touched_by(shas)
@@ -392,6 +395,8 @@ class Session:
                 mode, blob = version.mode, version.sha
             return f"{mode} {blob}\t".encode() + os.fsencode(path) + b"\0"
 
+        # commit-tree only signs when asked to, unlike git commit.
+        sign = ["-S"] if self.git.run("config", "--type=bool", "commit.gpgSign", check=False) == "true" else []
         shas = []
         with tempfile.TemporaryDirectory() as scratch:
             env = {"GIT_INDEX_FILE": os.path.join(scratch, "index")}
@@ -409,6 +414,8 @@ class Session:
                     self.git.run_bytes("update-index", "-z", "--index-info", input=b"".join(updates), env=env)
                 tree = self.git.run("write-tree", env=env)
                 message = commit.message if commit.message.endswith("\n") else commit.message + "\n"
+                if commit.message != commit.old_message:
+                    message = self._commit_msg_hook(index + 1, commit, message)
                 author = commit.author
                 author_env = (
                     {}
@@ -419,9 +426,31 @@ class Session:
                         "GIT_AUTHOR_DATE": author.date,
                     }
                 )
-                parent = self.git.run("commit-tree", tree, "-p", parent, "-F", "-", input=message, env=author_env | env)
+                parent = self.git.run(
+                    "commit-tree", tree, "-p", parent, *sign, "-F", "-", input=message, env=author_env | env
+                )
                 shas.append(parent)
         return shas
+
+    def _commit_msg_hook(self, number: int, commit: NewCommit, message: str) -> str:
+        """message, after the repository's commit-msg hook (if any) has had
+        its say, as git commit gives it, for a message that's new or changed.
+        (commit-tree, which writes the commits, runs no hooks.)"""
+        with tempfile.TemporaryDirectory() as scratch:
+            path = os.path.join(scratch, "COMMIT_EDITMSG")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(message)
+            result = subprocess.run(
+                ["git", "-C", self.git.directory, "hook", "run", "--ignore-missing", "commit-msg", "--", path],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                output = (result.stdout + result.stderr).strip()
+                raise RecommitError(f"the commit-msg hook refused commit {number} ({commit.subject}):\n{output}")
+            with open(path, encoding="utf-8") as f:
+                return f.read()
 
     def finish(self, shas: list[str]) -> None:
         """Move the current branch (or HEAD) to the new commits, leaving the

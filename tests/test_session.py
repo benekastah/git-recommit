@@ -1,4 +1,5 @@
 import os
+import pathlib
 import subprocess
 
 import pytest
@@ -377,3 +378,56 @@ def test_reloading_drops_edits_of_files_no_longer_changed(repo: Repo) -> None:
     assert [d.path for d in session.files] == ["b"]
     assert session.plan.commits[0].edits == {}
     assert "dropped commit 1's edit of a" in board.message
+
+
+def script(path: pathlib.Path, body: str) -> str:
+    """An executable shell script at path, returning its path."""
+    path.write_text("#!/bin/sh\n" + body)
+    path.chmod(0o755)
+    return str(path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as gpg")
+def test_signs_commits_when_git_is_set_to(repo: Repo, tmp_path: pathlib.Path) -> None:
+    # A stand-in for gpg, which says it signed, as git checks it does.
+    gpg = script(
+        tmp_path / "gpg",
+        "cat > /dev/null\n"
+        "printf '\\n[GNUPG:] SIG_CREATED D 1 8 00 0 0\\n' >&2\n"
+        "printf -- '-----BEGIN PGP SIGNATURE-----\\nfake\\n-----END PGP SIGNATURE-----\\n'\n",
+    )
+    repo.git("config", "gpg.program", gpg)
+    repo.git("config", "user.signingKey", "test@example.com")
+    repo.git("config", "commit.gpgSign", "true")
+    feature_repo(repo)
+    session = repo.session("HEAD~3")
+    session.restore_old_commits()
+    for sha in session.build():
+        assert "gpgsig -----BEGIN PGP SIGNATURE-----" in repo.git("cat-file", "commit", sha)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
+def test_runs_the_commit_msg_hook_on_new_and_reworded_messages(repo: Repo) -> None:
+    feature_repo(repo)
+    hooks = repo.path / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    script(hooks / "commit-msg", 'printf "\\nChange-Id: I123\\n" >> "$1"\n')
+    session = repo.session("HEAD~3")
+    session.restore_old_commits()
+    plan = session.plan
+    plan.commits[1].message = "more wip, reworded"
+    plan.add("mine")
+    messages = [repo.git("log", "-1", "--format=%B", sha) for sha in session.build()]
+    assert messages == ["wip", "more wip, reworded\n\nChange-Id: I123", "done", "mine\n\nChange-Id: I123"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
+def test_a_commit_msg_hook_can_refuse_a_message(repo: Repo) -> None:
+    feature_repo(repo)
+    hooks = repo.path / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    script(hooks / "commit-msg", "echo 'no thanks' >&2\nexit 1\n")
+    session = repo.session("HEAD~3")
+    session.plan.add("mine")
+    with pytest.raises(RecommitError, match="(?s)commit-msg hook refused commit 1.*no thanks"):
+        session.build()

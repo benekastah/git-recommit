@@ -34,6 +34,10 @@ class NewCommit:
     # Who wrote it and when, for one that starts from an old commit; for one
     # the user made, None, which means them, now.
     author: Author | None = None
+    # The old commit's message, for one that starts from an old commit, so
+    # writing can tell whether the user changed it (and run the commit-msg
+    # hook, as git does when a message is written).
+    old_message: str | None = None
 
     @property
     def subject(self) -> str:

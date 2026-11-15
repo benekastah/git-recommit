@@ -12,25 +12,6 @@ most of it is one `git merge-file` per carried edit. Merging in-process would
 be faster, but would have to agree with git's merges; or the TUI could open
 first, and show progress.
 
-## A commit can't take a file the range doesn't change
-
-`e` edits a file as it is in the active commit, but only files in the diff
-have a row to press it on. So there's no way to give a new commit a file the
-range doesn't touch: a change to a file that's otherwise the same at both
-ends (e.g. a temporary stub), or a new file that isn't in the range at all.
-
-It also means starting from the old commits can't reproduce a file that ends
-up as it started (e.g. added by one commit and removed by a later one): it
-isn't in the diff, so no commit has it. Edits also can't delete a file, so a
-file an old commit deleted and a later one brought back can't be reproduced
-either.
-
-Planned: a key that asks for a path, then opens that file as it is in the
-active commit (empty if it isn't there), like `e`. The file then needs a place
-in the diff panel and the sidebar's files even though it has no changes, so
-its edits can be seen and dropped. Starting from the old commits would add
-the files they change, too.
-
 ## The range must end at HEAD
 
 Only the commits up to HEAD can be rebuilt. Rebuilding commits further down,

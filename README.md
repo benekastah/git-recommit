@@ -72,6 +72,7 @@ are along the top.
 | `O` | go back to the commits being rebuilt, as they were at the start |
 | `e` | edit the file as it is in the active commit, in your editor |
 | `E` | drop the active commit's edit of the file |
+| `+` | edit a file the range doesn't change (or that isn't there yet) in the active commit, as `e` |
 | `ctrl+z` | suspend, to change files; when you bring it back (`fg`), it reloads the changes |
 | `R` | reload the changes, e.g. after changing files in another terminal |
 | `w` | write: rebuild the commits |
@@ -92,6 +93,10 @@ resolved.
 the file yet, it opens the file's end state, for you to cut down. To cancel,
 quit without saving (or make the editor fail, e.g. `:cq` in vim): saving what
 was opened changes nothing.
+
+`+` does the same for a file the range doesn't change (or that isn't there at
+all), e.g. to stub one out for a commit and put it back in a later one; it's
+shown as `= path`.
 
 **Changing your mind** about the code itself: press `ctrl+z`, change files (or
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd
@@ -142,6 +147,7 @@ git recommit commit add "Add the API" --after 2
 git recommit assign 3 src/api.py src/util.py:@2 src/main.py:+10-14
 git recommit unassign src/main.py:-3
 git recommit edit 3 src/api.py < stub.py    # the file in commit 3, by hand
+git recommit edit 2 scratch.txt --delete    # (any file, changed by the range or not)
 git recommit commit move 3 1                # or remove, or reword
 git recommit commit author 3 "Ana <ana@example.com>"
 git recommit write --validate 'pytest'

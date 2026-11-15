@@ -83,8 +83,3 @@ What to decide:
 - **The TUI on a plan.** `git recommit tui` could open the plan in the TUI,
   and leave it as a plan on quitting, so a person can finish what an agent
   started, or the reverse.
-
-## Giving a commit a file the range doesn't change
-
-See the first item in ISSUES.md: a key to edit any path in the active commit,
-and rows for files with no net change.

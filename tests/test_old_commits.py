@@ -194,3 +194,15 @@ def test_rebuilding_from_the_root(repo: Repo) -> None:
     session.finish(shas)
     assert repo.git("rev-list", "--count", "HEAD") == "5"
     assert repo.git("status", "--porcelain") == ""
+
+
+def test_reproduces_files_that_end_as_they_started(repo: Repo) -> None:
+    repo.commit("base", keep="1\n", gone="g\n")
+    old = [
+        # notes.txt is added and removed again; gone is deleted and brought back.
+        repo.commit("first", notes="todo\n", keep="1\n2\n", gone=None),
+        repo.commit("second", notes=None, gone="g\n"),
+    ]
+    session = restored(repo, "HEAD~2")
+    assert {d.path: d.status for d in session.files} == {"gone": "=", "keep": "M", "notes": "="}
+    assert trees(repo, session.build()) == trees(repo, old)

@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from git_recommit.diff import FileDiff, numbered
+from git_recommit.errors import RecommitError
 from git_recommit.plan import Author, Plan
 from git_recommit.revisions import changed_paths
 
@@ -44,6 +45,14 @@ def restore(session: "Session") -> None:
     # A line last there in a commit (or base) was removed by the next one.
     removed_by = dict(zip([session.base, *shas], shas, strict=False))
     touched_by = _touched_by(session, shas)
+    # Files old commits change that end as they started aren't in the diff;
+    # add them, so the edits can reproduce them (but for binary ones).
+    changed = {diff.path for diff in session.files}
+    for path in sorted(set(touched_by) - changed):
+        try:
+            session.add_unchanged(path)
+        except RecommitError:
+            pass
     uncommitted = set(changed_paths(session.git, session.head, session.tip)) if session.uncommitted else set()
     for diff in session.files:
         # The last commit to change the file takes what blame can't say
@@ -125,11 +134,12 @@ def _reproduce(session: "Session", shas: list[str]) -> None:
     def reproduce(diff: FileDiff) -> None:
         for index, (commit, blobs) in enumerate(zip(session.plan.commits, trees, strict=True)):
             actual = blobs.get(diff.path)
-            # An edit can't delete a file.
-            if actual is None:
-                continue
             # Only up to this commit: an edit here changes the later ones.
             version = session.states(diff, upto=index)[index].version
+            if actual is None:
+                if version is not None:
+                    session.set_edit(commit.key, diff, None)
+                continue
             content = None if version is None else version.content
             if content is not None and blob_id(content, object_format) == actual:
                 continue

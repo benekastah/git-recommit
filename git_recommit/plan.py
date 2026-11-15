@@ -14,7 +14,8 @@ class Edit:
     """
 
     basis: bytes
-    content: bytes
+    # None deletes the file.
+    content: bytes | None
 
 
 @dataclass(frozen=True)

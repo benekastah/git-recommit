@@ -45,6 +45,9 @@ def pure_version(diff: FileDiff, selected: Container[int]) -> Version | None:
         mode, blob = (diff.new_mode, diff.new_blob) if take else (diff.old_mode, diff.old_blob)
         return None if mode is None else Version(mode, sha=blob)
     ids = diff.ids
+    if diff.status == "=" and diff.old_blob is None:
+        # A file the range doesn't change, that isn't there at either end.
+        return None
     if diff.status == "A" and not any(i in selected for i in ids):
         return None
     if diff.status == "D" and all(i in selected for i in ids):
@@ -96,7 +99,10 @@ def file_states(diff: FileDiff, commits: list[NewCommit], assignment: dict[int, 
         # A conflicted file is no basis for an edit, which resolves it.
         basis = _content(assigned if conflict else carried)
         result = carried
-        if edit := commit.edits.get(diff.path):
+        if (edit := commit.edits.get(diff.path)) is not None and edit.content is None:
+            # Deleting the file.
+            result, conflict = None, False
+        elif edit is not None and edit.content is not None:
             if edit.basis == basis:
                 content, conflict = edit.content, False
             else:

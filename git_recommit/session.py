@@ -2,12 +2,13 @@
 building them."""
 
 import os
+import posixpath
 import subprocess
 import tempfile
 from dataclasses import dataclass
 
 from git_recommit import oldcommits
-from git_recommit.diff import FileDiff, change_keys, load_diff
+from git_recommit.diff import SPECIAL_MODES, FileDiff, change_keys, load_diff, split_lines
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit, NewCommit, Plan
@@ -65,6 +66,8 @@ class Session:
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
         # The author of the old commit that made each change, where known.
         self.origin: dict[int, Author] = {}
+        # Files the range doesn't change that commits edit (see add_unchanged).
+        self.unchanged: set[str] = set()
         self._me: Author | None = None
         self._conflicts: tuple[tuple[object, ...], list[Conflict]] | None = None
 
@@ -114,6 +117,10 @@ class Session:
         }
         self.origin = {new_ids[old_keys[i]]: author for i, author in self.origin.items() if old_keys[i] in new_ids}
         self.head, self.tip, self.files, self._tip_tree = head, tip, files, tree
+        changed = {diff.path for diff in files}
+        for path in sorted(self.unchanged - changed):
+            self.unchanged.discard(path)
+            self.add_unchanged(path)
         self.old_commits = self.git.run("log", "--format=%h %s", self.history).splitlines()
         self.uncommitted = tip != head
         return True
@@ -167,6 +174,18 @@ class Session:
                 )
         return warnings
 
+    def plain_path(self, path: str) -> str:
+        """path, relative to the current directory (or with :/, the top), as a
+        path from the top, as git takes a path that isn't a pattern."""
+        if path.startswith(":/"):
+            joined = path[2:]
+        else:
+            joined = self.git.run("rev-parse", "--show-prefix") + path
+        normal = posixpath.normpath(joined.replace(os.sep, "/"))
+        if normal.startswith("../") or normal in (".", ".."):
+            raise RecommitError(f"{path} is outside the repository")
+        return normal
+
     def head_moved(self) -> bool:
         """Whether HEAD has moved since the diff was loaded (e.g. the user
         committed while git recommit was suspended)."""
@@ -203,17 +222,45 @@ class Session:
             version = pure_version(diff, set(diff.ids)) or pure_version(diff, set())
         return b"" if version is None or version.content is None else version.content
 
-    def set_edit(self, key: int, diff: FileDiff, content: bytes) -> None:
-        """Make the file content in the commit (and carry that into later ones)."""
+    def set_edit(self, key: int, diff: FileDiff, content: bytes | None) -> None:
+        """Make the file content in the commit, or with None, delete it (and
+        carry that into later ones)."""
         if diff.whole:
             raise RecommitError(f"{diff.path} isn't a text file, so it can't be edited")
         commit = self.plan.get(key)
         index = self.plan.index(key)
         state = self.states(diff, upto=index)[index]
         commit.edits.pop(diff.path, None)
+        if content is None:
+            if state.version is not None:
+                commit.edits[diff.path] = Edit(state.basis, None)
         # Even an edit that changes nothing resolves a conflict.
-        if content != state.basis or state.conflict or state.version is None:
+        elif content != state.basis or state.conflict or state.version is None:
             commit.edits[diff.path] = Edit(state.basis, content)
+
+    def add_unchanged(self, path: str) -> FileDiff:
+        """The file at path (from the top), added to the files as one the
+        range doesn't change, so commits can edit it, if it isn't one of them
+        already."""
+        for diff in self.files:
+            if diff.path == path:
+                return diff
+        out = self.git.run_bytes("ls-tree", "-z", "--full-tree", self.base, "--", path)
+        entry, _, found = out.rstrip(b"\0").partition(b"\t")
+        if found and found.decode(errors="surrogateescape") != path:
+            raise RecommitError(f"{path} isn't a file")
+        diff = FileDiff(path=path, status="=", old_mode=None, new_mode=None, old_blob=None, new_blob=None, binary=False)
+        if found:
+            mode, kind, blob = entry.decode().split(" ")
+            content = self.git.blob(blob) if kind == "blob" else b""
+            if kind != "blob" or mode in SPECIAL_MODES or b"\0" in content[:8000]:
+                raise RecommitError(f"{path} isn't a text file, so it can't be edited")
+            diff.old_mode = diff.new_mode = mode
+            diff.old_blob = diff.new_blob = blob
+            diff.old_lines = split_lines(content)
+        self.files = sorted([*self.files, diff], key=lambda d: os.fsencode(d.path))
+        self.unchanged.add(path)
+        return diff
 
     def _fingerprint(self) -> tuple[object, ...]:
         """Something that's the same as long as the plan is."""

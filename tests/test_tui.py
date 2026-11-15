@@ -295,6 +295,21 @@ def test_authors(repo: Repo) -> None:
     assert session.authorship_warnings() == []
 
 
+def test_editing_a_file_the_range_doesnt_change(repo: Repo) -> None:
+    session = two_files(repo)
+    session.restore_old_commits()
+
+    async def script(pilot: Pilot[Any]) -> None:
+        assert isinstance(pilot.app, RecommitApp)
+        await pilot.press("plus")
+        await pilot.press(*"README", "enter")
+        assert any(session.files[row.file].path == "README" for row in pilot.app.board.rows)
+        await pilot.press("q", "y")
+
+    run(session, FakeTerminal(repo, lambda content: b"stubbed\n"), script)
+    assert session.plan.commits[0].edits["README"].content == b"stubbed\n"
+
+
 def test_quit_changes_nothing(repo: Repo) -> None:
     session = two_files(repo)
 

@@ -527,3 +527,23 @@ def test_unassigned_untracked_files_stay_untracked(repo: Repo) -> None:
     session.restore_old_commits()
     session.finish(session.build())
     assert repo.git("status", "--porcelain") == "?? new.txt"
+
+
+def test_editing_a_file_the_range_doesnt_change(repo: Repo) -> None:
+    from git_recommit.commands import Edit
+
+    feature_repo(repo)
+    session = repo.session("HEAD~3")
+    session.restore_old_commits()
+    # README is the same before and after the range.
+    assert "README" not in [d.path for d in session.files]
+    Edit(1, "README", b"stubbed\n").run(session)
+    Edit(2, "README", b"readme\n").run(session)
+    # And a file that's in neither.
+    Edit(1, "scratch.txt", b"temporary\n").run(session)
+    Edit(2, "scratch.txt", None).run(session)
+    first, second, third = session.build()
+    assert repo.show(first, "README") == "stubbed\n" and repo.show(second, "README") == "readme\n"
+    assert repo.show(first, "scratch.txt") == "temporary\n" and repo.show(second, "scratch.txt") is None
+    assert repo.show(third, "README") == "readme\n"
+    assert session.left_uncommitted() == []

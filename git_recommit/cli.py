@@ -108,6 +108,7 @@ def subcommand_parser() -> argparse.ArgumentParser:
     )
     edit.add_argument("number", type=int)
     edit.add_argument("path")
+    edit.add_argument("--delete", action="store_true", help="delete PATH in commit NUMBER, instead")
     drop = sub.add_parser("drop-edit", help="drop commit NUMBER's edit of PATH")
     drop.add_argument("number", type=int)
     drop.add_argument("path")
@@ -218,11 +219,13 @@ def targets(session: Session, specs: list[str]) -> tuple[Target, ...]:
 
 
 def one_path(session: Session, pathspec: str) -> str:
-    """The one changed file pathspec matches."""
+    """The one changed file pathspec matches; or if none, the file it names,
+    as a plain path (as git takes one), which needn't be changed, or there."""
     paths = session.match(pathspec)
-    if len(paths) != 1:
-        what = "no file" if not paths else f"{len(paths)} files"
-        raise RecommitError(f"{pathspec} matches {what} the commits being rebuilt change, rather than one")
+    if not paths:
+        return session.plain_path(pathspec)
+    if len(paths) > 1:
+        raise RecommitError(f"{pathspec} matches {len(paths)} files, rather than one")
     return paths[0]
 
 
@@ -236,7 +239,8 @@ def command(args: argparse.Namespace, session: Session) -> Command:
         case "unassign":
             return commands.Assign(targets(session, args.targets), None)
         case "edit":
-            return commands.Edit(args.number, one_path(session, args.path), sys.stdin.buffer.read())
+            content = None if args.delete else sys.stdin.buffer.read()
+            return commands.Edit(args.number, one_path(session, args.path), content)
         case "drop-edit":
             return commands.DropEdit(args.number, one_path(session, args.path))
         case "clear":

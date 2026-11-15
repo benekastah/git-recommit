@@ -203,3 +203,14 @@ def test_rebuilding_from_the_root(repo: Repo) -> None:
     repo.recommit("write")
     assert repo.git("log", "--format=%s").splitlines() == ["init"]
     assert repo.show("HEAD", "a") == "a\n"
+
+
+def test_editing_a_file_the_range_doesnt_change(repo: Repo) -> None:
+    repo.commit("one", a="a\n")
+    repo.commit("two", b="b\n")
+    repo.recommit("start", "HEAD~2")
+    repo.recommit("edit", "1", "README", input="stubbed\n")
+    repo.recommit("edit", "2", "README", input="readme\n")
+    assert "= README" in repo.recommit("show").stdout
+    repo.recommit("write")
+    assert repo.show("HEAD~", "README") == "stubbed\n" and repo.show("HEAD", "README") == "readme\n"

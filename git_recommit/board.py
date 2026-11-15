@@ -182,6 +182,15 @@ class Board:
     def toggle_range(self) -> None:
         self.anchor = self.cursor if self.anchor is None else None
 
+    def add_file(self, path: str) -> FileDiff:
+        """Add a file the range doesn't change (see Session.add_unchanged),
+        and move to it."""
+        diff = self.session.add_unchanged(self.session.plain_path(path))
+        self.rows = build_rows(self.session.files)
+        self.anchor = None
+        self.goto_file(self.session.files.index(diff))
+        return diff
+
     def reload(self, quiet: bool = False) -> None:
         """Reload the session's diff (see Session.reload), keeping the cursor
         in the same file, and as near the same place in it as there is. If

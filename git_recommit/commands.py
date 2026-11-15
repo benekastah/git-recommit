@@ -259,23 +259,29 @@ class Assign:
 
 @dataclass(frozen=True)
 class Edit:
-    """Make a text file content in a commit, by hand (carried into later
-    commits). Content that's what the file already is in the commit changes
-    nothing, so quitting an editor without saving is safe."""
+    """Make a text file content in a commit, by hand, or with None, delete it
+    (carried into later commits). The file can be one the range doesn't
+    change, or that isn't there at all. Content that's what the file already
+    is in the commit changes nothing, so quitting an editor without saving is
+    safe."""
 
     commit: int
     path: str
-    content: bytes
+    content: bytes | None
 
     def run(self, session: Session) -> Result:
         key = commit_key(session, self.commit)
-        diff = file_diff(session, self.path)
+        diff = session.add_unchanged(self.path)
         if diff.whole:
             raise RecommitError(f"{self.path} isn't a text file, so it can't be edited")
+        index = session.plan.index(key)
+        before = session.states(diff, upto=index)[index].version
         # E.g. an editor that saved Windows line endings, in a repository that
         # stores Unix ones.
-        content = session.git.clean(self.path, self.content)
-        if content == session.edit_text(key, diff):
+        content = None if self.content is None else session.git.clean(self.path, self.content)
+        # Saving what the editor opened (see Session.edit_text) changes nothing.
+        unchanged = before is None if content is None else content == session.edit_text(key, diff)
+        if unchanged:
             return Result(f"{self.path} is unchanged in commit {self.commit}.", self.commit)
         session.set_edit(key, diff, content)
         if self.path in session.plan.get(key).edits:

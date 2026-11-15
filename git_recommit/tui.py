@@ -21,6 +21,7 @@ from textual.widgets import Input, Static
 
 from git_recommit import commands, editor, show, validate, writing
 from git_recommit.board import Board, line_text
+from git_recommit.diff import FileDiff
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.session import Session
@@ -82,7 +83,8 @@ class DiffView(ScrollView, can_focus=True):
         row = self.board.rows[index]
         diff = self.board.session.files[row.file]
         if row.kind == "file":
-            return f"{diff.status} {diff.path}" + (" (binary)" if diff.binary else "")
+            note = " (binary)" if diff.binary else " (the range doesn't change it)" if diff.status == "=" else ""
+            return f"{diff.status} {diff.path}{note}"
         if row.kind == "meta":
             return f"  {diff.describe_meta()}"
         if row.kind == "hunk":
@@ -314,6 +316,7 @@ HELP = """\
   e             edit this file as it is in the active commit, in your editor
                 (the edit is carried into later commits)
   E             drop the active commit's edit of this file
+  +             edit a file the range doesn't change (or that isn't there), as e
 
   R             reload the changes, after changing files (ctrl+z does too, on resuming)
   ctrl+z        suspend git recommit, to change files; `fg` brings it back
@@ -356,6 +359,7 @@ class BoardScreen(Screen[None]):
         Binding("A", "author", "Set author", show=False),
         Binding("D", "delete", "Delete commit", show=False),
         Binding("e", "edit", "Edit file"),
+        Binding("plus", "edit_other", "Edit another file", show=False),
         Binding("E", "drop_edit", "Drop edit", show=False),
         Binding("w", "write", "Write"),
         Binding("q", "quit_recommit", "Quit"),
@@ -627,8 +631,28 @@ class BoardScreen(Screen[None]):
         self.board.reword_active(message)
         self._do()
 
+    def action_edit_other(self) -> None:
+        """Ask for a file the range doesn't change, then edit it, as e does."""
+
+        def answered(path: str | None) -> None:
+            if not path or not path.strip():
+                self._do()
+                return
+            try:
+                self.board.active_commit()
+                diff = self.board.add_file(path.strip())
+            except RecommitError as e:
+                self._do(str(e))
+                return
+            self.query_one(DiffView).rebuild()
+            self._edit(diff)
+
+        self.app.push_screen(InputScreen("Edit which file in the active commit? (Esc to cancel)"), answered)
+
     def action_edit(self) -> None:
-        diff = self.board.current_file()
+        self._edit(self.board.current_file())
+
+    def _edit(self, diff: FileDiff) -> None:
         try:
             commit = self.board.active_commit()
             if diff.whole:

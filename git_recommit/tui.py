@@ -616,6 +616,10 @@ class BoardScreen(Screen[None]):
         self.app.push_screen(ConfirmScreen("\n".join(lines)), confirmed)
 
     def _build(self) -> None:
+        if self.session.head_moved():
+            self.action_reload()
+            self._do("HEAD moved since the changes were loaded, so they're reloaded: check them, then write again.")
+            return
         try:
             shas = self.session.build()
         except RecommitError as e:

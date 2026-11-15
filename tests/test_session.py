@@ -308,3 +308,14 @@ def test_reloading_and_writing_refuse_once_another_operation_starts(repo: Repo) 
     # Nothing changed: the merge can still be aborted.
     assert repo.git("rev-parse", "HEAD") == head
     repo.git("merge", "--abort")
+
+
+def test_writing_after_head_moved_says_where_the_new_commits_are(repo: Repo) -> None:
+    feature_repo(repo)
+    session = repo.session("HEAD~3")
+    session.restore_old_commits()
+    shas = session.build()
+    moved = repo.commit("meanwhile", c="c\n")
+    with pytest.raises(RecommitError, match=f"HEAD moved.*{shas[-1]}"):
+        session.finish(shas)
+    assert repo.git("rev-parse", "HEAD") == moved

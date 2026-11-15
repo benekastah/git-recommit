@@ -3,17 +3,6 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## The plan is lost if HEAD moved since the last reload
-
-Confirmed. The new commits are written (`Session.finish`, called from cli.py)
-after the TUI has exited. If HEAD moved and the user didn't reload (`R`, or
-resuming from `ctrl+z`), `update-ref`'s check of the old value rightly fails,
-but only git's error is printed: not the new commits' ids, so the work done
-in the TUI can't be recovered.
-
-Fix: check HEAD before leaving the TUI (and reload, or say so), and print the
-new tip's id in any error after building.
-
 ## A file that changes kind (e.g. to a symlink) crashes loading
 
 Confirmed. `git diff-tree -p` shows a change of kind as two parts (a deletion

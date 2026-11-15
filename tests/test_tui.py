@@ -193,6 +193,24 @@ def test_clearing_and_restoring_the_old_commits(repo: Repo) -> None:
     run(session, FakeTerminal(repo), script)
 
 
+def test_writing_after_head_moved_reloads_first(repo: Repo) -> None:
+    session = two_files(repo)
+    session.restore_old_commits()
+
+    async def script(pilot: Pilot[Any]) -> None:
+        assert isinstance(pilot.app, RecommitApp)
+        repo.commit("meanwhile", c="c\n")
+        await pilot.press("w", "y")
+        assert pilot.app.return_value is None
+        status = str(pilot.app.screen.query_one("#status").render())
+        assert "HEAD moved" in status
+        # The new commit's change is there now, to assign before writing.
+        assert [d.path for d in session.files] == ["a", "b", "c"]
+        await pilot.press("q", "y")
+
+    assert run(session, FakeTerminal(repo), script) is None
+
+
 def test_quit_changes_nothing(repo: Repo) -> None:
     session = two_files(repo)
 

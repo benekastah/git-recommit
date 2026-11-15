@@ -154,6 +154,11 @@ class Session:
         self.uncommitted = tip != head
         return True
 
+    def head_moved(self) -> bool:
+        """Whether HEAD has moved since the diff was loaded (e.g. the user
+        committed while git recommit was suspended)."""
+        return self.git.commit_sha("HEAD") != self.head
+
     def clear(self) -> None:
         """Start from scratch, with no commits."""
         self.plan = Plan()
@@ -362,6 +367,11 @@ class Session:
         uncommitted changes."""
         check_nothing_in_progress(self.git)
         new_tip = shas[-1] if shas else self.base
+        if self.head_moved():
+            # Moving the branch would drop what moved it; say where the work is.
+            raise RecommitError(
+                f"HEAD moved while the new commits were being made, so they weren't used; they end at {new_tip}"
+            )
         self.git.run(
             "update-ref", "-m", f"recommit: rebuild {len(self.old_commits)} commits", "HEAD", new_tip, self.head
         )

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=84"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "git-recommit"
+version = "0.1.0"
+description = "Rebuild a run of commits into reviewable ones, in a TUI"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["textual>=8.2.8"]
+
+[dependency-groups]
+dev = ["mypy>=2.4.1", "pytest>=9.2.0", "pytest-xdist>=3.8.0", "ruff>=0.17.5", "shellcheck-py>=0.11.0.1"]
+
+[project.scripts]
+git-recommit = "git_recommit.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["git_recommit*"]
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["-n", "auto"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+extend-select = ["B904", "B905", "C901", "PERF401", "I", "UP"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["git_recommit", "tests"]

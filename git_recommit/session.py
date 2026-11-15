@@ -241,9 +241,9 @@ class Session:
         commits = self.plan.commits if upto is None else self.plan.commits[: upto + 1]
         # Making a file with only some changes is most of the work, and the
         # same changes come up again and again (e.g. for each commit, when
-        # starting from the old ones, and after each change to the plan). So keep the
-        # versions the last call made, to reuse: only those, so what's kept
-        # stays the size of one call's.
+        # starting from the old ones, and after each change to the plan). So
+        # keep the versions the last call made, to reuse: only those, so
+        # what's kept stays the size of one call's.
         kept = self._pure.get(diff.path, {})
         made: dict[frozenset[int], Version | None] = {}
 

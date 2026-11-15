@@ -6,6 +6,7 @@ import pytest
 
 from git_recommit import oldcommits
 from git_recommit.errors import RecommitError
+from git_recommit.git import GitClient
 from git_recommit.session import Session
 from tests.helpers import Repo
 
@@ -55,6 +56,33 @@ def test_rebuilding_them_unchanged_in_a_sha256_repository(repo: Repo) -> None:
     assert [len(sha) for sha in old] == [64] * 3
     assert trees(sha256, session.build()) == trees(sha256, old)
     assert [set(commit.edits) for commit in session.plan.commits] == [{"f"}, {"f"}, set()]
+
+
+def test_a_submodule_is_reproduced_whatever_diff_config_ignores(repo: Repo) -> None:
+    old = [repo.commit("other", f="f\n")]
+    # As a submodule that isn't checked out is: an empty directory.
+    (repo.path / "sub").mkdir()
+    repo.git("update-index", "--add", "--cacheinfo", f"160000,{old[0]},sub")
+    repo.git("commit", "--quiet", "-m", "add sub")
+    old.append(repo.git("rev-parse", "HEAD"))
+    repo.git("config", "diff.ignoreSubmodules", "all")
+    session = restored(repo, "HEAD~2")
+    assert session.unassigned() == []
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+@pytest.mark.parametrize("relative", [False, True])
+def test_restoring_from_a_subdirectory(repo: Repo, relative: bool) -> None:
+    repo.commit("base", **{"dir/f": LINES, "top": "top\n"})
+    old = [
+        repo.commit("first", **{"dir/f": LINES.replace("line 5\n", "five\n"), "top": "top\nmore\n"}),
+        repo.commit("second", **{"dir/f": LINES.replace("line 5\n", "FIVE\n")}),
+    ]
+    repo.git("config", "diff.relative", str(relative).lower())
+    session = Session.load(GitClient(repo.path / "dir"), "HEAD~2")
+    session.restore_old_commits()
+    assert session.unassigned() == []
+    assert trees(repo, session.build()) == trees(repo, old)
 
 
 def test_overlapping_changes_are_reproduced_with_edits(repo: Repo) -> None:

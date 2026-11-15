@@ -1,3 +1,5 @@
+import pathlib
+
 import pytest
 
 from git_recommit.errors import RecommitError
@@ -25,6 +27,25 @@ def test_commit_sha_is_none_for_what_isnt_a_commit(repo: Repo) -> None:
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
 
 
+def test_names_git_cant_resolve_are_none_quietly(repo: Repo, capfd: pytest.CaptureFixture[str]) -> None:
+    git = repo.client
+    tree = repo.git("rev-parse", "HEAD^{tree}")
+    # No upstream, past the end of the reflog, a tree, as a commit.
+    for rev in ("@{u}", "HEAD@{999}", tree):
+        assert git.commit_sha(rev) is None, rev
+    assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
+    assert capfd.readouterr().err == ""
+
+
+def test_reading_goes_on_after_a_name_stops_git(repo: Repo) -> None:
+    git = repo.client
+    # Which `git cat-file --batch-command` exits for, rather than saying it's missing.
+    with pytest.raises(RecommitError, match="@{u}"):
+        git.tree("@{u}")
+    assert git.tree("HEAD") == repo.git("rev-parse", "HEAD^{tree}")
+    assert git.blob(repo.git("rev-parse", "HEAD:README")) == b"readme\n"
+
+
 def test_commit_sha_sees_refs_that_moved_since_it_last_looked(repo: Repo) -> None:
     git = repo.client
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
@@ -44,10 +65,10 @@ def test_tree_is_a_commits_tree(repo: Repo) -> None:
 
 def test_git_paths_are_where_git_keeps_them(repo: Repo) -> None:
     git = repo.client
-    index, plan = git.git_paths("index", "recommit/plan.json")
-    assert (index, plan) == (str(repo.path / ".git" / "index"), str(repo.path / ".git" / "recommit" / "plan.json"))
+    index, plan = map(pathlib.Path, git.git_paths("index", "recommit/plan.json"))
+    assert (index, plan) == (repo.path / ".git" / "index", repo.path / ".git" / "recommit" / "plan.json")
     # Asked again, in another order, with one not asked for before.
-    assert git.git_paths("MERGE_HEAD", "index") == [str(repo.path / ".git" / "MERGE_HEAD"), index]
+    assert list(map(pathlib.Path, git.git_paths("MERGE_HEAD", "index"))) == [repo.path / ".git" / "MERGE_HEAD", index]
 
 
 def test_reading_an_object_of_another_kind_is_refused(repo: Repo) -> None:

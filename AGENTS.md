@@ -133,8 +133,11 @@ git-recommit should run on all three (CI runs the tests on each).
   command are the user's shell commands, so those do run through one.)
 - Starting a process is slow, on Windows most of all, so read from git with
   as few as you can: names and objects through `GitClient`'s one `cat-file`
-  process (`commit_sha`, `tree`, `read_object`), and one git command for
-  many things (e.g. one `git log` for every commit) over one each.
+  process (`head`, `tree`, `read_object`; not names the user typed, which
+  can make it exit), and one git command for many things (e.g. one `git log`
+  for every commit) over one each. Porcelain commands (`log`, `status`) read
+  config the plumbing ignores (e.g. `diff.relative`,
+  `diff.ignoreSubmodules`), so give them the flags that undo it.
 - Don't assume `\n` line endings in files: diff.py keeps every line's own
   ending, and splits only at `\n`, as git does.
 - Shell scripts (`check.sh`, `lint.sh`, the hooks) are for development only.

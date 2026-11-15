@@ -53,9 +53,10 @@ class GitClient:
         # once.
         self._cat_file: subprocess.Popen[bytes] | None = None
         self._cat_file_lock = threading.Lock()
-        # Where git keeps each file asked about (see git_paths), which doesn't
-        # change.
+        # Where git keeps each file asked about (see git_paths), and the top
+        # of the worktree, which don't change.
         self._git_paths: dict[str, str] = {}
+        self._toplevel: str | None = None
 
     def __del__(self) -> None:
         self.close()
@@ -64,7 +65,11 @@ class GitClient:
         """Stop the cat-file process, if one was started."""
         if self._cat_file is not None:
             if self._cat_file.stdin is not None:
-                self._cat_file.stdin.close()
+                try:
+                    self._cat_file.stdin.close()
+                except BrokenPipeError:
+                    # It had stopped already.
+                    pass
             self._cat_file.wait()
             self._cat_file = None
 
@@ -133,16 +138,30 @@ class GitClient:
             self._git_paths.update(zip(new, map(os.fsdecode, out.splitlines()), strict=True))
         return [self._git_paths[name] for name in names]
 
+    def toplevel(self) -> str:
+        """The top of the worktree, as a path in the filesystem."""
+        if self._toplevel is None:
+            self._toplevel = os.fsdecode(self.run_bytes("rev-parse", "--show-toplevel").rstrip(b"\n"))
+        return self._toplevel
+
     def commit_sha(self, rev: str) -> str | None:
         """The commit rev names, or None if it doesn't name one."""
-        return self._resolve(f"{rev}^{{commit}}")
+        return (
+            self.run("rev-parse", "--verify", "--quiet", "--end-of-options", f"{rev}^{{commit}}", check=False) or None
+        )
 
-    def tree(self, rev: str) -> str:
-        """The tree rev names (e.g. a commit's)."""
-        sha = self._resolve(f"{rev}^{{tree}}")
-        if sha is None:
-            raise RecommitError(f"{rev} isn't a commit or tree")
-        return sha
+    def head(self) -> str | None:
+        """The commit HEAD is at, or None if there's none yet: as commit_sha
+        says, without starting a process."""
+        return self._resolve("HEAD^{commit}")
+
+    def tree(self, sha: str) -> str:
+        """The tree of the commit with id sha, without starting a process (or
+        itself, if it's a tree)."""
+        tree = self._resolve(f"{sha}^{{tree}}")
+        if tree is None:
+            raise RecommitError(f"{sha} isn't a commit or tree")
+        return tree
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         return self.ok("merge-base", "--is-ancestor", ancestor, descendant)
@@ -172,7 +191,9 @@ class GitClient:
 
     def _resolve(self, name: str) -> str | None:
         """The object name names (as rev-parse --verify would find it), or
-        None if it names none."""
+        None if it names none. For names git recommit makes, not ones the
+        user typed: git cat-file exits for some (e.g. @{u} without an
+        upstream), with an error, rather than saying they name nothing."""
         if not name or "\n" in name:
             # A line ending would put the process out of step.
             return None
@@ -197,9 +218,17 @@ class GitClient:
                 env=self._env(),
             )
         assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
-        self._cat_file.stdin.write(command + b"\n")
-        self._cat_file.stdin.flush()
-        return self._cat_file.stdout.readline().split()
+        try:
+            self._cat_file.stdin.write(command + b"\n")
+            self._cat_file.stdin.flush()
+            reply = self._cat_file.stdout.readline()
+        except BrokenPipeError:
+            reply = b""
+        if not reply:
+            # It stopped (having said why); the next command starts another.
+            self.close()
+            raise RecommitError(f"git cat-file stopped at {command.decode(errors='replace')!r}")
+        return reply.split()
 
     def clean(self, path: str, content: bytes) -> bytes:
         """content as `git add` would commit it at path: through the clean

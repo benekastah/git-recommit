@@ -53,10 +53,10 @@ class GitClient:
         # once.
         self._cat_file: subprocess.Popen[bytes] | None = None
         self._cat_file_lock = threading.Lock()
-        # Where git keeps each file asked about (see git_paths), and the top
-        # of the worktree, which don't change.
+        # Where git keeps each file asked about (see git_paths), and the way
+        # up to the top of the worktree, which don't change.
         self._git_paths: dict[str, str] = {}
-        self._toplevel: str | None = None
+        self._cdup: str | None = None
 
     def __del__(self) -> None:
         self.close()
@@ -67,8 +67,9 @@ class GitClient:
             if self._cat_file.stdin is not None:
                 try:
                     self._cat_file.stdin.close()
-                except BrokenPipeError:
-                    # It had stopped already.
+                except OSError:
+                    # It had stopped already (on Windows, maybe not as a
+                    # BrokenPipeError).
                     pass
             self._cat_file.wait()
             self._cat_file = None
@@ -138,11 +139,12 @@ class GitClient:
             self._git_paths.update(zip(new, map(os.fsdecode, out.splitlines()), strict=True))
         return [self._git_paths[name] for name in names]
 
-    def toplevel(self) -> str:
-        """The top of the worktree, as a path in the filesystem."""
-        if self._toplevel is None:
-            self._toplevel = os.fsdecode(self.run_bytes("rev-parse", "--show-toplevel").rstrip(b"\n"))
-        return self._toplevel
+    def cdup(self) -> str:
+        """The path from directory up to the top of the worktree, ending in a
+        slash (or empty, at the top), to put before a path from the top."""
+        if self._cdup is None:
+            self._cdup = self.run("rev-parse", "--show-cdup")
+        return self._cdup
 
     def commit_sha(self, rev: str) -> str | None:
         """The commit rev names, or None if it doesn't name one."""
@@ -243,7 +245,8 @@ class GitClient:
             self._cat_file.stdin.write(command + b"\n")
             self._cat_file.stdin.flush()
             reply = self._cat_file.stdout.readline()
-        except BrokenPipeError:
+        except OSError:
+            # It had stopped (see close).
             reply = b""
         if not reply:
             # It stopped; the next command starts another.

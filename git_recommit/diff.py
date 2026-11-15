@@ -276,6 +276,9 @@ def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
     """The changes from base to tip, file by file."""
     out = git.run_bytes(
         "diff-tree",
+        # Even a submodule submodule.<name>.ignore leaves out, as even
+        # plumbing does.
+        "--ignore-submodules=none",
         "-r",
         renames(git),
         "--no-abbrev",

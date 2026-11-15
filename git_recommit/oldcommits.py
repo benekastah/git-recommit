@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from git_recommit.diff import SUBMODULE_MODE, FileDiff, numbered
 from git_recommit.errors import RecommitError
-from git_recommit.git import fs_path
 from git_recommit.plan import Author, Plan
 
 if TYPE_CHECKING:
@@ -134,12 +133,14 @@ def _old_commits(session: "Session") -> list[_OldCommit]:
     shas = session.git.run_bytes("rev-list", "--reverse", span)
     if not shas:
         return []
-    # Plumbing, rather than git log, whose output the user's config changes.
-    # --always: even a commit that changes nothing.
+    # Plumbing, rather than git log, whose output the user's config changes
+    # (but for submodule.<name>.ignore, which plumbing reads too). --always:
+    # even a commit that changes nothing.
     out = session.git.run_bytes(
         "diff-tree",
         "--stdin",
         "--always",
+        "--ignore-submodules=none",
         "-r",
         "--root",
         "--no-renames",
@@ -200,12 +201,12 @@ def _blame(session: "Session", path: str, reverse: bool) -> dict[int | None, str
     # From the root, the whole history; reverse blame isn't needed then, as
     # every file is added.
     span = session.tip if session.root else f"{session.base}..{session.tip}"
-    args = ["blame", "--porcelain", *(["--reverse"] if reverse else []), span]
+    # Every commit, even ones blame.ignoreRevsFile would have it pass over.
+    args = ["blame", "--porcelain", "--ignore-revs-file=", *(["--reverse"] if reverse else []), span]
     lines: dict[int | None, str] = {}
-    # Run from the top, as blame takes a path from the current directory (not
-    # a pathspec), and path is from the top.
-    top = fs_path(session.git.toplevel())
-    for entry in session.git.run_bytes("-C", top, *args, "--", path).split(b"\n"):
+    # blame takes a path from the current directory (not a pathspec), and
+    # path is from the top.
+    for entry in session.git.run_bytes(*args, "--", session.git.cdup() + path).split(b"\n"):
         if match := BLAME_ENTRY.match(entry):
             lines[int(match[2])] = match[1].decode()
     return lines

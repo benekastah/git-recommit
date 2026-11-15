@@ -190,7 +190,16 @@ class Session:
         relative to the current directory, with wildcards and magic). A
         renamed file matches by either path, and is given by its new one."""
         out = self.git.run_bytes(
-            "diff-tree", "-r", "--no-renames", "--name-only", "-z", self.base, self.tip, "--", pathspec
+            "diff-tree",
+            "--ignore-submodules=none",
+            "-r",
+            "--no-renames",
+            "--name-only",
+            "-z",
+            self.base,
+            self.tip,
+            "--",
+            pathspec,
         )
         new_paths = {diff.old_path: diff.path for diff in self.files if diff.old_path is not None}
         paths = (path.decode(errors="surrogateescape") for path in out.split(b"\0") if path)

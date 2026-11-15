@@ -257,3 +257,14 @@ def test_replacing_a_binary_file_from_stdin(repo: Repo) -> None:
     repo.recommit("edit", "1", "data", input="\0stub")
     repo.recommit("write")
     assert repo.git("cat-file", "blob", "HEAD:data") == "\0stub"
+
+
+def test_works_in_a_directory_whose_name_isnt_ascii_whatever_the_locale(repo: Repo) -> None:
+    not_utf8 = {"PYTHONUTF8": "0", "LC_ALL": "C", "LANG": "C"}
+    moved = Repo(repo.path.parent / "café")
+    repo.path.rename(moved.path)
+    moved.commit("wip", a="a\n")
+    moved.write("a", "a\nuncommitted\n")
+    moved.recommit("start", "HEAD~", env=not_utf8)
+    moved.recommit("write", "--validate", "true", env=not_utf8)
+    assert moved.show("HEAD", "a") == "a\n" and moved.git("status", "--porcelain") == "M a"

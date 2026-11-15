@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from git_recommit.git import GitClient
+from git_recommit.git import GitClient, fs_path
 
 
 @dataclass(frozen=True)
@@ -30,9 +30,10 @@ def run(
     out in turn, asking the user what to do when it fails."""
     worktree = tempfile.mkdtemp(prefix="git-recommit-")
     try:
-        git.run("worktree", "add", "--quiet", "--detach", worktree, commits[0][0])
+        # A path in the filesystem, so in its encoding.
+        git.run("worktree", "add", "--quiet", "--detach", fs_path(worktree), commits[0][0])
         for index, (sha, subject) in enumerate(commits):
-            git.run("-C", worktree, "checkout", "--quiet", "--detach", "--force", sha)
+            git.run("-C", fs_path(worktree), "checkout", "--quiet", "--detach", "--force", sha)
             say(f"==> [{index + 1}/{len(commits)}] {subject}: {command}")
             if subprocess.run(command, shell=True, cwd=worktree, check=False).returncode == 0:
                 continue
@@ -43,7 +44,7 @@ def run(
                     return Outcome("abort")
         return Outcome("ok")
     finally:
-        git.run("worktree", "remove", "--force", worktree, check=False)
+        git.run("worktree", "remove", "--force", fs_path(worktree), check=False)
         shutil.rmtree(worktree, ignore_errors=True)
         git.run("worktree", "prune", check=False)
 

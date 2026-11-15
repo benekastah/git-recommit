@@ -78,8 +78,7 @@ def check_nothing_in_progress(git: GitClient) -> None:
     is in progress, or the index has unresolved conflicts: taking the working
     tree as uncommitted changes would take the conflict markers, and writing
     (which resets the index) would end the operation."""
-    paths = git.run("rev-parse", "--path-format=absolute", *(a for name in IN_PROGRESS for a in ("--git-path", name)))
-    for path, what in zip(paths.splitlines(), IN_PROGRESS.values(), strict=True):
+    for path, what in zip(git.git_paths(*IN_PROGRESS), IN_PROGRESS.values(), strict=True):
         if os.path.exists(path):
             raise RecommitError(f"{what} is in progress; finish it or abort it first")
     if git.run("ls-files", "--unmerged"):
@@ -111,7 +110,7 @@ def worktree_commit(git: GitClient, head: str, include_untracked: bool = False) 
         # time, which git compares files' with: a file changed in the same
         # second as the index was written has to be read, as git knows.
         index = os.path.join(scratch, "index")
-        shutil.copy2(git.run("rev-parse", "--path-format=absolute", "--git-path", "index"), index)
+        shutil.copy2(git.git_paths("index")[0], index)
         env = {"GIT_INDEX_FILE": index}
         git.run("add", "--all" if include_untracked else "--update", "--", ":/", env=env)
         tree = git.run("write-tree", env=env)

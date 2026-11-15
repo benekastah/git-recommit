@@ -488,7 +488,7 @@ class Session:
         working tree as it is: what the new commits don't have is left as
         uncommitted changes."""
         check_nothing_in_progress(self.git)
-        lock = self.git.run("rev-parse", "--path-format=absolute", "--git-path", "index.lock")
+        (lock,) = self.git.git_paths("index.lock")
         if os.path.exists(lock):
             # Moving HEAD, then finding the index can't be reset, would leave
             # them out of step; so check first.

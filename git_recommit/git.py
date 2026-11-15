@@ -119,6 +119,14 @@ class GitClient:
         """Run git with its output going straight to the terminal."""
         return subprocess.run(self._command(*args), env=self._env(env), check=False).returncode == 0
 
+    def git_paths(self, *names: str) -> list[str]:
+        """Where each of names is in the git directory (as `git rev-parse
+        --git-path` says), as paths in the filesystem: so in its encoding,
+        not as text."""
+        args = [a for name in names for a in ("--git-path", name)]
+        out = self.run_bytes("rev-parse", "--path-format=absolute", *args)
+        return [os.fsdecode(path) for path in out.splitlines()]
+
     def commit_sha(self, rev: str) -> str | None:
         """The commit rev names, or None if it doesn't name one."""
         return (

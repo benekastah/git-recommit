@@ -21,7 +21,7 @@ VERSION = 1
 
 
 def path(git: GitClient) -> str:
-    return git.run("rev-parse", "--path-format=absolute", "--git-path", "recommit/plan.json")
+    return git.git_paths("recommit/plan.json")[0]
 
 
 def exists(git: GitClient) -> bool:

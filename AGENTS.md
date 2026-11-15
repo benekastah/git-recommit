@@ -122,6 +122,10 @@ These were the user's choices for v0; ask before changing them.
 - Run `./check.sh` (`lint.sh`: shellcheck, Ruff format and lint, mypy
   strict; then the tests) before committing. The pre-push hook runs it too.
   CI lints once, on Linux, and runs the tests on each OS.
+- Each CI job has a time limit (`timeout-minutes` in `ci.yml`), about 20%
+  over the longest it has taken. If a job runs into it, speed it up (e.g.
+  the tests, or git-recommit itself) if you can; only if you can't, raise
+  the limit.
 - Update the README with behavior changes.
 
 ## Linux, macOS and Windows

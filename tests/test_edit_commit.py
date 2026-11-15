@@ -27,3 +27,15 @@ def test_edits_the_root_commit(repo: Repo) -> None:
     root = repo.git("rev-list", "--max-parents=0", "HEAD")
     repo.recommit("--edit", root)
     assert repo.git("rev-parse", "HEAD") == root
+
+
+def test_editing_doesnt_squash_with_autosquash_on(repo: Repo) -> None:
+    repo.git("config", "rebase.autoSquash", "true")
+    one = repo.commit("one", f="1\n")
+    repo.commit("fixup! one", f="1\nfix\n")
+    repo.commit("three", h="3\n")
+    repo.recommit("--edit", "HEAD~2")
+    assert repo.git("rev-parse", "HEAD") == one
+    repo.git("rebase", "--continue")
+    # It only stopped to edit: the fixup wasn't squashed.
+    assert repo.git("log", "--format=%s", "-3").splitlines() == ["three", "fixup! one", "one"]

@@ -23,4 +23,6 @@ def edit_commit(git: GitClient, rev: str) -> bool:
         "When git stops at the commit, change it and `git commit --amend`, then run `git rebase --continue` "
         "to replay the later commits (resolving any conflicts as it asks)."
     )
-    return git.passthrough("rebase", "--interactive", *onto, env={"GIT_SEQUENCE_EDITOR": editor})
+    # --no-autosquash: only stop to edit, even if rebase.autoSquash is set
+    # (which would also squash fixup! commits).
+    return git.passthrough("rebase", "--interactive", "--no-autosquash", *onto, env={"GIT_SEQUENCE_EDITOR": editor})

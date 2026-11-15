@@ -12,13 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## `--edit` with `rebase.autosquash`
-
-Suspected. If `rebase.autosquash` reorders the todo list, the commit to edit
-may be a `fixup` line rather than `pick`, and `sequence_editor.mark_edit` says
-it "isn't in the rebase's todo list". Match any command's line for the commit,
-or pass `--no-autosquash`.
-
 ## Rewording ignores git's comment settings
 
 `r` removes the lines that start with `#` from the message it opens

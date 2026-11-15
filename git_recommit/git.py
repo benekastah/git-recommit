@@ -29,9 +29,9 @@ class GitClient:
         return ["git", "-C", self.directory, *args]
 
     def _env(self, env: Mapping[str, str] | None = None) -> dict[str, str]:
-        # Paths given to git are file names, never patterns or magic (e.g.
-        # a[1].txt mustn't match a1.txt).
-        return {**os.environ, "GIT_LITERAL_PATHSPECS": "1", **(env or {})}
+        # Not GIT_LITERAL_PATHSPECS, which the user's hooks would inherit: a
+        # command given paths git reported marks them literal (see literal).
+        return {**os.environ, **(env or {})}
 
     def run(
         self, *args: str, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None

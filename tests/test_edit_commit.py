@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from git_recommit.sequence_editor import mark_edit
 from tests.helpers import Repo
 
@@ -39,3 +43,17 @@ def test_editing_doesnt_squash_with_autosquash_on(repo: Repo) -> None:
     repo.git("rebase", "--continue")
     # It only stopped to edit: the fixup wasn't squashed.
     assert repo.git("log", "--format=%s", "-3").splitlines() == ["three", "fixup! one", "one"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
+def test_hooks_see_the_users_environment(repo: Repo) -> None:
+    """git recommit mustn't change how the user's hooks treat paths."""
+    repo.commit("one", f="1\n")
+    repo.commit("two", g="2\n")
+    seen = repo.path.parent / "seen"
+    hook = repo.path / ".git" / "hooks" / "pre-rebase"
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text(f'#!/bin/sh\necho "[$GIT_LITERAL_PATHSPECS]" > "{seen}"\n')
+    hook.chmod(0o755)
+    repo.recommit("--edit", "HEAD~")
+    assert seen.read_text() == "[]\n"

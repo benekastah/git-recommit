@@ -466,3 +466,13 @@ def test_old_messages_are_kept_exactly(repo: Repo) -> None:
     assert repo.git("log", "-1", "--format=%B", sha) == repo.git("log", "-1", "--format=%B", "HEAD")
     raw = subprocess.run(["git", "cat-file", "commit", sha], cwd=repo.path, capture_output=True, check=True).stdout
     assert raw.endswith(b"\n\n" + message.encode())
+
+
+def test_unassigned_new_files_that_look_like_patterns(repo: Repo) -> None:
+    # As a pathspec, b[1].txt would also match b1.txt.
+    repo.commit("wip", **{"b1.txt": "1\n", "b[1].txt": "1\n"})
+    session = repo.session("HEAD~")
+    plan = session.plan
+    plan.assign(files_ids(session, "b1.txt"), plan.add("b1").key)
+    session.finish(session.build())
+    assert sorted(repo.git("status", "--porcelain").splitlines()) == ["A b[1].txt"]

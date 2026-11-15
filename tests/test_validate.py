@@ -1,4 +1,7 @@
+import os
 import sys
+
+import pytest
 
 from git_recommit import validate
 from tests.helpers import Repo
@@ -49,3 +52,16 @@ def test_end_of_input_aborts(repo: Repo) -> None:
         raise EOFError
 
     assert validate.run(repo.client, CHECK, commits(repo), ask=ask, say=lambda _: None) == validate.Outcome("abort")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
+def test_the_command_and_hooks_see_the_users_environment(repo: Repo) -> None:
+    sha = repo.commit("good", ok="1")
+    seen = repo.path.parent / "seen"
+    hook = repo.path / ".git" / "hooks" / "post-checkout"
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text(f'#!/bin/sh\necho "hook [$GIT_LITERAL_PATHSPECS]" >> "{seen}"\n')
+    hook.chmod(0o755)
+    command = f'echo "command [$GIT_LITERAL_PATHSPECS]" >> "{seen}"'
+    validate.run(repo.client, command, [(sha, "good")], ask=lambda _: "", say=lambda _: None)
+    assert set(seen.read_text().splitlines()) == {"hook []", "command []"}

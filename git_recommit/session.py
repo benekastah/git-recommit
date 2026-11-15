@@ -486,12 +486,18 @@ class Session:
         # no longer an uncommitted change (git recommit leaves untracked files
         # out): keep it known to git, as `git add --intent-to-add` does.
         if added := [diff.path for diff in self.files if self._only_in_tip(diff)]:
-            self.git.run("add", "--intent-to-add", "--", *added)
+            self.git.run("add", "--intent-to-add", "--", *map(literal, added))
 
     def _only_in_tip(self, diff: FileDiff) -> bool:
         """Whether the file is at the tip but not in the last new commit."""
         final = self.states(diff)[-1].version if self.plan.commits else pure_version(diff, set())
         return final is None and pure_version(diff, set(diff.ids)) is not None
+
+
+def literal(path: str) -> str:
+    """A pathspec for exactly the file at path (a path git reported, from the
+    top of the worktree), not a pattern: a[1].txt mustn't match a1.txt."""
+    return f":(top,literal){path}"
 
 
 def blob_id(content: bytes, object_format: str) -> str:

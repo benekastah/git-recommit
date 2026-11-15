@@ -9,7 +9,9 @@ def board(repo: Repo) -> Board:
 
 
 def kinds(b: Board) -> str:
-    return "".join({"file": "F", "hunk": "H"}.get(row.kind, row.line.kind if row.line else "?") for row in b.rows)
+    return "".join(
+        {"file": "F", "meta": "M", "hunk": "H"}.get(row.kind, row.line.kind if row.line else "?") for row in b.rows
+    )
 
 
 def test_rows(repo: Repo) -> None:
@@ -42,9 +44,9 @@ def test_jumping_by_hunk_stops_at_files_without_hunks(repo: Repo) -> None:
     repo.commit("base", data=b"\0old", f="1\n")
     repo.commit("change", data=b"\0new", f="2\n")
     b = Board(repo.session("HEAD~"))
-    assert kinds(b) == "FF" + "H-+"
+    assert kinds(b) == "FM" + "FH-+"
     b.jump("hunk", 1)
-    assert b.cursor == 2  # past f's header, to its hunk
+    assert b.cursor == 3  # past f's header, to its hunk
     b.jump("hunk", -1)
     assert b.cursor == 0  # the binary file, which has no hunk to stop at
 
@@ -135,14 +137,32 @@ def test_next_unassigned_finds_changes_that_arent_lines(repo: Repo) -> None:
     (repo.path / "script").chmod(0o755)
     repo.commit("change")
     b = Board(repo.session("HEAD~"))
-    assert kinds(b) == "FF"
-    b.goto(1)
+    assert kinds(b) == "FM" + "FM"
+    b.goto(2)
     b.next_unassigned()
-    assert b.cursor == 0
+    assert b.cursor == 3
     b.next_unassigned()
     assert b.cursor == 1
     b.add_commit("one")
     b.goto(0)
     b.assign(b.active)
     b.next_unassigned()
-    assert b.cursor == 1 and b.message != "Every change is assigned."
+    assert b.cursor == 3 and b.message != "Every change is assigned."
+
+
+def test_a_mode_change_has_a_row_of_its_own(repo: Repo) -> None:
+    repo.commit("base", script="echo\n")
+    repo.write("script", "echo hi\n")
+    (repo.path / "script").chmod(0o755)
+    repo.commit("change")
+    b = Board(repo.session("HEAD~"))
+    assert kinds(b) == "FMH-+"
+    diff = b.session.files[0]
+    assert diff.describe_meta() == "mode 100644 -> 100755"
+    assert b.row_ids(1) == [diff.meta_id]
+    # The file's row still stands for all of it.
+    assert sorted(b.row_ids(0)) == sorted(diff.ids)
+    b.add_commit("one")
+    b.goto(1)
+    b.assign(b.active)
+    assert list(b.plan.assignment) == [diff.meta_id]

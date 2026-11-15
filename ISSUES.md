@@ -12,13 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## Mode changes are invisible
-
-A file row shows only `M path`, so a mode change (or a symlink's new target)
-can't be seen, and a mode change can't be assigned apart from the file's lines
-except by reassigning the lines afterwards. Show it on the file's row (e.g.
-`M path (100644 → 100755)`), and give it a row of its own.
-
 ## A commit can't take a file the range doesn't change
 
 `e` edits a file as it is in the active commit, but only files in the diff

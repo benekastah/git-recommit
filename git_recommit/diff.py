@@ -67,6 +67,16 @@ class FileDiff:
         """Whether the file only changes as a whole, not line by line."""
         return self.binary or self.status == "T" or bool({self.old_mode, self.new_mode} & SPECIAL_MODES)
 
+    def describe_meta(self) -> str:
+        """What the file's change to itself (its meta change) is."""
+        if self.binary:
+            return "binary"
+        if self.whole:
+            return f"{self.old_mode or 'none'} -> {self.new_mode or 'none'}"
+        if self.status in ("A", "D"):
+            return "added, empty" if self.status == "A" else "deleted, empty"
+        return f"mode {self.old_mode} -> {self.new_mode}"
+
     @property
     def ids(self) -> list[int]:
         ids = [i for hunk in self.hunks for i in hunk.ids] if not self.whole else []

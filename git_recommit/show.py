@@ -4,7 +4,7 @@ JSON for scripts and agents."""
 from typing import Any
 
 from git_recommit.board import line_text
-from git_recommit.diff import FileDiff, numbered
+from git_recommit.diff import numbered
 from git_recommit.session import Session
 
 
@@ -16,17 +16,6 @@ def _numbers(session: Session) -> dict[int, int]:
     """Each assigned change's commit's number."""
     numbers = {commit.key: n for n, commit in enumerate(session.plan.commits, start=1)}
     return {i: numbers[key] for i, key in session.plan.assignment.items()}
-
-
-def _meta(diff: FileDiff) -> str:
-    """What a file's change to itself (target `path:@0`) is."""
-    if diff.binary:
-        return "binary"
-    if diff.whole:
-        return f"{diff.old_mode or 'none'} -> {diff.new_mode or 'none'}"
-    if diff.status in "AD":
-        return "added, empty" if diff.status == "A" else "deleted, empty"
-    return f"mode {diff.old_mode} -> {diff.new_mode}"
 
 
 def summary(session: Session) -> list[str]:
@@ -58,7 +47,7 @@ def diff(session: Session) -> list[str]:
     for file in session.files:
         lines.append(f"{file.status} {file.path}")
         if file.meta_id is not None:
-            lines.append(f"{marker(file.meta_id):>3}  {file.path}:@0 {_meta(file)}")
+            lines.append(f"{marker(file.meta_id):>3}  {file.path}:@0 {file.describe_meta()}")
         for h, hunk in enumerate(file.hunks, start=1):
             header = f"@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@"
             lines.append(f"     {header} {hunk.section}  ({file.path}:@{h})".rstrip())
@@ -81,7 +70,7 @@ def as_json(session: Session) -> dict[str, Any]:
                     "kind": "file",
                     "old": None,
                     "new": None,
-                    "text": _meta(file),
+                    "text": file.describe_meta(),
                     "hunk": 0,
                     "commit": numbers.get(file.meta_id),
                 }

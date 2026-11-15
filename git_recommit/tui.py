@@ -33,6 +33,7 @@ LINE_STYLES = {"+": Style(color="green"), "-": Style(color="red"), " ": Style(di
 FILE_STYLE = Style(bold=True)
 FILE_BACKGROUND = Style(bgcolor="grey15")
 HUNK_STYLE = Style(color="cyan")
+META_STYLE = Style(color="yellow", italic=True)
 NUMBER_STYLE = Style(dim=True)
 
 
@@ -82,6 +83,8 @@ class DiffView(ScrollView, can_focus=True):
         diff = self.board.session.files[row.file]
         if row.kind == "file":
             return f"{diff.status} {diff.path}" + (" (binary)" if diff.binary else "")
+        if row.kind == "meta":
+            return f"  {diff.describe_meta()}"
         if row.kind == "hunk":
             assert row.hunk is not None
             hunk = diff.hunks[row.hunk]
@@ -156,6 +159,8 @@ class DiffView(ScrollView, can_focus=True):
         background = CURSOR if index == self.board.cursor else SELECTED if first <= index <= last else Style()
         if row.kind == "file":
             style = FILE_STYLE
+        elif row.kind == "meta":
+            style = META_STYLE
         elif row.kind == "hunk":
             style = HUNK_STYLE
         else:

@@ -15,7 +15,9 @@ from git_recommit.errors import RecommitError
 from git_recommit.plan import NewCommit, Plan
 from git_recommit.session import Session
 
-RowKind = Literal["file", "hunk", "line"]
+# A file's name; its change to itself (e.g. its mode, or a binary file), if
+# any; a hunk's header; a line.
+RowKind = Literal["file", "meta", "hunk", "line"]
 # Control characters (but tab) shown as "?", so they don't upset the terminal.
 CONTROL = {**{i: "?" for i in range(32)}, ord("\t"): "\t", 127: "?"}
 
@@ -36,6 +38,8 @@ def build_rows(files: list[FileDiff]) -> list[Row]:
     rows = []
     for f, diff in enumerate(files):
         rows.append(Row("file", f))
+        if diff.meta_id is not None:
+            rows.append(Row("meta", f))
         for h, hunk in enumerate(diff.hunks):
             rows.append(Row("hunk", f, h))
             rows.extend(Row("line", f, h, line, old, new) for line, old, new in numbered(hunk))
@@ -82,7 +86,7 @@ class Board:
     def extent(self, index: int) -> int:
         """The last row that row index covers: a file's or hunk's last line."""
         row = self.rows[index]
-        if row.kind == "line":
+        if row.kind in ("line", "meta"):
             return index
         end = index + 1
         while end < len(self.rows) and not self._ends(row, self.rows[end]):
@@ -98,6 +102,9 @@ class Board:
         diff = self.session.files[row.file]
         if row.kind == "file":
             return diff.ids
+        if row.kind == "meta":
+            assert diff.meta_id is not None
+            return [diff.meta_id]
         if row.kind == "hunk":
             assert row.hunk is not None
             return diff.hunks[row.hunk].ids
@@ -162,11 +169,11 @@ class Board:
 
     def next_unassigned(self) -> None:
         """Move to the next unassigned change: a line, or a file's change to
-        itself (e.g. a binary file, or a mode), which is on the file's row."""
+        itself (e.g. a binary file, or a mode)."""
         for offset in range(1, len(self.rows) + 1):
             index = (self.cursor + offset) % len(self.rows)
             row = self.rows[index]
-            change = row.line.id if row.line else self.session.files[row.file].meta_id if row.kind == "file" else None
+            change = row.line.id if row.line else self.session.files[row.file].meta_id if row.kind == "meta" else None
             if change is not None and change not in self.plan.assignment:
                 self.cursor = index
                 return

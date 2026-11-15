@@ -96,8 +96,8 @@ e.g. stubbing out a function that a later commit fills in. The edit is carried
 into the later commits, merged with the changes they take, as a rebase would.
 Where a later commit's changes overlap the edit, that commit conflicts: it's
 marked in the sidebar, and you resolve it by editing the file in that commit,
-which opens with conflict markers. You can't write until every conflict is
-resolved.
+which opens with conflict markers (but for a binary file or symlink, below).
+You can't write until every conflict is resolved.
 
 `e` opens the file as it is in the active commit; if the commit doesn't have
 the file yet, it opens the file's end state, for you to cut down. To cancel,
@@ -112,7 +112,10 @@ A binary file doesn't open in an editor: `e` asks for a file to replace it
 with in the commit (relative to the current directory). A symlink opens as
 where it points. Since neither can be merged, a later commit that changes the
 file too conflicts with the edit, until you replace (or edit) it there as
-well. Submodules can't be edited.
+well. There, it opens as your edit made it (there's nothing to mark), and
+saving it unchanged (or giving the same file) keeps that, resolving the
+conflict; so to cancel, make the editor fail (`:cq`). Submodules can't be
+edited.
 
 **Changing your mind** about the code itself: press `ctrl+z`, change files (or
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd

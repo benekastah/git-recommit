@@ -121,8 +121,9 @@ code around it.
 
 What would be simpler: with the cursor on a hunk (or lines selected), `e`
 first does what `a` does (assigns the hunk to the active commit), then opens
-the whole file as the commit now has it. Quitting the editor without saving
-(it exits non-zero) undoes both. On the file's own row, `e` would stay as it
+the whole file as the commit now has it. Cancelling (quitting without saving,
+which leaves the content as it was, or making the editor fail, e.g. vim's
+`:cq`) undoes both. On the file's own row, `e` would stay as it
 is, so pressing it doesn't assign anything by surprise. The command line
 could take it as `git recommit edit N path --with path:@3`, printing the file
 to start from.
@@ -136,7 +137,8 @@ checked against its documentation before relying on them.)
 - **vim, nvim** (and `gvim -f`, `view`): fold away the code before and after
   the hunk, with `-c 'setlocal foldmethod=manual' -c 'normal! zE'`
   `-c '1,{a-1}fold' -c '{b+1},$fold' -c '{a}' -c 'normal! zz'`, which run
-  after the file (and its ftplugin) loads.
+  after the file (and its ftplugin) loads; leaving out a fold where the hunk
+  is at the start or end of the file.
 - **emacs**: narrow to the hunk (`C-x n w` widens again), with
   `--eval '(progn (goto-char (point-min)) (forward-line {a-1}) ...)'` after
   the file. emacsclient: only `+{a}`.

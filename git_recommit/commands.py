@@ -263,7 +263,9 @@ class Edit:
     (carried into later commits): for a symlink, where it points. The file
     can be one the range doesn't change, or that isn't there at all. Content
     that's what the file already is in the commit changes nothing, so
-    quitting an editor without saving is safe. A submodule can't be edited."""
+    quitting an editor without saving is safe; but for a binary file or
+    symlink that conflicts, it resolves the conflict, keeping the edits
+    carried in. A submodule can't be edited."""
 
     commit: int
     path: str

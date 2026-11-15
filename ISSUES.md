@@ -16,6 +16,13 @@ most of the rest. The 840 `git merge-file` processes are about half a second
 of it. Going through each file once, keeping its state as it goes, would
 take out the repeated calls; or the TUI could open first, and show progress.
 
+## A replaced binary file is read and hashed again and again
+
+A binary file's edit is read whole to tell whether it changes anything, and
+hashed more than once; and the plan file keeps it by content, so each
+subcommand reads and encodes it to save the plan, and hashes it again to
+load it. Correct, but slow for a large file. Comparing blob ids would do.
+
 ## An uncommitted mode change goes to the last commit to change the file
 
 Starting from the old commits gives a text file's change to itself (its mode)

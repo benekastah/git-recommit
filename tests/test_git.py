@@ -37,6 +37,17 @@ def test_names_git_cant_resolve_are_none_quietly(repo: Repo, capfd: pytest.Captu
     assert capfd.readouterr().err == ""
 
 
+def test_resolve_commit_says_why_a_name_isnt_one(repo: Repo) -> None:
+    git = repo.client
+    assert git.resolve_commit("HEAD") == repo.git("rev-parse", "HEAD")
+    # git's reason, but for the one it gives for any name that isn't one.
+    with pytest.raises(RecommitError) as missing:
+        git.resolve_commit("nope")
+    assert str(missing.value) == "nope isn't a commit"
+    with pytest.raises(RecommitError, match="(?s)^@{u} isn't a commit:\n.*upstream"):
+        git.resolve_commit("@{u}")
+
+
 def test_reading_goes_on_after_a_name_stops_git(repo: Repo) -> None:
     git = repo.client
     # Which `git cat-file --batch-command` exits for, rather than saying it's missing.

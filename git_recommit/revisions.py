@@ -23,11 +23,7 @@ def resolve_range(git: GitClient, spec: str) -> tuple[str, str]:
     separator = "..." if "..." in spec else ".." if ".." in spec else None
     a, _, b = spec.partition(separator) if separator else (spec, "", "HEAD")
     a, b = a or "HEAD", b or "HEAD"
-    sha_a, sha_b = git.commit_sha(a), git.commit_sha(b)
-    for rev, sha in ((a, sha_a), (b, sha_b)):
-        if sha is None:
-            raise RecommitError(f"{rev} isn't a commit")
-    assert sha_a is not None and sha_b is not None
+    sha_a, sha_b = git.resolve_commit(a), git.resolve_commit(b)
     if separator == "...":
         if git.is_ancestor(sha_a, sha_b):  # including when they're the same
             base, tip = sha_a, sha_b

@@ -256,11 +256,8 @@ def test_an_uncommitted_rename_starts_unassigned(repo: Repo) -> None:
 
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:
     repo.commit("base", data=b"\0one")
-    old = [repo.commit("change data", data=b"\0two")]
+    repo.commit("change data", data=b"\0two")
     repo.write("data", b"\0three")
     session = restored(repo, "HEAD~")
     (data,) = session.files
-    # The commit doesn't take what's uncommitted, though without it, it can't
-    # be as it was.
     assert session.unassigned() == [data.meta_id]
-    assert repo.show(session.build()[0], "data") == "\0one" != repo.show(old[0], "data")

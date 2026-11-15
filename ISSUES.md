@@ -17,6 +17,13 @@ it's read, which `file_states` does in its loop. Since that work holds the
 GIL, reproducing files in parallel barely helps. Going through each file once,
 keeping its state as it goes, and caching the ids should fix it.
 
+## An uncommitted mode change goes to the last commit to change the file
+
+Starting from the old commits gives a text file's change to itself (its mode)
+to the last commit to change the file, even if the mode changed only in the
+uncommitted changes, which so get committed. It should be unassigned then, as
+an uncommitted rename is, or a file that changes as a whole.
+
 ## Edits are whole files, and text only
 
 `e` edits a whole file, not a hunk or a line, and binary files, symlinks and

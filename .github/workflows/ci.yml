@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 # Each job's time limit (timeout-minutes) is about 20% over the longest it
-# has taken, so a hung job fails soon; raise it when the job gets slower.
+# has taken, so a hung job fails soon. If a job runs into it, speed the job
+# up if possible, and only then raise the limit (see AGENTS.md).
 jobs:
   # Linting and type checking give the same answer everywhere (mypy checks for
   # Windows too, and for the oldest Python pyproject.toml allows), so they run

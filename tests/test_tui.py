@@ -211,6 +211,37 @@ def test_writing_after_head_moved_reloads_first(repo: Repo) -> None:
     assert run(session, FakeTerminal(repo), script) is None
 
 
+def test_deleting_a_commit_asks_first(repo: Repo) -> None:
+    session = two_files(repo)
+    session.restore_old_commits()
+
+    async def script(pilot: Pilot[Any]) -> None:
+        await pilot.press("D", "n")
+        assert [c.message for c in session.plan.commits] == ["wip", "wip 2"]
+        await pilot.press("D", "y")
+        assert [c.message for c in session.plan.commits] == ["wip 2"]
+        await pilot.press("q", "y")
+
+    run(session, FakeTerminal(repo), script)
+
+
+def test_dropping_an_edit_asks_first(repo: Repo) -> None:
+    repo.commit("wip", a="real\n")
+    session = repo.session("HEAD~")
+    session.restore_old_commits()
+
+    async def script(pilot: Pilot[Any]) -> None:
+        await pilot.press("e")
+        assert set(session.plan.commits[0].edits) == {"a"}
+        await pilot.press("E", "n")
+        assert set(session.plan.commits[0].edits) == {"a"}
+        await pilot.press("E", "y")
+        assert session.plan.commits[0].edits == {}
+        await pilot.press("q", "y")
+
+    run(session, FakeTerminal(repo, lambda content: b"edited\n"), script)
+
+
 def test_quit_changes_nothing(repo: Repo) -> None:
     session = two_files(repo)
 

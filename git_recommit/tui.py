@@ -1,6 +1,7 @@
 """The TUI, drawn with Textual. What it shows and does to the plan is in
 board.py; this is how it's drawn, and the keys."""
 
+from collections.abc import Callable
 from typing import ClassVar, Literal
 
 from rich.cells import cell_len
@@ -550,10 +551,26 @@ class BoardScreen(Screen[None]):
 
     def action_delete(self) -> None:
         try:
-            self.board.remove_active()
+            commit = self.board.active_commit()
         except RecommitError as e:
-            self.board.message = str(e)
-        self._do()
+            self._do(str(e))
+            return
+        number = self.board.number(commit.key)
+        lost = " and its edits are lost" if commit.edits else ""
+        self._confirm(
+            f"Delete commit {number} ({commit.subject})? Its changes become unassigned{lost}.",
+            self.board.remove_active,
+        )
+
+    def _confirm(self, question: str, then: Callable[[], None]) -> None:
+        """Ask question, and if the user says yes, do then."""
+
+        def answered(yes: bool | None) -> None:
+            if yes:
+                then()
+                self._do()
+
+        self.app.push_screen(ConfirmScreen(question), answered)
 
     def action_reword(self) -> None:
         try:
@@ -580,11 +597,17 @@ class BoardScreen(Screen[None]):
         self._do()
 
     def action_drop_edit(self) -> None:
+        path = self.board.current_file().path
         try:
-            self.board.drop_edit(self.board.current_file().path)
+            commit = self.board.active_commit()
         except RecommitError as e:
-            self.board.message = str(e)
-        self._do()
+            self._do(str(e))
+            return
+        number = self.board.number(commit.key)
+        if path not in commit.edits:
+            self._do(f"Commit {number} doesn't edit {path}.")
+            return
+        self._confirm(f"Drop commit {number}'s edit of {path}? It can't be undone.", lambda: self.board.drop_edit(path))
 
     # Finishing.
 
@@ -639,22 +662,12 @@ class BoardScreen(Screen[None]):
         self.app.exit(shas)
 
     def action_clear_commits(self) -> None:
-        def confirmed(yes: bool | None) -> None:
-            if yes:
-                self.board.clear()
-                self._do()
-
-        self.app.push_screen(ConfirmScreen("Clear every commit, to start from scratch?"), confirmed)
+        self._confirm("Clear every commit, to start from scratch?", self.board.clear)
 
     def action_restore_commits(self) -> None:
-        def confirmed(yes: bool | None) -> None:
-            if yes:
-                self.board.restore()
-                self._do()
-
-        self.app.push_screen(
-            ConfirmScreen("Go back to the commits being rebuilt, as they were at the start? Changes to them are lost."),
-            confirmed,
+        self._confirm(
+            "Go back to the commits being rebuilt, as they were at the start? Changes to them are lost.",
+            self.board.restore,
         )
 
     def action_quit_recommit(self) -> None:

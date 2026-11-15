@@ -3,13 +3,6 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## `D` and `E` throw work away without asking
-
-`C`, `O` and `q` ask first, but `D` (delete the active commit, with its edits)
-and `E` (drop an edit) don't, and there's no undo, so a hand-made edit is lost
-to one keystroke. Ask first, or add undo (see ROADMAP.md: commands as data
-would give it).
-
 ## Edits on a file that leaves the diff are ignored
 
 After a reload, an edit of a file that's no longer in the diff stays in the

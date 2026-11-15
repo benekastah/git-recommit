@@ -175,6 +175,24 @@ def test_clicking_a_file_in_the_sidebar_goes_to_it(repo: Repo) -> None:
     run(session, FakeTerminal(repo), script)
 
 
+def test_clearing_and_restoring_the_old_commits(repo: Repo) -> None:
+    session = two_files(repo)
+    session.restore_old_commits()
+
+    async def script(pilot: Pilot[Any]) -> None:
+        assert isinstance(pilot.app, RecommitApp)
+        sidebar = pilot.app.screen.query_one("Sidebar")
+        assert "Rebuilding 2 commits after" in str(sidebar.render())
+        assert pilot.app.board.active == session.plan.commits[0].key
+        await pilot.press("C", "y")
+        assert session.plan.commits == [] and pilot.app.board.active is None
+        await pilot.press("O", "y")
+        assert [c.message for c in session.plan.commits] == ["wip", "wip 2"]
+        await pilot.press("q", "y")
+
+    run(session, FakeTerminal(repo), script)
+
+
 def test_quit_changes_nothing(repo: Repo) -> None:
     session = two_files(repo)
 

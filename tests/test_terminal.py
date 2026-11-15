@@ -89,11 +89,31 @@ class Terminal:
         os.close(self.fd)
 
 
+def test_starts_from_the_commits_being_rebuilt(repo: Repo) -> None:
+    repo.commit("wip", a="a\n")
+    repo.git("commit", "--quiet", "--amend", "--no-edit", "--author=Someone Else <else@example.com>")
+    old_tree = repo.git("rev-parse", "HEAD^{tree}")
+    term = Terminal(sys.executable, "-m", "git_recommit", "-C", str(repo.path), "HEAD~")
+    try:
+        term.expect(b"Rebuilding 1 commit after")
+        term.send("w")
+        term.expect(b"Replace the 1 commit")
+        term.send("y")
+        assert term.wait() == 0
+    finally:
+        term.close()
+    assert repo.git("log", "--format=%s %an", "-1") == "wip Someone Else"
+    assert repo.git("rev-parse", "HEAD^{tree}") == old_tree
+
+
 def test_ctrl_z_suspends_and_resuming_reloads(repo: Repo) -> None:
     repo.commit("wip", a="a\n")
     term = Terminal(sys.executable, "-m", "git_recommit", "-C", str(repo.path), "HEAD~")
     try:
-        term.expect(b"Press c to create a commit")
+        term.expect(b"Rebuilding 1 commit after")
+        term.send("C")
+        term.expect(b"Clear")
+        term.send("y")
         term.send("c")
         term.expect(b"Message for the new commit")
         term.send("Add a\r")

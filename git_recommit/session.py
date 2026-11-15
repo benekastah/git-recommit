@@ -80,7 +80,8 @@ def worktree_commit(git: GitClient, head: str) -> str | None:
     It isn't on any branch; recommit uses it as the end of the diff, so that
     uncommitted changes can be assigned to new commits like committed ones.
     """
-    if not git.run("status", "--porcelain", "--untracked-files=no"):
+    # --no-optional-locks: don't refresh (and so write) the user's index.
+    if not git.run("--no-optional-locks", "status", "--porcelain", "--untracked-files=no"):
         return None
     with tempfile.TemporaryDirectory() as scratch:
         # A copy of the real index, so `git add` sees what's staged, and only
@@ -190,10 +191,13 @@ class Session:
         self.plan = plan = Plan()
         keys = {}
         for sha in shas:
-            message = self.git.run("log", "-1", "--format=%B", sha)
+            # Exactly as it is in the commit (git log would trim it), for
+            # writing it unchanged; in the plan, without its final newline,
+            # as messages the user writes are.
+            exact = self.git.run_bytes("cat-file", "commit", sha).partition(b"\n\n")[2].decode(errors="surrogateescape")
             name, email, date = self.git.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha).split("\0")
-            commit = plan.add(message, author=Author(name, email, date))
-            commit.old_message = message
+            commit = plan.add(exact.removesuffix("\n"), author=Author(name, email, date))
+            commit.old_message = exact
             keys[sha] = commit.key
         # A line last there in a commit (or base) was removed by the next one.
         removed_by = dict(zip([self.base, *shas], shas, strict=False))
@@ -413,8 +417,12 @@ class Session:
                 if updates:
                     self.git.run_bytes("update-index", "-z", "--index-info", input=b"".join(updates), env=env)
                 tree = self.git.run("write-tree", env=env)
-                message = commit.message if commit.message.endswith("\n") else commit.message + "\n"
-                if commit.message != commit.old_message:
+                # An old commit's message is kept exactly; a new or changed one
+                # is ended with a newline, and given to the commit-msg hook.
+                if commit.old_message is not None and commit.message == commit.old_message.removesuffix("\n"):
+                    message = commit.old_message
+                else:
+                    message = commit.message if commit.message.endswith("\n") else commit.message + "\n"
                     message = self._commit_msg_hook(index + 1, commit, message)
                 author = commit.author
                 author_env = (
@@ -458,6 +466,11 @@ class Session:
         working tree as it is: what the new commits don't have is left as
         uncommitted changes."""
         check_nothing_in_progress(self.git)
+        lock = self.git.run("rev-parse", "--path-format=absolute", "--git-path", "index.lock")
+        if os.path.exists(lock):
+            # Moving HEAD, then finding the index can't be reset, would leave
+            # them out of step; so check first.
+            raise RecommitError(f"{lock} exists: another git process is running, or one crashed (then remove it)")
         new_tip = shas[-1] if shas else self.base
         if self.head_moved():
             # Moving the branch would drop what moved it; say where the work is.

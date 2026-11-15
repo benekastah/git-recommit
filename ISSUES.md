@@ -12,18 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## Writing isn't atomic, and has side effects
-
-- `finish` runs `update-ref`, then `git reset`; if `index.lock` is held, HEAD
-  moves but the index doesn't. Nothing is lost, but it's confusing. Check for
-  the lock first.
-- `git status` in `worktree_commit` may rewrite the real index (refreshing
-  it): use `--no-optional-locks`.
-- Merging edits writes blobs into the object database (`merge_file`).
-- `--validate`'s `git worktree add` runs the user's `post-checkout` hook.
-- `GitClient.run` strips its output, so a message's leading blank lines and
-  whitespace are lost when read back.
-
 ## Mode changes are invisible
 
 A file row shows only `M path`, so a mode change (or a symlink's new target)

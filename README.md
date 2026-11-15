@@ -94,7 +94,8 @@ uncommitted changes in your working tree, which is never touched (though
 nothing is left staged, but for new files, which are left `git add
 --intent-to-add`ed, so they're still new files rather than untracked ones). With
 `--validate`, the command runs in a scratch worktree with each new commit
-checked out in turn; if it fails, you choose to go back and **e**dit the
+checked out in turn (with your `post-checkout` hook, as any checkout
+runs it, e.g. for Git LFS); if it fails, you choose to go back and **e**dit the
 commits, **a**bort, or **p**roceed anyway.
 
 New commits are signed if `commit.gpgSign` says to, and the `commit-msg` hook

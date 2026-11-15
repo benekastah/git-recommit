@@ -431,3 +431,38 @@ def test_a_commit_msg_hook_can_refuse_a_message(repo: Repo) -> None:
     session.plan.add("mine")
     with pytest.raises(RecommitError, match="(?s)commit-msg hook refused commit 1.*no thanks"):
         session.build()
+
+
+def test_writing_refuses_while_the_index_is_locked(repo: Repo) -> None:
+    feature_repo(repo)
+    head = repo.git("rev-parse", "HEAD")
+    session = repo.session("HEAD~3")
+    session.restore_old_commits()
+    shas = session.build()
+    (repo.path / ".git" / "index.lock").touch()
+    with pytest.raises(RecommitError, match="index.lock"):
+        session.finish(shas)
+    # Not half done: HEAD hasn't moved without the index.
+    assert repo.git("rev-parse", "HEAD") == head
+
+
+def test_loading_doesnt_write_the_index(repo: Repo) -> None:
+    feature_repo(repo)
+    # Its stat information is out of date, which git status would refresh.
+    os.utime(repo.path / "a.py", (1, 1))
+    index = (repo.path / ".git" / "index").read_bytes()
+    repo.session("HEAD~3")
+    assert (repo.path / ".git" / "index").read_bytes() == index
+
+
+def test_old_messages_are_kept_exactly(repo: Repo) -> None:
+    repo.commit("base", a="1\n")
+    repo.write("a", "2\n")
+    message = "  An indented subject\n\n    and a body\n"
+    repo.git("commit", "--quiet", "--all", "--cleanup=verbatim", "-m", message)
+    session = repo.session("HEAD~")
+    session.restore_old_commits()
+    (sha,) = session.build()
+    assert repo.git("log", "-1", "--format=%B", sha) == repo.git("log", "-1", "--format=%B", "HEAD")
+    raw = subprocess.run(["git", "cat-file", "commit", sha], cwd=repo.path, capture_output=True, check=True).stdout
+    assert raw.endswith(b"\n\n" + message.encode())

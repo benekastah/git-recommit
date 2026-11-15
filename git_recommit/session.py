@@ -3,14 +3,13 @@ building them."""
 
 import os
 import posixpath
-import subprocess
 import tempfile
 from dataclasses import dataclass
 
 from git_recommit import oldcommits
 from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, split_lines
 from git_recommit.errors import RecommitError
-from git_recommit.git import GitClient, encode
+from git_recommit.git import GitClient, encode, fs_path
 from git_recommit.plan import Author, Edit, NewCommit, Plan
 from git_recommit.revisions import (
     check_nothing_in_progress,
@@ -487,15 +486,11 @@ class Session:
             # a message typed under a locale that isn't UTF-8 (as surrogates).
             with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
                 f.write(message)
-            result = subprocess.run(
-                ["git", "-C", self.git.directory, "hook", "run", "--ignore-missing", "commit-msg", "--", path],
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
+            result = self.git.process(
+                "hook", "run", "--ignore-missing", "commit-msg", "--", fs_path(path), capture_output=True
             )
             if result.returncode != 0:
-                output = (result.stdout + result.stderr).strip()
+                output = (result.stdout + result.stderr).decode(errors="replace").strip()
                 raise RecommitError(f"the commit-msg hook refused commit {number} ({commit.subject}):\n{output}")
             with open(path, encoding="utf-8", errors="surrogateescape", newline="") as f:
                 return f.read()

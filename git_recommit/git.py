@@ -1,5 +1,7 @@
+import functools
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,25 @@ else:
 # What git stores as text (UTF-8), rather than as a path in the filesystem's
 # encoding, of what git recommit puts in git's environment.
 IDENTITY = {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE"}
+
+
+# Whether git's processes are started with close_fds. Not on Linux or macOS:
+# without it, Python can start them with posix_spawn, which on macOS is about
+# a third faster, and its own file descriptors aren't inherited anyway (PEP
+# 446). On Windows, yes: without it, a process one thread starts could
+# inherit (and hold open) the pipes of one another thread is starting.
+CLOSE_FDS = sys.platform == "win32"
+
+
+@functools.cache
+def git_executable() -> str:
+    """The git that git recommit runs: $GIT_RECOMMIT_GIT, or else the git on
+    PATH, whatever it is (e.g. a wrapper), found once, by its full path
+    (which posix_spawn needs)."""
+    if configured := os.environ.get("GIT_RECOMMIT_GIT"):
+        return configured
+    found = shutil.which("git")
+    return os.path.abspath(found) if found else "git"
 
 
 def encode(text: str) -> bytes:
@@ -78,11 +99,16 @@ class GitClient:
         """git's command line. Bytes are paths in the filesystem, from fs_path
         (on Windows, they're str)."""
         if sys.platform == "win32":
-            return ["git", "-C", self.directory, *map(os.fsdecode, args)]
+            return [git_executable(), "-C", self.directory, *map(os.fsdecode, args)]
         # The arguments (e.g. paths git gave) as git gave them, whatever the
         # locale's encoding (which, e.g. with LC_ALL=C, can't hold a name that
         # isn't ASCII); the directory, a path in the filesystem's encoding.
-        return [b"git", b"-C", os.fsencode(self.directory), *(a if isinstance(a, bytes) else encode(a) for a in args)]
+        return [
+            os.fsencode(git_executable()),
+            b"-C",
+            os.fsencode(self.directory),
+            *(a if isinstance(a, bytes) else encode(a) for a in args),
+        ]
 
     def _env(self, env: Mapping[str, str] | None = None) -> Env:
         # Not GIT_LITERAL_PATHSPECS, which the user's hooks would inherit: a
@@ -95,6 +121,24 @@ class GitClient:
         added = {key.encode(): encode(value) if key in IDENTITY else os.fsencode(value) for key, value in env.items()}
         return {**os.environb, **added}
 
+    def process(
+        self,
+        *args: str | bytes,
+        capture_output: bool = False,
+        input: bytes | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Run git and return the process when it's done, whatever its exit
+        status; every git process but cat-file's is run by this."""
+        return subprocess.run(
+            self._command(*args),
+            capture_output=capture_output,
+            input=input,
+            env=self._env(env),
+            close_fds=CLOSE_FDS,
+            check=False,
+        )
+
     def run(
         self, *args: str | bytes, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None
     ) -> str:
@@ -103,12 +147,11 @@ class GitClient:
         # Windows), keeping what isn't as surrogates, as paths are; and as
         # bytes, so line endings stay as they are (text mode would write \r\n
         # for each \n on Windows).
-        result = subprocess.run(
-            self._command(*args),
+        result = self.process(
+            *args,
             capture_output=True,
             input=None if input is None else input.encode("utf-8", errors="surrogateescape"),
-            env=self._env(env),
-            check=False,
+            env=env,
         )
         if check and result.returncode != 0:
             raise RecommitError(f"git {_describe(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
@@ -116,18 +159,18 @@ class GitClient:
 
     def run_bytes(self, *args: str | bytes, input: bytes | None = None, env: Mapping[str, str] | None = None) -> bytes:
         """Run git and return stdout as it is, for file contents and patches."""
-        result = subprocess.run(self._command(*args), capture_output=True, input=input, env=self._env(env), check=False)
+        result = self.process(*args, capture_output=True, input=input, env=env)
         if result.returncode != 0:
             raise RecommitError(f"git {_describe(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
         return result.stdout
 
     def ok(self, *args: str | bytes) -> bool:
         """Run git and report whether it succeeded."""
-        return subprocess.run(self._command(*args), capture_output=True, env=self._env(), check=False).returncode == 0
+        return self.process(*args, capture_output=True).returncode == 0
 
     def passthrough(self, *args: str | bytes, env: Mapping[str, str] | None = None) -> bool:
         """Run git with its output going straight to the terminal."""
-        return subprocess.run(self._command(*args), env=self._env(env), check=False).returncode == 0
+        return self.process(*args, env=env).returncode == 0
 
     def git_paths(self, *names: str) -> list[str]:
         """Where each of names is in the git directory (as `git rev-parse
@@ -168,12 +211,7 @@ class GitClient:
         if (sha := self.commit_sha(rev)) is not None:
             return sha
         # Only now, for the reason, which git cat-file doesn't give.
-        result = subprocess.run(
-            self._command("rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}"),
-            capture_output=True,
-            env=self._env(),
-            check=False,
-        )
+        result = self.process("rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}", capture_output=True)
         # But for what git says for any name that isn't a commit.
         lines = result.stderr.decode(errors="replace").splitlines()
         reason = "\n".join(line for line in lines if line != "fatal: Needed a single revision")
@@ -251,6 +289,7 @@ class GitClient:
                 # doesn't; errors are for resolve_commit to say.
                 stderr=subprocess.DEVNULL,
                 env=self._env(),
+                close_fds=CLOSE_FDS,
             )
         assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
         try:
@@ -304,12 +343,7 @@ class GitClient:
             for path, content in zip(paths, (ours, basis, theirs), strict=True):
                 with open(path, "wb") as f:
                     f.write(content)
-            result = subprocess.run(
-                self._command("merge-file", "-p", *labels, *map(fs_path, paths)),
-                capture_output=True,
-                env=self._env(),
-                check=False,
-            )
+            result = self.process("merge-file", "-p", *labels, *map(fs_path, paths), capture_output=True)
         # The exit status is the number of conflicts, or negative (shown as
         # 128 or more) on an error.
         if not 0 <= result.returncode < 128:

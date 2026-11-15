@@ -118,6 +118,7 @@ class Session:
         self.uncommitted = self.tip != head
         self._tip_tree = git.run("rev-parse", f"{self.tip}^{{tree}}")
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
+        self._conflicts: tuple[tuple[object, ...], list[Conflict]] | None = None
 
     @classmethod
     def load(cls, git: GitClient, spec: str) -> "Session":
@@ -193,16 +194,36 @@ class Session:
             keys[sha] = plan.add(message, author=Author(name, email, date)).key
         # A line last there in a commit (or base) was removed by the next one.
         removed_by = dict(zip([self.base, *shas], shas, strict=False))
+        touched_by = self._touched_by(shas)
+        uncommitted = set(self._changed_paths(self.head, self.tip)) if self.uncommitted else set()
         for diff in self.files:
             # The last commit to change the file takes what blame can't say
             # who made, as well as what blame doesn't cover.
-            last = keys.get(self.git.run("log", "-1", "--format=%H", f"{self.base}..{self.head}", "--", diff.path))
+            touched = touched_by.get(diff.path, [])
+            last = keys.get(touched[-1]) if touched else None
             if diff.meta_id is not None:
                 plan.assign([diff.meta_id], last)
-            if not diff.whole:
-                for i, made_by in self._made_by(diff, removed_by).items():
-                    plan.assign([i], keys.get(made_by or "", last))
+            if diff.whole:
+                continue
+            if len(touched) == 1 and diff.path not in uncommitted:
+                # Only one commit changed it, so it made every change.
+                plan.assign([i for i in diff.ids if i != diff.meta_id], last)
+                continue
+            for i, made_by in self._made_by(diff, removed_by).items():
+                plan.assign([i], keys.get(made_by or "", last))
         self._reproduce(shas)
+
+    def _changed_paths(self, old: str, new: str) -> list[str]:
+        out = self.git.run_bytes("diff-tree", "-r", "--no-renames", "--name-only", "-z", old, new)
+        return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
+
+    def _touched_by(self, shas: list[str]) -> dict[str, list[str]]:
+        """For each path, the commits of shas (in order) that changed it."""
+        touched: dict[str, list[str]] = {}
+        for parent, sha in zip([self.base, *shas], shas, strict=False):
+            for path in self._changed_paths(parent, sha):
+                touched.setdefault(path, []).append(sha)
+        return touched
 
     def _made_by(self, diff: FileDiff, removed_by: dict[str, str]) -> dict[int, str | None]:
         """For each of a text file's changes that was made before HEAD, the
@@ -243,15 +264,18 @@ class Session:
         """Give each commit of the plan the edits it needs to have each text
         file as old commit shas[i] does."""
         object_format = self.git.run("rev-parse", "--show-object-format")
-        for commit, sha in zip(self.plan.commits, shas, strict=True):
-            index = self.plan.index(commit.key)
-            blobs = self._blobs(sha)
-            for diff in self.files:
+        trees = [self._blobs(sha) for sha in shas]
+        for diff in self.files:
+            # An edit can't change a binary file.
+            if diff.whole:
+                continue
+            for index, (commit, blobs) in enumerate(zip(self.plan.commits, trees, strict=True)):
                 actual = blobs.get(diff.path)
-                # An edit can't delete a file, nor change a binary one.
-                if diff.whole or actual is None:
+                # Nor delete a file.
+                if actual is None:
                     continue
-                version = self.states(diff)[index].version
+                # Only up to this commit: an edit here changes the later ones.
+                version = self.states(diff, upto=index)[index].version
                 content = None if version is None else version.content
                 if content is not None and blob_id(content, object_format) == actual:
                     continue
@@ -274,16 +298,19 @@ class Session:
             self._merges[key] = self.git.merge_file(basis, ours, theirs)
         return self._merges[key]
 
-    def states(self, diff: FileDiff) -> list[FileState]:
-        """The file in each new commit."""
-        return file_states(diff, self.plan.commits, self.plan.assignment, self.merge)
+    def states(self, diff: FileDiff, upto: int | None = None) -> list[FileState]:
+        """The file in each new commit, or in those up to the one at index
+        upto (which is quicker, when the later ones don't matter)."""
+        commits = self.plan.commits if upto is None else self.plan.commits[: upto + 1]
+        return file_states(diff, commits, self.plan.assignment, self.merge)
 
     def edit_text(self, key: int, diff: FileDiff) -> bytes:
         """The file in the commit, as an edit starts from (with conflict markers
         if it conflicts). If the commit doesn't have the file, its end state
         (or if it ends up deleted, its start), to cut down to what the commit
         should have."""
-        version = self.states(diff)[self.plan.index(key)].version
+        index = self.plan.index(key)
+        version = self.states(diff, upto=index)[index].version
         if version is None:
             version = pure_version(diff, set(diff.ids)) or pure_version(diff, set())
         return b"" if version is None or version.content is None else version.content
@@ -293,14 +320,27 @@ class Session:
         if diff.whole:
             raise RecommitError(f"{diff.path} isn't a text file, so it can't be edited")
         commit = self.plan.get(key)
-        state = self.states(diff)[self.plan.index(key)]
+        index = self.plan.index(key)
+        state = self.states(diff, upto=index)[index]
         commit.edits.pop(diff.path, None)
         # Even an edit that changes nothing resolves a conflict.
         if content != state.basis or state.conflict or state.version is None:
             commit.edits[diff.path] = Edit(state.basis, content)
 
+    def _fingerprint(self) -> tuple[object, ...]:
+        """Something that's the same as long as the plan is."""
+        commits = tuple((c.key, tuple(c.edits.items())) for c in self.plan.commits)
+        return (id(self.plan), id(self.files), commits, frozenset(self.plan.assignment.items()))
+
     def conflicts(self) -> list[Conflict]:
-        """Where carrying an edit conflicts, first in each file."""
+        """Where carrying an edit conflicts, first in each file. Kept until the
+        plan changes, since the TUI asks on every redraw."""
+        fingerprint = self._fingerprint()
+        if self._conflicts is None or self._conflicts[0] != fingerprint:
+            self._conflicts = (fingerprint, self._find_conflicts())
+        return self._conflicts[1]
+
+    def _find_conflicts(self) -> list[Conflict]:
         result = []
         for diff in self.files:
             if any(diff.path in commit.edits for commit in self.plan.commits):
@@ -330,7 +370,15 @@ class Session:
             raise RecommitError("resolve the conflicts first")
         states = {diff.path: self.states(diff) for diff in self.files}
         zero = "0" * len(self.base)
-        blobs: dict[bytes, str] = {}
+        contents = list(
+            dict.fromkeys(
+                state.version.content
+                for file_states in states.values()
+                for state in file_states
+                if state.version is not None and state.version.content is not None
+            )
+        )
+        blobs = dict(zip(contents, self.git.hash_blobs(contents), strict=True))
 
         def entry(path: str, version: Version | None) -> bytes:
             # Paths were decoded with surrogateescape, which os.fsencode undoes,
@@ -339,8 +387,6 @@ class Session:
                 mode, blob = "0", zero
             elif version.sha is None:
                 assert version.content is not None
-                if version.content not in blobs:
-                    blobs[version.content] = self.git.hash_blob(version.content)
                 mode, blob = version.mode, blobs[version.content]
             else:
                 mode, blob = version.mode, version.sha

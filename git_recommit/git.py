@@ -1,5 +1,6 @@
 import os
 import subprocess
+import tempfile
 from collections.abc import Mapping
 
 from git_recommit.errors import RecommitError
@@ -10,6 +11,19 @@ class GitClient:
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         self.directory = os.fspath(directory)
+        # `git cat-file --batch`, started the first time a blob is read.
+        self._cat_file: subprocess.Popen[bytes] | None = None
+
+    def __del__(self) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Stop the cat-file process, if one was started."""
+        if self._cat_file is not None:
+            if self._cat_file.stdin is not None:
+                self._cat_file.stdin.close()
+            self._cat_file.wait()
+            self._cat_file = None
 
     def _command(self, *args: str) -> list[str]:
         return ["git", "-C", self.directory, *args]
@@ -53,21 +67,56 @@ class GitClient:
         return self.ok("merge-base", "--is-ancestor", ancestor, descendant)
 
     def blob(self, sha: str) -> bytes:
-        return self.run_bytes("cat-file", "blob", sha)
+        """A blob's content, read with one `git cat-file --batch` process kept
+        for all of them, rather than a process each."""
+        if self._cat_file is None:
+            self._cat_file = subprocess.Popen(
+                self._command("cat-file", "--batch"), stdin=subprocess.PIPE, stdout=subprocess.PIPE
+            )
+        assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
+        self._cat_file.stdin.write(sha.encode() + b"\n")
+        self._cat_file.stdin.flush()
+        # "<sha> <type> <size>", then the content and a newline; or "<sha> missing".
+        header = self._cat_file.stdout.readline().split()
+        if len(header) != 3 or header[1] != b"blob":
+            raise RecommitError(f"{sha} isn't a blob")
+        content = self._cat_file.stdout.read(int(header[2]))
+        self._cat_file.stdout.read(1)
+        return content
 
     def hash_blob(self, content: bytes) -> str:
         """Write content to the object database, and return its id."""
-        return self.run_bytes("hash-object", "-w", "--stdin", input=content).decode().strip()
+        return self.hash_blobs([content])[0]
+
+    def hash_blobs(self, contents: list[bytes]) -> list[str]:
+        """Write each content to the object database with one git process,
+        and return their ids."""
+        if not contents:
+            return []
+        with tempfile.TemporaryDirectory() as scratch:
+            paths = []
+            for i, content in enumerate(contents):
+                paths.append(os.path.join(scratch, str(i)))
+                with open(paths[-1], "wb") as f:
+                    f.write(content)
+            # --no-filters: the contents are what to commit, as they are.
+            out = self.run("hash-object", "-w", "--no-filters", "--stdin-paths", input="\n".join(paths) + "\n")
+        return out.split()
 
     def merge_file(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         """Merge the changes from basis to ours and from basis to theirs, as
         `git merge-file` does, and return the result and whether it conflicted
-        (in which case it has conflict markers)."""
-        ids = [self.hash_blob(content) for content in (ours, basis, theirs)]
+        (in which case it has conflict markers). Nothing is written to the
+        repository."""
         labels = ["-L", "edit", "-L", "before", "-L", "assigned"]
-        result = subprocess.run(
-            self._command("merge-file", "-p", "--object-id", *labels, *ids), capture_output=True, check=False
-        )
+        with tempfile.TemporaryDirectory() as scratch:
+            paths = [os.path.join(scratch, name) for name in ("ours", "basis", "theirs")]
+            for path, content in zip(paths, (ours, basis, theirs), strict=True):
+                with open(path, "wb") as f:
+                    f.write(content)
+            result = subprocess.run(
+                self._command("merge-file", "-p", *labels, *paths), capture_output=True, check=False
+            )
         # The exit status is the number of conflicts, or negative (shown as
         # 128 or more) on an error.
         if not 0 <= result.returncode < 128:

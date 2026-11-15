@@ -3,24 +3,14 @@
 Most important first. "Confirmed" means it was reproduced; "suspected" means
 it was found by reading the code and still needs checking.
 
-## Slow on big ranges with overlapping commits
+## Starting from heavily overlapping commits takes seconds
 
-Confirmed, with 60 files of 1,500 lines and 15 overlapping commits:
-`restore_old_commits` took 18 s (900 edits), and runs again on `O`; and
-`Session.conflicts()` took 150-230 ms, and runs on every redraw, including
-each `j`/`k`.
-
-- `_reproduce` calls `states()` (which applies every commit's changes) for
-  each commit and file, and `set_edit` calls it again: compute each file's
-  states once per pass.
-- Cache `conflicts()` (and the sidebar's counts) until the plan changes.
-- Each `merge_file` is four git processes, three of which write loose objects
-  into the user's repository; `_merges` is unbounded and keyed by whole file
-  contents (key it by blob id).
-- `_blobs` runs `ls-tree -r` over the whole tree for each old commit (every
-  file of a monorepo, N times): limit it to the diff's paths.
-- `diff.load` runs a `cat-file` per file, and restoring runs a `git log` and
-  two blames per file: use `cat-file --batch`, and fewer processes.
+With 60 files of 1,500 lines, each rewritten by all of 15 commits (so every
+commit needs an edit for every file, 900 in all), starting from the old
+commits takes about 9 s, nearly all of it running one `git merge-file` per
+carried edit. Merging in-process would be faster, but would have to agree
+with git's merges. Starting from the old commits could also show progress, or
+run in the background, as the TUI opens.
 
 ## `.` skips changes that aren't lines
 

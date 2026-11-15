@@ -23,6 +23,8 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.8"
+          # The venv's Python (setup-python's), named so uv can't choose another.
+          python-version: "3.11"
           enable-cache: true
           cache-dependency-glob: pyproject.toml
           # Makes .venv, where lint.sh looks for the tools.
@@ -56,6 +58,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.13.8"
+          python-version: ${{ matrix.python }}
           enable-cache: true
           cache-dependency-glob: pyproject.toml
           activate-environment: true

@@ -206,4 +206,5 @@ staged Python files, and the pre-push hook runs the checks).
 
 Run every check (shellcheck, Ruff's formatter and linter, mypy in strict mode,
 then the tests) with `./check.sh`; arguments are passed to pytest. `./lint.sh`
-runs every check but the tests.
+runs every check but the tests, with the tools `./check.sh` (or
+`./dev-venv.sh`) installed in `.venv`.

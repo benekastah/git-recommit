@@ -28,15 +28,15 @@ jobs:
       - name: One slow test, profiled
         shell: bash
         run: |
-          python -m cProfile -o prof.out -m pytest -q -p no:xdist -p no:randomly "tests/test_old_commits.py::test_choosing_a_commits_author" "tests/test_session.py::test_reload_keeps_assignments"
+          python -m cProfile -o prof.out -m pytest -q -n 0 -p no:randomly "tests/test_old_commits.py::test_choosing_a_commits_author" "tests/test_session.py::test_reload_keeps_assignments"
           python -c "import pstats; p = pstats.Stats('prof.out'); p.sort_stats('tottime').print_stats(25); p.sort_stats('cumtime').print_stats(40)"
       - name: Serial, slowest
-        run: python -m pytest -q -p no:xdist -p no:randomly --durations=15 tests/test_old_commits.py tests/test_session.py
+        run: python -m pytest -q -n 0 -p no:randomly --durations=15 tests/test_old_commits.py tests/test_session.py
       - name: Git processes, timed
         shell: bash
         run: |
           mkdir trace
-          GIT_TRACE2_EVENT="$PWD/trace" python -m pytest -q -p no:xdist -p no:randomly tests/test_old_commits.py
+          GIT_TRACE2_EVENT="$PWD/trace" python -m pytest -q -n 0 -p no:randomly tests/test_old_commits.py
           ls trace | wc -l
           python - <<'PY'
           import json, os, datetime

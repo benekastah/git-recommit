@@ -73,6 +73,8 @@ def test_applying_every_change_gives_the_new_file(repo: Repo, old: bytes, new: b
 def test_added_and_deleted_files(repo: Repo) -> None:
     repo.commit("base", gone="bye\n", empty_gone="")
     repo.commit("change", new="hi\n", empty_new="", gone=None, empty_gone=None)
+    # Else git sees empty_gone renamed to empty_new, as they're the same.
+    repo.git("config", "diff.renames", "false")
     files = load(repo)
     assert files["new"].status == "A" and files["new"].meta_id is None and len(files["new"].ids) == 1
     assert files["gone"].status == "D" and len(files["gone"].ids) == 1
@@ -112,3 +114,40 @@ def test_a_file_that_becomes_a_symlink_changes_as_a_whole(repo: Repo) -> None:
     assert (link.status, link.old_mode, link.new_mode) == ("T", "100644", "120000")
     assert link.whole and link.ids == [link.meta_id]
     assert len(files["after"].ids) == 2
+
+
+LINES = "".join(f"line {i}\n" for i in range(1, 21))
+
+
+def test_a_renamed_file_is_one_file_with_a_change_to_itself(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    repo.commit("rename", old=None, new=LINES.replace("line 3\n", "three\n"))
+    files = load(repo)
+    assert list(files) == ["new"]
+    new = files["new"]
+    assert new.status == "R" and new.old_path == "old" and not new.whole
+    assert new.describe_meta() == "renamed from old"
+    # The rename is a change of its own, apart from the lines.
+    assert new.meta_id in new.ids
+    assert [(line.kind, line.text) for h in new.hunks for line in h.lines if line.id is not None] == [
+        ("-", b"line 3\n"),
+        ("+", b"three\n"),
+    ]
+    assert apply(new, set()) == LINES.encode()
+
+
+def test_a_renamed_binary_file_changes_as_a_whole(repo: Repo) -> None:
+    repo.commit("base", old=b"\0" + LINES.encode())
+    repo.commit("rename", old=None, new=b"\0" + LINES.encode())
+    new = load(repo)["new"]
+    assert new.status == "R" and new.old_path == "old" and new.whole
+    assert new.ids == [new.meta_id]
+    assert new.describe_meta() == "binary, renamed from old"
+
+
+def test_renames_are_found_unless_diff_renames_is_off(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    repo.commit("rename", old=None, new=LINES)
+    assert {path: f.status for path, f in load(repo).items()} == {"new": "R"}
+    repo.git("config", "diff.renames", "false")
+    assert {path: f.status for path, f in load(repo).items()} == {"new": "A", "old": "D"}

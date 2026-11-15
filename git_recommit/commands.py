@@ -272,21 +272,23 @@ class Edit:
     def run(self, session: Session) -> Result:
         key = commit_key(session, self.commit)
         diff = session.add_unchanged(self.path)
+        # A renamed file's edits go by its new path, whichever it's named by.
+        path = diff.path
         if diff.whole:
-            raise RecommitError(f"{self.path} isn't a text file, so it can't be edited")
+            raise RecommitError(f"{path} isn't a text file, so it can't be edited")
         index = session.plan.index(key)
-        before = session.states(diff, upto=index)[index].version
+        state = session.states(diff, upto=index)[index]
         # E.g. an editor that saved Windows line endings, in a repository that
-        # stores Unix ones.
-        content = None if self.content is None else session.git.clean(self.path, self.content)
+        # stores Unix ones (cleaned as the file is where the commit has it).
+        content = None if self.content is None else session.git.clean(state.path, self.content)
         # Saving what the editor opened (see Session.edit_text) changes nothing.
-        unchanged = before is None if content is None else content == session.edit_text(key, diff)
+        unchanged = state.version is None if content is None else content == session.edit_text(key, diff)
         if unchanged:
-            return Result(f"{self.path} is unchanged in commit {self.commit}.", self.commit)
+            return Result(f"{path} is unchanged in commit {self.commit}.", self.commit)
         session.set_edit(key, diff, content)
-        if self.path in session.plan.get(key).edits:
-            return Result(f"Edited {self.path} in commit {self.commit}; later commits carry the edit.", self.commit)
-        return Result(f"{self.path} in commit {self.commit} has no edits.", self.commit)
+        if path in session.plan.get(key).edits:
+            return Result(f"Edited {path} in commit {self.commit}; later commits carry the edit.", self.commit)
+        return Result(f"{path} in commit {self.commit} has no edits.", self.commit)
 
 
 @dataclass(frozen=True)

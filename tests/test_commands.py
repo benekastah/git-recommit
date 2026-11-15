@@ -146,3 +146,13 @@ def test_edits_are_normalized_as_git_add_would(repo: Repo) -> None:
     # An editor that saves Windows line endings.
     Edit(1, "g", b"stub\r\n").run(s)
     assert s.plan.commits[0].edits["g"].content == b"stub\n"
+
+
+def test_editing_a_renamed_file_by_its_old_path(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    repo.commit("rename", old=None, new=LINES)
+    s = repo.session("HEAD~")
+    AddCommit("Rename").run(s)
+    result = Edit(1, "old", b"edited\n").run(s)
+    assert result.message == "Edited new in commit 1; later commits carry the edit."
+    assert list(s.plan.commits[0].edits) == ["new"]

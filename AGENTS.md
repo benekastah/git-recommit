@@ -21,7 +21,9 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
 - `git_recommit/diff.py` loads the diff (with `git diff-tree`) and splits it
   into changes, each with an id: every added or removed line of a text file,
   plus one "meta" change for what can't be split (a binary file, symlink or
-  submodule as a whole, a mode change, adding or deleting an empty file).
+  submodule as a whole, a mode change, a rename, adding or deleting an empty
+  file). A renamed file is one `FileDiff`, at its old path until a commit
+  takes the rename.
   `apply` makes a file's content with only some changes applied.
 - `git_recommit/plan.py` is the new commits and which change ids each takes.
 - `git_recommit/snapshot.py` says what each file is in each new commit:

@@ -45,9 +45,10 @@ def restore(session: "Session") -> None:
     # A line last there in a commit (or base) was removed by the next one.
     removed_by = dict(zip([session.base, *shas], shas, strict=False))
     touched_by = _touched_by(session, shas)
+    trees = [_blobs(session, sha) for sha in shas]
     # Files old commits change that end as they started aren't in the diff;
     # add them, so the edits can reproduce them (but for binary ones).
-    changed = {diff.path for diff in session.files}
+    changed = {path for diff in session.files for path in (diff.path, diff.old_path) if path is not None}
     for path in sorted(set(touched_by) - changed):
         try:
             session.add_unchanged(path)
@@ -57,13 +58,21 @@ def restore(session: "Session") -> None:
     for diff in session.files:
         # The last commit to change the file takes what blame can't say
         # who made, as well as what blame doesn't cover.
-        touched = touched_by.get(diff.path, [])
+        paths = {path for path in (diff.path, diff.old_path) if path is not None}
+        touched = [sha for sha in shas if any(sha in touched_by.get(path, []) for path in paths)]
         last = keys.get(touched[-1]) if touched else None
         if diff.meta_id is not None:
-            plan.assign([diff.meta_id], last)
+            meta_by = last
+            if diff.old_path is not None and not diff.whole:
+                # The rename goes to the first commit to have the new path. (A
+                # binary file's rename is all of its change, so it stays with
+                # the last commit, as the rest of such a file's change does.)
+                renamed_in = next((sha for sha, blobs in zip(shas, trees, strict=True) if diff.path in blobs), None)
+                meta_by = keys.get(renamed_in or "", last)
+            plan.assign([diff.meta_id], meta_by)
         if diff.whole:
             continue
-        if len(touched) == 1 and diff.path not in uncommitted:
+        if len(touched) == 1 and not paths & uncommitted:
             # Only one commit changed it, so it made every change.
             plan.assign([i for i in diff.ids if i != diff.meta_id], last)
             continue
@@ -73,7 +82,7 @@ def restore(session: "Session") -> None:
     # someone else (see authorship_warnings).
     authors = {commit.key: commit.author for commit in plan.commits}
     session.origin = {i: author for i, key in plan.assignment.items() if (author := authors[key]) is not None}
-    _reproduce(session, shas)
+    _reproduce(session, trees)
 
 
 def _touched_by(session: "Session", shas: list[str]) -> dict[str, list[str]]:
@@ -90,7 +99,7 @@ def _made_by(session: "Session", diff: FileDiff, removed_by: dict[str, str]) -> 
     old commit that made it, by git blame, or None where blame and the
     diff disagree about the line (e.g. a blank line that moved)."""
     added = _blame(session, diff.path, reverse=False) if diff.new_blob else {}
-    removed = _blame(session, diff.path, reverse=True) if diff.old_blob else {}
+    removed = _blame(session, diff.old_path or diff.path, reverse=True) if diff.old_blob else {}
     made_by: dict[int, str | None] = {}
     for hunk in diff.hunks:
         for line, old, new in numbered(hunk):
@@ -125,17 +134,19 @@ def _blame(session: "Session", path: str, reverse: bool) -> dict[int | None, str
     return lines
 
 
-def _reproduce(session: "Session", shas: list[str]) -> None:
+def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
     """Give each commit of the plan the edits it needs to have each text
-    file as old commit shas[i] does."""
+    file as the old commit with trees[i] does."""
     object_format = session.git.run("rev-parse", "--show-object-format")
-    trees = [_blobs(session, sha) for sha in shas]
 
     def reproduce(diff: FileDiff) -> None:
         for index, (commit, blobs) in enumerate(zip(session.plan.commits, trees, strict=True)):
-            actual = blobs.get(diff.path)
             # Only up to this commit: an edit here changes the later ones.
-            version = session.states(diff, upto=index)[index].version
+            state = session.states(diff, upto=index)[index]
+            # Where the commit has the file: it gets the rename from the first
+            # old commit to have the new path, so they agree.
+            actual = blobs.get(state.path)
+            version = state.version
             if actual is None:
                 if version is not None:
                     session.set_edit(commit.key, diff, None)

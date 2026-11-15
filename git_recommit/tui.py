@@ -84,7 +84,8 @@ class DiffView(ScrollView, can_focus=True):
         diff = self.board.session.files[row.file]
         if row.kind == "file":
             note = " (binary)" if diff.binary else " (the range doesn't change it)" if diff.status == "=" else ""
-            return f"{diff.status} {diff.path}{note}"
+            path = f"{diff.old_path} -> {diff.path}" if diff.old_path is not None else diff.path
+            return f"{diff.status} {path}{note}"
         if row.kind == "meta":
             return f"  {diff.describe_meta()}"
         if row.kind == "hunk":

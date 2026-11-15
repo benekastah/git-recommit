@@ -8,7 +8,7 @@ from textual.pilot import Pilot
 from git_recommit import validate
 from git_recommit.errors import RecommitError
 from git_recommit.session import Session
-from git_recommit.tui import RecommitApp, Sidebar, Terminal
+from git_recommit.tui import DiffView, RecommitApp, Sidebar, Terminal
 from tests.helpers import Repo
 
 
@@ -443,3 +443,19 @@ def test_validation_abort(repo: Repo) -> None:
         await pilot.press("f", "f", "w", "y")
 
     assert run(session, terminal, script) is None
+
+
+def test_a_rename_is_a_row_of_its_own(repo: Repo) -> None:
+    repo.commit("base", old="".join(f"line {i}\n" for i in range(1, 21)))
+    repo.commit("rename", old=None, new="".join(f"line {i}\n" for i in range(1, 21)).replace("line 3\n", "three\n"))
+    session = repo.session("HEAD~")
+
+    async def script(pilot: Pilot[Any]) -> None:
+        texts = pilot.app.screen.query_one(DiffView)._texts
+        assert texts[:2] == ["R old -> new", "  renamed from old"]
+        await create(pilot, "Rename")
+        await pilot.press("j", "space")  # the rename's row
+
+    run(session, FakeTerminal(repo), script)
+    (new,) = session.files
+    assert list(session.plan.assignment) == [new.meta_id]

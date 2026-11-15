@@ -579,3 +579,64 @@ def test_below_head_every_change_must_be_assigned(repo: Repo) -> None:
     session.restore_old_commits()
     session.plan.assign(files_ids(session, "notes.txt"), None)
     assert "later commits are replayed on" in (writing.blocker(session) or "")
+
+
+RENAMED = "".join(f"line {i}\n" for i in range(1, 21))
+
+
+def renamed_repo(repo: Repo) -> tuple[Session, list[int], int]:
+    """old renamed to new, with line 3 changed; the session, the line changes'
+    ids, and the rename's."""
+    repo.commit("base", old=RENAMED)
+    repo.commit("rename", old=None, new=RENAMED.replace("line 3\n", "three\n"))
+    session = repo.session("HEAD~")
+    (new,) = session.files
+    assert new.meta_id is not None
+    return session, [i for i in new.ids if i != new.meta_id], new.meta_id
+
+
+def test_building_a_rename_apart_from_its_lines(repo: Repo) -> None:
+    session, lines, rename = renamed_repo(repo)
+    plan = session.plan
+    plan.assign(lines, plan.add("Change line 3").key)
+    plan.assign([rename], plan.add("Rename").key)
+    first, second = session.build()
+    assert repo.show(first, "old") == RENAMED.replace("line 3\n", "three\n") and repo.show(first, "new") is None
+    assert repo.show(second, "new") == RENAMED.replace("line 3\n", "three\n") and repo.show(second, "old") is None
+
+
+def test_building_a_rename_before_its_lines(repo: Repo) -> None:
+    session, lines, rename = renamed_repo(repo)
+    plan = session.plan
+    plan.assign([rename], plan.add("Rename").key)
+    plan.assign(lines, plan.add("Change line 3").key)
+    first, second = session.build()
+    assert repo.show(first, "new") == RENAMED and repo.show(first, "old") is None
+    assert repo.show(second, "new") == RENAMED.replace("line 3\n", "three\n") and repo.show(second, "old") is None
+
+
+def test_an_edit_follows_a_renamed_file(repo: Repo) -> None:
+    session, lines, rename = renamed_repo(repo)
+    plan = session.plan
+    first, second = plan.add("Edit"), plan.add("Rename")
+    plan.assign(lines, second.key)
+    plan.assign([rename], second.key)
+    (new,) = session.files
+    session.set_edit(first.key, new, RENAMED.replace("line 20\n", "twenty\n").encode())
+    shas = session.build()
+    assert repo.show(shas[0], "old") == RENAMED.replace("line 20\n", "twenty\n")
+    assert repo.show(shas[1], "new") == RENAMED.replace("line 3\n", "three\n").replace("line 20\n", "twenty\n")
+
+
+def test_an_unassigned_rename_is_left_uncommitted(repo: Repo) -> None:
+    session, lines, _ = renamed_repo(repo)
+    plan = session.plan
+    plan.assign(lines, plan.add("Change line 3").key)
+    assert session.left_uncommitted() == ["new"]
+    session.finish(session.build())
+    assert repo.show("HEAD", "old") == RENAMED.replace("line 3\n", "three\n") and repo.show("HEAD", "new") is None
+    # The rename is still an uncommitted change (new is added with
+    # --intent-to-add), so the next recommit sees it.
+    assert repo.git("status", "--porcelain") == "R old -> new"
+    (new,) = repo.session("HEAD").files
+    assert new.status == "R" and new.old_path == "old"

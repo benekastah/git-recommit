@@ -84,6 +84,13 @@ are along the top.
 
 Each new commit has every change assigned to it or to an earlier commit.
 
+**A renamed file** is one file, shown as `R old -> new`, as `git status`
+shows it, found as `git diff` finds renames (unless `diff.renames` is off).
+The rename is a change of its own, on a row under the file's name (like a
+change of mode), apart from the changes to its lines: until a commit takes
+the rename, the file is at its old path, with whatever lines it takes. `f`
+assigns all of it.
+
 **Editing a file in a commit** (`e`) is for making a commit work on its own,
 e.g. stubbing out a function that a later commit fills in. The edit is carried
 into the later commits, merged with the changes they take, as a rebase would.
@@ -135,12 +142,12 @@ e.g. in a script, or by an agent. `start` begins a recommit, kept as a plan in
 the git directory (like a rebase in progress) until `write` makes the new
 commits, or `abort` drops it. Commits are named by number, from 1, and changes
 by *targets*: `PATH` (the whole file), `PATH:@N` (its Nth hunk; `@0` is the
-change to the file itself, like its mode), `PATH:+N-M` (added lines, numbered
+change to the file itself, like its mode or renaming it), `PATH:+N-M` (added lines, numbered
 as after the changes) or `PATH:-N-M` (removed lines, numbered as before).
 `show` shows the numbers. `PATH` is a git pathspec, as in `git add`: relative
 to the current directory, a directory for the files in it, wildcards like
 `'src/*.py'`, and magic like `:/` (from the top) or `:(literal)`; a hunk or
-lines need it to match one file.
+lines need it to match one file. A renamed file goes by either of its paths.
 
 ```sh
 git recommit start HEAD~6               # start from the 6 commits as they are

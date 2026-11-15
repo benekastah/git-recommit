@@ -17,11 +17,6 @@ it's read, which `file_states` does in its loop. Since that work holds the
 GIL, reproducing files in parallel barely helps. Going through each file once,
 keeping its state as it goes, and caching the ids should fix it.
 
-## Renames show as a deletion and an addition
-
-The diff is loaded with `--no-renames`, so a renamed file is a deleted file and
-an added one, and assigning the rename to one commit means assigning both.
-
 ## Edits are whole files, and text only
 
 `e` edits a whole file, not a hunk or a line, and binary files, symlinks and

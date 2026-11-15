@@ -52,7 +52,8 @@ def diff(session: Session) -> list[str]:
 
     lines = []
     for file in session.files:
-        lines.append(f"{file.status} {file.path}")
+        # As git status shows a rename.
+        lines.append(f"{file.status} {file.old_path} -> {file.path}" if file.old_path else f"{file.status} {file.path}")
         if file.meta_id is not None:
             lines.append(f"{marker(file.meta_id):>3}  {file.path}:@0 {file.describe_meta()}")
         for h, hunk in enumerate(file.hunks, start=1):
@@ -95,7 +96,15 @@ def as_json(session: Session) -> dict[str, Any]:
                 for line, old, new in numbered(hunk)
                 if line.id is not None
             )
-        files.append({"path": file.path, "status": file.status, "binary": file.binary, "changes": changes})
+        files.append(
+            {
+                "path": file.path,
+                "old_path": file.old_path,
+                "status": file.status,
+                "binary": file.binary,
+                "changes": changes,
+            }
+        )
     return {
         "base": session.base,
         "head": session.head,

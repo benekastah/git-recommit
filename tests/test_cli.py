@@ -224,3 +224,26 @@ def test_rebuilding_commits_below_head(repo: Repo) -> None:
     repo.recommit("commit", "move", "2", "1")
     repo.recommit("write")
     assert repo.git("log", "--format=%s", "-3").splitlines() == ["three", "one", "two"]
+
+
+RENAMED = "".join(f"line {i}\n" for i in range(1, 21))
+
+
+def test_a_renamed_file_goes_by_either_name(repo: Repo) -> None:
+    repo.commit("base", old=RENAMED)
+    repo.commit("rename", old=None, new=RENAMED.replace("line 3\n", "three\n"))
+    repo.recommit("start", "HEAD~")
+    shown = repo.recommit("show").stdout
+    assert "R old -> new" in shown and "new:@0 renamed from old" in shown
+    (file,) = json.loads(repo.recommit("show", "--json").stdout)["files"]
+    assert file["path"] == "new" and file["old_path"] == "old" and file["status"] == "R"
+    repo.recommit("clear")
+    repo.recommit("commit", "add", "Rename")
+    repo.recommit("commit", "add", "Change line 3")
+    repo.recommit("assign", "2", "old")  # the old name: the whole file
+    repo.recommit("assign", "1", "new:@0")  # the new name: the rename
+    repo.recommit("edit", "1", "old", input=RENAMED + "edited\n")
+    assert json.loads(repo.recommit("show", "--json").stdout)["commits"][0]["edits"] == ["new"]
+    repo.recommit("write")
+    assert repo.show("HEAD~", "new") == RENAMED + "edited\n" and repo.show("HEAD~", "old") is None
+    assert repo.show("HEAD", "new") == RENAMED.replace("line 3\n", "three\n") + "edited\n"

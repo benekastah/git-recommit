@@ -30,6 +30,9 @@ class FileState:
     """A file in one new commit. version is None if the file isn't there."""
 
     version: Version | None
+    # Where it is (or would be): a renamed file's old path, until the
+    # commit or an earlier one takes the rename.
+    path: str
     # Whether carrying an edit into this commit conflicted.
     conflict: bool = False
     # Whether it differs from what the changes alone make it, due to edits.
@@ -52,7 +55,7 @@ def pure_version(diff: FileDiff, selected: Container[int]) -> Version | None:
         return None
     if diff.status == "D" and all(i in selected for i in ids):
         return None
-    if diff.status == "A" or (diff.status == "M" and diff.meta_id in selected):
+    if diff.status == "A" or (diff.status in "MR" and diff.meta_id in selected):
         mode = diff.new_mode
     else:
         mode = diff.old_mode
@@ -80,8 +83,9 @@ def file_states(diff: FileDiff, commits: list[NewCommit], assignment: dict[int, 
     for commit in commits:
         selected.update(i for i in diff.ids if assignment.get(i) == commit.key)
         assigned = pure_version(diff, selected)
+        path = diff.path_with(selected)
         if not edited:
-            states.append(FileState(assigned, basis=_content(assigned)))
+            states.append(FileState(assigned, path, basis=_content(assigned)))
             continue
         # Carry the edits so far into this commit.
         if prev_result == prev_assigned:
@@ -109,6 +113,6 @@ def file_states(diff: FileDiff, commits: list[NewCommit], assignment: dict[int, 
                 content, conflict = merge(edit.basis, edit.content, basis)
             mode = (carried or assigned or Version(diff.new_mode or diff.old_mode or "100644")).mode
             result = Version(mode, content=content)
-        states.append(FileState(result, conflict, result != assigned, basis))
+        states.append(FileState(result, path, conflict, result != assigned, basis))
         prev_assigned, prev_result, prev_conflict = assigned, result, conflict
     return states

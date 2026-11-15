@@ -3,7 +3,8 @@
 Each added or removed line of a text file is a change of its own, with an id.
 What can't be split into lines is a file's "meta" change, also with an id: the
 whole of a binary file, symlink or submodule (or a change from one of those to
-another kind), a file's mode, and adding or deleting an empty file.
+another kind), a file's mode, renaming it, and adding or deleting an empty
+file.
 """
 
 import re
@@ -49,8 +50,10 @@ class Hunk:
 
 @dataclass
 class FileDiff:
+    # Where it ends up: for a renamed file, its new path.
     path: str
-    # A (added), D (deleted), M (modified) or T (changed kind, e.g. a file to a symlink).
+    # A (added), D (deleted), M (modified), R (renamed) or T (changed kind,
+    # e.g. a file to a symlink).
     status: str
     old_mode: str | None
     new_mode: str | None
@@ -61,6 +64,8 @@ class FileDiff:
     meta_id: int | None = None
     # The file's lines before the changes, for a text file.
     old_lines: list[bytes] = field(default_factory=list)
+    # Where a renamed file was; it's there until a commit takes the rename.
+    old_path: str | None = None
 
     @property
     def whole(self) -> bool:
@@ -69,13 +74,20 @@ class FileDiff:
 
     def describe_meta(self) -> str:
         """What the file's change to itself (its meta change) is."""
+        renamed = [f"renamed from {self.old_path}"] if self.old_path is not None else []
         if self.binary:
-            return "binary"
+            return ", ".join(["binary", *renamed])
         if self.whole:
             return f"{self.old_mode or 'none'} -> {self.new_mode or 'none'}"
         if self.status in ("A", "D"):
             return "added, empty" if self.status == "A" else "deleted, empty"
-        return f"mode {self.old_mode} -> {self.new_mode}"
+        mode = [f"mode {self.old_mode} -> {self.new_mode}"] if self.old_mode != self.new_mode else []
+        return ", ".join([*renamed, *mode])
+
+    def path_with(self, selected: Container[int]) -> str:
+        """Where the file is with only the selected changes: for a renamed
+        file, its old path unless the rename is selected."""
+        return self.old_path if self.old_path is not None and self.meta_id not in selected else self.path
 
     @property
     def ids(self) -> list[int]:
@@ -181,13 +193,16 @@ def _patch_parts(patch: bytes) -> Iterator[list[bytes]]:
         yield part
 
 
-def _raw_entries(raw: bytes) -> Iterator[tuple[str, str, str, str, str, str]]:
-    """(old mode, new mode, old blob, new blob, status, path) for each file in
-    `git diff-tree --raw -z` output."""
-    fields = raw.split(b"\0")
-    for meta, path in zip(fields[0:-1:2], fields[1::2], strict=True):
+def _raw_entries(raw: bytes) -> Iterator[tuple[str, str, str, str, str, str, str | None]]:
+    """(old mode, new mode, old blob, new blob, status, path, old path) for
+    each file in `git diff-tree --raw -z` output; the old path is only for a
+    rename."""
+    fields = iter(raw.split(b"\0")[:-1])
+    for meta in fields:
         old_mode, new_mode, old_blob, new_blob, status = meta.decode().lstrip(":").split(" ")
-        yield old_mode, new_mode, old_blob, new_blob, status[:1], path.decode(errors="surrogateescape")
+        old_path = next(fields).decode(errors="surrogateescape") if status[:1] == "R" else None
+        path = next(fields).decode(errors="surrogateescape")
+        yield old_mode, new_mode, old_blob, new_blob, status[:1], path, old_path
 
 
 ChangeKey = tuple[str, str, bytes, int]
@@ -212,9 +227,17 @@ def change_keys(files: list[FileDiff]) -> dict[int, ChangeKey]:
     return keys
 
 
+def renames(git: GitClient) -> str:
+    """How to have git diff-tree find renames as git diff does: unless
+    diff.renames is off. (Copies, which diff.renames can ask for too, are
+    left as added files, since what they copy stays where it is.)"""
+    setting = git.run("config", "diff.renames", check=False).lower()
+    return "--no-renames" if setting in ("false", "no", "off", "0") else "-M"
+
+
 def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
     """The changes from base to tip, file by file."""
-    common = ("diff-tree", "-r", "--no-renames", "--no-abbrev", base, tip)
+    common = ("diff-tree", "-r", renames(git), "--no-abbrev", base, tip)
     raw = git.run_bytes(*common, "--raw", "-z")
     patch = git.run_bytes(*common, "-p", "-U3", "--full-index")
     # Both list the files in the same order, but the patch shows a change of
@@ -228,7 +251,7 @@ def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
     remaining = iter(parts)
     ids = count()
     files = []
-    for old_mode, new_mode, old_blob, new_blob, status, path in entries:
+    for old_mode, new_mode, old_blob, new_blob, status, path, old_path in entries:
         part = next(remaining)
         if status == "T":
             part += next(remaining)
@@ -240,14 +263,23 @@ def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
             old_blob=None if status == "A" else old_blob,
             new_blob=None if status == "D" else new_blob,
             binary=any(line.startswith((b"Binary files ", b"GIT binary patch")) for line in part),
+            old_path=old_path,
         )
+        if status == "R" and not diff.binary and old_blob == new_blob:
+            # A rename that changes nothing else has no patch to say whether
+            # the file is binary; so look, as git does.
+            diff.binary = b"\0" in git.blob(old_blob)[:8000]
         if diff.whole:
             diff.meta_id = next(ids)
         else:
             diff.hunks = parse_hunks(part, ids.__next__)
             if diff.old_blob is not None:
                 diff.old_lines = split_lines(git.blob(diff.old_blob))
-            if (status in "AD" and not diff.hunks) or (status == "M" and diff.old_mode != diff.new_mode):
+            if (
+                (status in "AD" and not diff.hunks)
+                or status == "R"
+                or (status == "M" and diff.old_mode != diff.new_mode)
+            ):
                 diff.meta_id = next(ids)
         files.append(diff)
     return files

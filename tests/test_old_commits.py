@@ -206,3 +206,39 @@ def test_reproduces_files_that_end_as_they_started(repo: Repo) -> None:
     session = restored(repo, "HEAD~2")
     assert {d.path: d.status for d in session.files} == {"gone": "=", "keep": "M", "notes": "="}
     assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_a_rename_goes_to_the_commit_that_made_it(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    old = [
+        repo.commit("change old", old=LINES.replace("line 3\n", "three\n")),
+        repo.commit("rename", old=None, new=LINES.replace("line 3\n", "three\n")),
+        repo.commit("change new", new=LINES.replace("line 3\n", "three\n").replace("line 9\n", "nine\n")),
+    ]
+    session = restored(repo, "HEAD~3")
+    (new,) = session.files
+    assert new.status == "R" and new.meta_id is not None
+    first, second, third = session.plan.commits
+    assert session.plan.assignment[new.meta_id] == second.key
+    by_line = {
+        line.text: session.plan.assignment[line.id] for h in new.hunks for line in h.lines if line.id is not None
+    }
+    assert by_line == {
+        b"line 3\n": first.key,
+        b"three\n": first.key,
+        b"line 9\n": third.key,
+        b"nine\n": third.key,
+    }
+    assert all(not commit.edits for commit in session.plan.commits)
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_a_rename_with_changes_in_the_same_commit(repo: Repo) -> None:
+    repo.commit("base", old=LINES)
+    old = [
+        repo.commit("rename and change", old=None, new=LINES.replace("line 3\n", "three\n")),
+        repo.commit("change again", new=LINES.replace("line 3\n", "THREE\n")),
+    ]
+    session = restored(repo, "HEAD~2")
+    assert session.unassigned() == []
+    assert trees(repo, session.build()) == trees(repo, old)

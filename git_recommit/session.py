@@ -162,11 +162,14 @@ class Session:
 
     def match(self, pathspec: str) -> list[str]:
         """The changed files a git pathspec matches, as git matches them (so
-        relative to the current directory, with wildcards and magic)."""
+        relative to the current directory, with wildcards and magic). A
+        renamed file matches by either path, and is given by its new one."""
         out = self.git.run_bytes(
             "diff-tree", "-r", "--no-renames", "--name-only", "-z", self.base, self.tip, "--", pathspec
         )
-        return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
+        new_paths = {diff.old_path: diff.path for diff in self.files if diff.old_path is not None}
+        paths = (path.decode(errors="surrogateescape") for path in out.split(b"\0") if path)
+        return list(dict.fromkeys(new_paths.get(path, path) for path in paths))
 
     def me(self) -> Author:
         """Who commits git recommit writes are by, unless they say otherwise."""
@@ -264,9 +267,9 @@ class Session:
     def add_unchanged(self, path: str) -> FileDiff:
         """The file at path (from the top), added to the files as one the
         range doesn't change, so commits can edit it, if it isn't one of them
-        already."""
+        already (by either path, if it's renamed)."""
         for diff in self.files:
-            if diff.path == path:
+            if path in (diff.path, diff.old_path):
                 return diff
         out = self.git.run_bytes("ls-tree", "-z", "--full-tree", self.base, "--", path)
         entry, _, found = out.rstrip(b"\0").partition(b"\t")
@@ -316,7 +319,14 @@ class Session:
         so will be left as uncommitted changes."""
         if not self.plan.commits:
             return [diff.path for diff in self.files]
-        return [diff.path for diff in self.files if self.states(diff)[-1].version != pure_version(diff, set(diff.ids))]
+        return [diff.path for diff in self.files if not self._ends_as_tip(self.states(diff)[-1], diff)]
+
+    @staticmethod
+    def _ends_as_tip(state: FileState, diff: FileDiff) -> bool:
+        """Whether the file in a commit is as it is at the tip (in the same
+        place)."""
+        everything = set(diff.ids)
+        return state.version == pure_version(diff, everything) and state.path == diff.path_with(everything)
 
     def empty_commits(self) -> list[NewCommit]:
         return [commit for commit in self.plan.commits if not self.plan.count(commit.key) and not commit.edits]
@@ -358,16 +368,11 @@ class Session:
             self.git.run("read-tree", self.base, env=env)
             # From the root, the first new commit has no parent, as the root does.
             parent: str | None = None if self.root else self.base
-            previous = {diff.path: pure_version(diff, set()) for diff in self.files}
+            previous = {diff.path: (diff.path_with(set()), pure_version(diff, set())) for diff in self.files}
             for position, commit in enumerate(self.plan.commits):
-                updates = []
-                for diff in self.files:
-                    version = states[diff.path][position].version
-                    if version != previous[diff.path]:
-                        updates.append(entry(diff.path, version))
-                        previous[diff.path] = version
-                if updates:
-                    self.git.run_bytes("update-index", "-z", "--index-info", input=b"".join(updates), env=env)
+                if changes := self._index_changes(states, previous, position):
+                    info = b"".join(entry(path, version) for path, version in changes)
+                    self.git.run_bytes("update-index", "-z", "--index-info", input=info, env=env)
                 tree = self.git.run("write-tree", env=env)
                 message = self._message(position + 1, commit)
                 parents = [] if parent is None else ["-p", parent]
@@ -376,6 +381,32 @@ class Session:
                 )
                 shas.append(parent)
         return shas
+
+    def _index_changes(
+        self,
+        states: dict[str, list[FileState]],
+        previous: dict[str, tuple[str, Version | None]],
+        position: int,
+    ) -> list[tuple[str, Version | None]]:
+        """What changes in the index from the last commit to the one at
+        position, as (path, version) (None removes the path), updating
+        previous, each file's (path, version) so far. A file that moves (by
+        its rename) leaves where it was first; no other file can be there,
+        since git only finds renames to paths that weren't there, from paths
+        that end up gone."""
+        removals: list[tuple[str, Version | None]] = []
+        updates: list[tuple[str, Version | None]] = []
+        for diff in self.files:
+            state = states[diff.path][position]
+            old_path, old_version = previous[diff.path]
+            if (state.path, state.version) == (old_path, old_version):
+                continue
+            if old_version is not None and (state.path != old_path or state.version is None):
+                removals.append((old_path, None))
+            if state.version is not None:
+                updates.append((state.path, state.version))
+            previous[diff.path] = (state.path, state.version)
+        return removals + updates
 
     def _message(self, number: int, commit: NewCommit) -> str:
         """The message to write for commit, number number. An old commit's
@@ -452,12 +483,17 @@ class Session:
         return onto
 
     def _only_in_tip(self, diff: FileDiff) -> bool:
-        """Whether the file is at the tip but not in the last new commit (and
-        wasn't untracked to start with, which it then goes back to being)."""
+        """Whether the file is at the tip but not in the last new commit, or
+        not where it is at the tip, since its rename is left out (and wasn't
+        untracked to start with, which it then goes back to being)."""
         if diff.path in self._untracked:
             return False
-        final = self.states(diff)[-1].version if self.plan.commits else pure_version(diff, set())
-        return final is None and pure_version(diff, set(diff.ids)) is not None
+        if self.plan.commits:
+            final = self.states(diff)[-1]
+            version, path = final.version, final.path
+        else:
+            version, path = pure_version(diff, set()), diff.path_with(set())
+        return (version is None or path != diff.path) and pure_version(diff, set(diff.ids)) is not None
 
     def untracked_left_out(self) -> list[str]:
         """The untracked files that aren't ignored, but aren't included."""

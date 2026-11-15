@@ -472,7 +472,7 @@ class Session:
         # no longer an uncommitted change (git recommit leaves untracked files
         # out): keep it known to git, as `git add --intent-to-add` does.
         if added := [diff.path for diff in self.files if self._only_in_tip(diff)]:
-            self.git.run("add", "--intent-to-add", "--", *added, env={"GIT_LITERAL_PATHSPECS": "1"})
+            self.git.run("add", "--intent-to-add", "--", *added)
 
     def _only_in_tip(self, diff: FileDiff) -> bool:
         """Whether the file is at the tip but not in the last new commit."""

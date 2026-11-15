@@ -28,8 +28,10 @@ class GitClient:
     def _command(self, *args: str) -> list[str]:
         return ["git", "-C", self.directory, *args]
 
-    def _env(self, env: Mapping[str, str] | None) -> dict[str, str] | None:
-        return None if env is None else {**os.environ, **env}
+    def _env(self, env: Mapping[str, str] | None = None) -> dict[str, str]:
+        # Paths given to git are file names, never patterns or magic (e.g.
+        # a[1].txt mustn't match a1.txt).
+        return {**os.environ, "GIT_LITERAL_PATHSPECS": "1", **(env or {})}
 
     def run(
         self, *args: str, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None
@@ -51,7 +53,7 @@ class GitClient:
 
     def ok(self, *args: str) -> bool:
         """Run git and report whether it succeeded."""
-        return subprocess.run(self._command(*args), capture_output=True, check=False).returncode == 0
+        return subprocess.run(self._command(*args), capture_output=True, env=self._env(), check=False).returncode == 0
 
     def passthrough(self, *args: str, env: Mapping[str, str] | None = None) -> bool:
         """Run git with its output going straight to the terminal."""
@@ -71,7 +73,7 @@ class GitClient:
         for all of them, rather than a process each."""
         if self._cat_file is None:
             self._cat_file = subprocess.Popen(
-                self._command("cat-file", "--batch"), stdin=subprocess.PIPE, stdout=subprocess.PIPE
+                self._command("cat-file", "--batch"), stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=self._env()
             )
         assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
         self._cat_file.stdin.write(sha.encode() + b"\n")
@@ -115,7 +117,7 @@ class GitClient:
                 with open(path, "wb") as f:
                     f.write(content)
             result = subprocess.run(
-                self._command("merge-file", "-p", *labels, *paths), capture_output=True, check=False
+                self._command("merge-file", "-p", *labels, *paths), capture_output=True, env=self._env(), check=False
             )
         # The exit status is the number of conflicts, or negative (shown as
         # 128 or more) on an error.

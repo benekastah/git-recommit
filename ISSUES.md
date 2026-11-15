@@ -12,14 +12,6 @@ carried edit. Merging in-process would be faster, but would have to agree
 with git's merges. Starting from the old commits could also show progress, or
 run in the background, as the TUI opens.
 
-## Paths are read as pathspecs
-
-Suspected. `git log -- <path>` (in `restore_old_commits`) treats `[`, `*` and a
-leading `:` as pathspec magic, so `a[1].txt` also matches `a1.txt`, and the
-wrong commit can be taken as the last to change a file. Set
-`GIT_LITERAL_PATHSPECS=1` for git recommit's git commands (or use
-`:(literal)`).
-
 ## Windows: text encoding, and line endings in edits
 
 Suspected. `GitClient.run` decodes with the locale's encoding (cp1252 on

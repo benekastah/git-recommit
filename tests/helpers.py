@@ -19,7 +19,8 @@ class Repo:
         return GitClient(self.path)
 
     def git(self, *args: str) -> str:
-        result = subprocess.run(["git", *args], cwd=self.path, capture_output=True, text=True, check=False)
+        # UTF-8, as git writes, whatever the locale's encoding.
+        result = subprocess.run(["git", *args], cwd=self.path, capture_output=True, encoding="utf-8", check=False)
         if result.returncode != 0:
             pytest.fail(f"git {' '.join(args)} failed:\n{result.stderr}")
         return result.stdout.strip()
@@ -30,6 +31,14 @@ class Repo:
         if isinstance(content, str):
             content = content.encode()
         path.write_bytes(content)
+
+    def executable(self, name: str) -> None:
+        """Make the file executable, as git sees it: in the index too, since
+        on Windows, where a file has no executable bit, git keeps the mode
+        there (core.fileMode is off)."""
+        (self.path / name).chmod(0o755)
+        self.git("add", "--", name)
+        self.git("update-index", "--chmod=+x", "--", name)
 
     def commit(self, message: str, **files: str | bytes | None) -> str:
         """Write (or with None, delete) the files, and commit everything."""
@@ -58,17 +67,22 @@ class Repo:
         env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Run `git recommit <args>` as a separate process (without a terminal),
-        with input on its stdin, and env added to its environment."""
-        result = subprocess.run(
+        with input on its stdin (as UTF-8, with its line endings as they are,
+        as a file piped in would be), and env added to its environment. What
+        it prints is read as text, with Windows' line endings as \\n."""
+        raw = subprocess.run(
             [sys.executable, "-m", "git_recommit", "-C", str(self.path), *args],
             capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            input=input,
+            input=None if input is None else input.encode(),
             env={**os.environ, **(env or {})},
             timeout=60,
             check=False,
         )
+
+        def text(output: bytes) -> str:
+            return output.decode("utf-8", errors="replace").replace("\r\n", "\n")
+
+        result = subprocess.CompletedProcess(raw.args, raw.returncode, text(raw.stdout), text(raw.stderr))
         if expect_success != (result.returncode == 0):
             pytest.fail(f"git recommit {' '.join(args)} exited {result.returncode}:\n{result.stdout}{result.stderr}")
         return result

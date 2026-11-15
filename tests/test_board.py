@@ -134,7 +134,7 @@ def test_next_unassigned(repo: Repo) -> None:
 def test_next_unassigned_finds_changes_that_arent_lines(repo: Repo) -> None:
     repo.commit("base", data=b"\0old", script="echo\n")
     repo.write("data", b"\0new")
-    (repo.path / "script").chmod(0o755)
+    repo.executable("script")
     repo.commit("change")
     b = Board(repo.session("HEAD~"))
     assert kinds(b) == "FM" + "FM"
@@ -153,7 +153,7 @@ def test_next_unassigned_finds_changes_that_arent_lines(repo: Repo) -> None:
 def test_a_mode_change_has_a_row_of_its_own(repo: Repo) -> None:
     repo.commit("base", script="echo\n")
     repo.write("script", "echo hi\n")
-    (repo.path / "script").chmod(0o755)
+    repo.executable("script")
     repo.commit("change")
     b = Board(repo.session("HEAD~"))
     assert kinds(b) == "FMH-+"

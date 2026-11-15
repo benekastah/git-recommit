@@ -87,7 +87,7 @@ def test_binary_files_and_modes_change_as_a_whole(repo: Repo) -> None:
     repo.commit("base", data=b"\0\1\2", script="echo hi\n")
     repo.write("data", b"\0\3\4")
     repo.write("script", "echo hello\n")
-    (repo.path / "script").chmod(0o755)
+    repo.executable("script")
     repo.commit("change")
     files = load(repo)
     assert files["data"].binary and files["data"].whole and files["data"].ids == [files["data"].meta_id]
@@ -178,7 +178,7 @@ def test_a_renamed_symlink_says_so(repo: Repo) -> None:
 def test_a_rename_and_a_mode_change_are_one_change(repo: Repo) -> None:
     repo.commit("base", old=LINES)
     repo.git("mv", "old", "new")
-    (repo.path / "new").chmod(0o755)
+    repo.executable("new")
     repo.commit("rename")
     new = load(repo)["new"]
     assert new.ids == [new.meta_id]

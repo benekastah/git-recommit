@@ -466,7 +466,9 @@ class Session:
         (commit-tree, which writes the commits, runs no hooks.)"""
         with tempfile.TemporaryDirectory() as scratch:
             path = os.path.join(scratch, "COMMIT_EDITMSG")
-            with open(path, "w", encoding="utf-8") as f:
+            # As it is: without \r\n for each \n on Windows, and with the bytes of
+            # a message typed under a locale that isn't UTF-8 (as surrogates).
+            with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
                 f.write(message)
             result = subprocess.run(
                 ["git", "-C", self.git.directory, "hook", "run", "--ignore-missing", "commit-msg", "--", path],
@@ -478,7 +480,7 @@ class Session:
             if result.returncode != 0:
                 output = (result.stdout + result.stderr).strip()
                 raise RecommitError(f"the commit-msg hook refused commit {number} ({commit.subject}):\n{output}")
-            with open(path, encoding="utf-8") as f:
+            with open(path, encoding="utf-8", errors="surrogateescape", newline="") as f:
                 return f.read()
 
     def finish(self, shas: list[str]) -> None:

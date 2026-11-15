@@ -217,7 +217,7 @@ def test_unassigned_changes_are_left_uncommitted(repo: Repo) -> None:
 def test_mode_binary_and_deletions(repo: Repo) -> None:
     repo.commit("base", data=b"\0old", gone="1\n2\n", script="echo\n")
     repo.write("data", b"\0new")
-    (repo.path / "script").chmod(0o755)
+    repo.executable("script")
     repo.commit("change", gone=None)
     session = repo.session("HEAD~")
     plan = session.plan
@@ -364,6 +364,7 @@ def test_building_a_change_of_kind(repo: Repo) -> None:
     assert repo.git("ls-tree", sha, "link").startswith("120000 blob")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows only passes git names that are Unicode")
 def test_building_a_file_whose_name_isnt_utf8(repo: Repo) -> None:
     # Made with plumbing, since some filesystems (e.g. macOS's) refuse such
     # names; skip-worktree keeps git from seeing it as deleted from the
@@ -646,7 +647,7 @@ def test_an_unassigned_rename_is_left_uncommitted(repo: Repo) -> None:
 def test_building_a_rename_and_a_mode_change(repo: Repo) -> None:
     repo.commit("base", old=RENAMED)
     repo.git("mv", "old", "new")
-    (repo.path / "new").chmod(0o755)
+    repo.executable("new")
     repo.commit("rename")
     session = repo.session("HEAD~")
     plan = session.plan

@@ -8,7 +8,8 @@ from git_recommit.git import GitClient
 
 
 def shell_quote(arg: str) -> str:
-    # git runs editors with sh, even on Windows, where it brings its own.
+    """arg, quoted for the shell subprocess runs a command with: cmd.exe on
+    Windows, sh elsewhere."""
     return subprocess.list2cmdline([arg]) if os.name == "nt" else shlex.quote(arg)
 
 

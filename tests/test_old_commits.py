@@ -1,5 +1,7 @@
 """Starting from the commits being rebuilt (Session.restore_old_commits)."""
 
+import os
+
 import pytest
 
 from git_recommit import oldcommits
@@ -125,15 +127,17 @@ def test_changes_blame_cant_attribute_go_to_the_last_commit_to_change_the_file(
 
 
 def test_paths_that_look_like_patterns(repo: Repo) -> None:
-    # As a pathspec, a[1].txt would match a1.txt, and :x is magic.
-    repo.commit("base", **{"a1.txt": "1\n", "a[1].txt": "1\n", ":x": "1\n"})
+    # As a pathspec, a[1].txt would match a1.txt, and :x is magic (but not a
+    # name Windows allows).
+    magic = [":x"] if os.name != "nt" else []
+    repo.commit("base", **{"a1.txt": "1\n", "a[1].txt": "1\n"}, **dict.fromkeys(magic, "1\n"))
     old = [
         repo.commit("first", **{"a1.txt": "1\nfirst\n"}),
-        repo.commit("second", **{"a[1].txt": "1\nsecond\n", ":x": "1\nsecond\n"}),
+        repo.commit("second", **{"a[1].txt": "1\nsecond\n"}, **dict.fromkeys(magic, "1\nsecond\n")),
     ]
     session = restored(repo, "HEAD~2")
     by_file = {d.path: {session.plan.index(session.plan.assignment[i]) for i in d.ids} for d in session.files}
-    assert by_file == {"a1.txt": {0}, "a[1].txt": {1}, ":x": {1}}
+    assert by_file == {"a1.txt": {0}, "a[1].txt": {1}, **{name: {1} for name in magic}}
     assert trees(repo, session.build()) == trees(repo, old)
     session.plan.assign(next(d for d in session.files if d.path == "a[1].txt").ids, None)
     session.finish(session.build())

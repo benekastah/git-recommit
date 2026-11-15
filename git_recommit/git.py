@@ -1,11 +1,20 @@
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 from collections.abc import Mapping
+from typing import TypeAlias
 
 from git_recommit.errors import RecommitError
+
+# An environment for git: on Windows, as str, as the OS keeps it; elsewhere,
+# as bytes too (see GitClient._env).
+if sys.platform == "win32":
+    Env: TypeAlias = Mapping[str, str]
+else:
+    Env: TypeAlias = Mapping[str, str] | Mapping[bytes, bytes]
 
 # A full object id: SHA-1 or SHA-256.
 OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
@@ -35,29 +44,34 @@ class GitClient:
     def _command(self, *args: str) -> list[str]:
         return ["git", "-C", self.directory, *args]
 
-    def _env(self, env: Mapping[str, str] | None = None) -> dict[str, str]:
+    def _env(self, env: Mapping[str, str] | None = None) -> Env:
         # Not GIT_LITERAL_PATHSPECS, which the user's hooks would inherit: a
         # command given paths git reported marks them literal (see literal).
-        return {**os.environ, **(env or {})}
+        if sys.platform == "win32" or not env:
+            return {**os.environ, **(env or {})}
+        # As UTF-8, which git takes them as, whatever the locale's encoding
+        # (which, e.g. with LC_ALL=C, can't hold an author's name).
+        added = {key.encode(): value.encode("utf-8", errors="surrogateescape") for key, value in env.items()}
+        return {**os.environb, **added}
 
     def run(
         self, *args: str, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None
     ) -> str:
         """Run git and return stripped stdout."""
         # UTF-8, as git writes (not the locale's encoding, e.g. cp1252 on
-        # Windows), keeping what isn't as surrogates, as paths are.
+        # Windows), keeping what isn't as surrogates, as paths are; and as
+        # bytes, so line endings stay as they are (text mode would write \r\n
+        # for each \n on Windows).
         result = subprocess.run(
             self._command(*args),
             capture_output=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            input=input,
+            input=None if input is None else input.encode("utf-8", errors="surrogateescape"),
             env=self._env(env),
             check=False,
         )
         if check and result.returncode != 0:
-            raise RecommitError(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
-        return result.stdout.strip()
+            raise RecommitError(f"git {' '.join(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
+        return result.stdout.decode("utf-8", errors="surrogateescape").strip()
 
     def run_bytes(self, *args: str, input: bytes | None = None, env: Mapping[str, str] | None = None) -> bytes:
         """Run git and return stdout as it is, for file contents and patches."""

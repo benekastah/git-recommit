@@ -169,6 +169,14 @@ class Session:
                 dropped.append(f"dropped commit {number}'s edit of {path}, which the range no longer changes")
         return dropped
 
+    def match(self, pathspec: str) -> list[str]:
+        """The changed files a git pathspec matches, as git matches them (so
+        relative to the current directory, with wildcards and magic)."""
+        out = self.git.run_bytes(
+            "diff-tree", "-r", "--no-renames", "--name-only", "-z", self.base, self.tip, "--", pathspec
+        )
+        return [path.decode(errors="surrogateescape") for path in out.split(b"\0") if path]
+
     def head_moved(self) -> bool:
         """Whether HEAD has moved since the diff was loaded (e.g. the user
         committed while git recommit was suspended)."""

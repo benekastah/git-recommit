@@ -90,7 +90,7 @@ def test_write_stops_when_validation_fails(repo: Repo) -> None:
 def test_bad_targets_and_commits_are_errors(repo: Repo) -> None:
     repo.commit("wip", a="a\n")
     repo.recommit("start", "HEAD~")
-    assert "nope isn't changed" in repo.recommit("assign", "1", "nope", expect_success=False).stderr
+    assert "nope matches no file" in repo.recommit("assign", "1", "nope", expect_success=False).stderr
     assert "there's no commit 5" in repo.recommit("assign", "5", "a", expect_success=False).stderr
 
 
@@ -117,3 +117,46 @@ def test_works_whatever_the_locales_encoding(repo: Repo) -> None:
     repo.recommit("commit", "add", "Ça va", env=not_utf8)
     repo.recommit("write", env=not_utf8)
     assert repo.git("log", "--format=%an|%s", "-2").splitlines() == ["Test|Ça va", "Zoë Ünïcode|Café crème"]
+
+
+def pathspec_repo(repo: Repo) -> None:
+    repo.commit(
+        "wip",
+        **{"top.txt": "t\n", "src/api.py": "a\n", "src/util.py": "u\n", "a1.txt": "1\n", "a[1].txt": "[1]\n"},
+    )
+    repo.recommit("start", "HEAD~")
+    repo.recommit("clear")
+    for message in ("A", "B", "C", "D"):
+        repo.recommit("commit", "add", message)
+
+
+def assigned(repo: Repo) -> dict[str, int | None]:
+    shown = json.loads(repo.recommit("show", "--json").stdout)
+    return {f["path"]: f["changes"][0]["commit"] for f in shown["files"]}
+
+
+def test_targets_are_git_pathspecs(repo: Repo) -> None:
+    pathspec_repo(repo)
+    repo.recommit("assign", "1", "src")  # a directory: what's in it
+    repo.recommit("assign", "2", "*.txt")  # a wildcard, as git matches them
+    repo.recommit("assign", "3", ":(literal)a[1].txt")  # git's magic, too
+    # Relative to the current directory, as in git (and -C adds up, as git's does).
+    repo.recommit("-C", "src", "assign", "4", "api.py", ":/top.txt")
+    assert assigned(repo) == {"a1.txt": 2, "a[1].txt": 3, "src/api.py": 4, "src/util.py": 1, "top.txt": 4}
+
+
+def test_a_pathspec_must_match(repo: Repo) -> None:
+    pathspec_repo(repo)
+    assert "nothing* matches no file" in repo.recommit("assign", "1", "nothing*", expect_success=False).stderr
+    # A hunk or lines are of one file.
+    result = repo.recommit("assign", "1", "src:@1", expect_success=False)
+    assert "src matches 2 files" in result.stderr
+
+
+def test_edit_takes_a_pathspec(repo: Repo) -> None:
+    pathspec_repo(repo)
+    repo.recommit("-C", "src", "edit", "1", "api.py", input="stub\n")
+    shown = json.loads(repo.recommit("show", "--json").stdout)
+    assert shown["commits"][0]["edits"] == ["src/api.py"]
+    repo.recommit("drop-edit", "1", "src/api*")
+    assert json.loads(repo.recommit("show", "--json").stdout)["commits"][0]["edits"] == []

@@ -1,6 +1,8 @@
 import argparse
+import dataclasses
 import io
 import json
+import os
 import sys
 from collections.abc import Callable
 
@@ -55,7 +57,8 @@ def subcommand_parser() -> argparse.ArgumentParser:
         "subcommands, then `write` it. Commits are named by number, from 1; changes by targets: PATH (the "
         "whole file), PATH:@N (its Nth hunk; @0 is the change to the file itself, e.g. its mode), PATH:+N[-M] "
         "(added lines, numbered as after the changes) or PATH:-N[-M] (removed lines, numbered as before). "
-        "`show` shows the numbers.",
+        "`show` shows the numbers. PATH is a git pathspec, as in `git add`: relative to the current directory, "
+        "with wildcards and magic like :/ (from the top).",
     )
     sub = p.add_subparsers(dest="command", required=True)
     start = sub.add_parser("start", help="start a recommit of RANGE, from its commits as they are")
@@ -106,8 +109,9 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     argv = sys.argv[1:] if argv is None else argv
     rest, directory = list(argv), "."
+    # As git's: each -C is relative to the one before.
     while len(rest) >= 2 and rest[0] == "-C":
-        directory, rest = rest[1], rest[2:]
+        directory, rest = os.path.join(directory, rest[1]), rest[2:]
     if rest and rest[0] in SUBCOMMANDS:
         args = subcommand_parser().parse_args(rest)
         return _report(lambda: run_subcommand(GitClient(directory), args))
@@ -158,7 +162,7 @@ def run_subcommand(git: GitClient, args: argparse.Namespace) -> int:
         return 0
     if args.command == "tui":
         return tui(session, args.validate)
-    result = command(args).run(session)
+    result = command(args, session).run(session)
     planfile.save(session)
     print(result.message)
     return 0
@@ -175,7 +179,32 @@ def load_plan(git: GitClient) -> Session:
     return session
 
 
-def command(args: argparse.Namespace) -> Command:
+def targets(session: Session, specs: list[str]) -> tuple[Target, ...]:
+    """The targets the user wrote, whose paths are git pathspecs (relative to
+    the current directory, with wildcards and magic, as in git), as targets of
+    the files they match."""
+    result: list[Target] = []
+    for spec in specs:
+        target = Target.parse(spec)
+        paths = session.match(target.path)
+        if not paths:
+            raise RecommitError(f"{target.path} matches no file the commits being rebuilt change")
+        if len(paths) > 1 and (target.hunk is not None or target.side is not None):
+            raise RecommitError(f"{target.path} matches {len(paths)} files, but a hunk or lines are of one")
+        result.extend(dataclasses.replace(target, path=path) for path in paths)
+    return tuple(result)
+
+
+def one_path(session: Session, pathspec: str) -> str:
+    """The one changed file pathspec matches."""
+    paths = session.match(pathspec)
+    if len(paths) != 1:
+        what = "no file" if not paths else f"{len(paths)} files"
+        raise RecommitError(f"{pathspec} matches {what} the commits being rebuilt change, rather than one")
+    return paths[0]
+
+
+def command(args: argparse.Namespace, session: Session) -> Command:
     """The command a subcommand that changes the plan stands for."""
     if args.command == "commit":
         match args.action:
@@ -189,13 +218,13 @@ def command(args: argparse.Namespace) -> Command:
                 return commands.Reword(args.number, args.message)
     match args.command:
         case "assign":
-            return commands.Assign(tuple(Target.parse(t) for t in args.targets), args.number)
+            return commands.Assign(targets(session, args.targets), args.number)
         case "unassign":
-            return commands.Assign(tuple(Target.parse(t) for t in args.targets), None)
+            return commands.Assign(targets(session, args.targets), None)
         case "edit":
-            return commands.Edit(args.number, args.path, sys.stdin.buffer.read())
+            return commands.Edit(args.number, one_path(session, args.path), sys.stdin.buffer.read())
         case "drop-edit":
-            return commands.DropEdit(args.number, args.path)
+            return commands.DropEdit(args.number, one_path(session, args.path))
         case "clear":
             return commands.Clear()
         case _:

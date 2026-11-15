@@ -115,7 +115,10 @@ commits, or `abort` drops it. Commits are named by number, from 1, and changes
 by *targets*: `PATH` (the whole file), `PATH:@N` (its Nth hunk; `@0` is the
 change to the file itself, like its mode), `PATH:+N-M` (added lines, numbered
 as after the changes) or `PATH:-N-M` (removed lines, numbered as before).
-`show` shows the numbers.
+`show` shows the numbers. `PATH` is a git pathspec, as in `git add`: relative
+to the current directory, a directory for the files in it, wildcards like
+`'src/*.py'`, and magic like `:/` (from the top) or `:(literal)`; a hunk or
+lines need it to match one file.
 
 ```sh
 git recommit start HEAD~6               # start from the 6 commits as they are

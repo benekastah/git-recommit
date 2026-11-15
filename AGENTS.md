@@ -57,6 +57,14 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
 
 These were the user's choices for v0; ask before changing them.
 
+- Follow git's conventions wherever possible; it's a git extension. E.g.
+  paths the user types are pathspecs (relative to the current directory,
+  with wildcards and magic, matched by git itself), `-C` adds up as git's
+  does, messages are cleaned by `commit.cleanup` and `core.commentChar`, and
+  commits are signed per `commit.gpgSign`. And don't change git's behavior
+  for the user: e.g. no environment variables that their hooks would
+  inherit.
+
 - The TUI uses Textual. Use the latest stable version of any library added,
   and add libraries sparingly: dev dependencies are fine, runtime ones need a
   good reason.

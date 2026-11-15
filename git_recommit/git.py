@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import threading
 from collections.abc import Mapping
 
 from git_recommit.errors import RecommitError
@@ -11,8 +12,10 @@ class GitClient:
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         self.directory = os.fspath(directory)
-        # `git cat-file --batch`, started the first time a blob is read.
+        # `git cat-file --batch`, started the first time a blob is read, and
+        # what keeps threads from talking to it at once.
         self._cat_file: subprocess.Popen[bytes] | None = None
+        self._cat_file_lock = threading.Lock()
 
     def __del__(self) -> None:
         self.close()
@@ -79,6 +82,10 @@ class GitClient:
     def blob(self, sha: str) -> bytes:
         """A blob's content, read with one `git cat-file --batch` process kept
         for all of them, rather than a process each."""
+        with self._cat_file_lock:
+            return self._read_blob(sha)
+
+    def _read_blob(self, sha: str) -> bytes:
         if self._cat_file is None:
             self._cat_file = subprocess.Popen(
                 self._command("cat-file", "--batch"), stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=self._env()

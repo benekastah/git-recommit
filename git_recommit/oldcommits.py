@@ -3,7 +3,9 @@ new commit for each, with its message and author, taking the changes git
 blame says it made, and the edits it needs to be as it was."""
 
 import hashlib
+import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from git_recommit.diff import FileDiff, numbered
@@ -119,13 +121,11 @@ def _reproduce(session: "Session", shas: list[str]) -> None:
     file as old commit shas[i] does."""
     object_format = session.git.run("rev-parse", "--show-object-format")
     trees = [_blobs(session, sha) for sha in shas]
-    for diff in session.files:
-        # An edit can't change a binary file.
-        if diff.whole:
-            continue
+
+    def reproduce(diff: FileDiff) -> None:
         for index, (commit, blobs) in enumerate(zip(session.plan.commits, trees, strict=True)):
             actual = blobs.get(diff.path)
-            # Nor delete a file.
+            # An edit can't delete a file.
             if actual is None:
                 continue
             # Only up to this commit: an edit here changes the later ones.
@@ -134,6 +134,12 @@ def _reproduce(session: "Session", shas: list[str]) -> None:
             if content is not None and blob_id(content, object_format) == actual:
                 continue
             session.set_edit(commit.key, diff, session.git.blob(actual))
+
+    # Each file is reproduced on its own (its edits are its own), and nearly
+    # all the time goes to git merge-file processes, so files are done in
+    # parallel. An edit can't change a binary file.
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
+        list(pool.map(reproduce, [diff for diff in session.files if not diff.whole]))
 
 
 def _blobs(session: "Session", sha: str) -> dict[str, str]:

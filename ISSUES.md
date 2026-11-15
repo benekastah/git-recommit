@@ -7,10 +7,10 @@ it was found by reading the code and still needs checking.
 
 With 60 files of 1,500 lines, each rewritten by all of 15 commits (so every
 commit needs an edit for every file, 900 in all), starting from the old
-commits takes about 9 s, nearly all of it running one `git merge-file` per
-carried edit. Merging in-process would be faster, but would have to agree
-with git's merges. Starting from the old commits could also show progress, or
-run in the background, as the TUI opens.
+commits takes a few seconds, though files are now reproduced in parallel:
+most of it is one `git merge-file` per carried edit. Merging in-process would
+be faster, but would have to agree with git's merges; or the TUI could open
+first, and show progress.
 
 ## A commit can't take a file the range doesn't change
 

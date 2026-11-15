@@ -7,15 +7,10 @@ it was found by reading the code and still needs checking.
 
 With 60 files of 1,500 lines, each rewritten by all of 15 commits (so every
 commit needs an edit for every file, 900 in all), starting from the old
-commits takes about 15 seconds. Little of it is `git merge-file` (about 2.5
-seconds of 840 merges); most is Python. For each old commit,
-`oldcommits._reproduce` replays the file through every earlier commit from
-scratch (`Session.states` with `upto`), so the work grows with the square of
-the number of commits, and each replay rebuilds the file with `diff.apply` for
-every commit (16,200 times here). `FileDiff.ids` rebuilds its list each time
-it's read, which `file_states` does in its loop. Since that work holds the
-GIL, reproducing files in parallel barely helps. Going through each file once,
-keeping its state as it goes, and caching the ids should fix it.
+commits takes about 3 seconds (on 8 cores). Most of it is the 840 `git
+merge-file` processes that carry the edits, which run in parallel, a file
+each. Merging in-process would be faster, but would have to agree with git's
+merges; or the TUI could open first, and show progress.
 
 ## Edits are whole files, and text only
 

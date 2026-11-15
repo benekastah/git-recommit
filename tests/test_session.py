@@ -7,6 +7,7 @@ import pytest
 from git_recommit.errors import RecommitError
 from git_recommit.revisions import resolve_range
 from git_recommit.session import Session
+from git_recommit.snapshot import Version
 from tests.helpers import Repo
 
 FEATURE = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
@@ -640,3 +641,16 @@ def test_an_unassigned_rename_is_left_uncommitted(repo: Repo) -> None:
     assert repo.git("status", "--porcelain") == "R old -> new"
     (new,) = repo.session("HEAD").files
     assert new.status == "R" and new.old_path == "old"
+
+
+def test_reloading_makes_files_from_the_new_diff(repo: Repo) -> None:
+    repo.commit("base", f="1\n2\n")
+    repo.commit("add b", f="1\n2\nb\n")
+    session = repo.session("HEAD~")
+    plan = session.plan
+    plan.assign(files_ids(session, "f"), plan.add("first").key)
+    assert session.states(session.files[0])[0].version == Version("100644", content=b"1\n2\nb\n")
+    # The same change, with the same id, in another place.
+    repo.write("f", "1\nb\n2\n")
+    assert session.reload()
+    assert session.states(session.files[0])[0].version == Version("100644", content=b"1\nb\n2\n")

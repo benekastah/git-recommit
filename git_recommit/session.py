@@ -67,6 +67,8 @@ class Session:
         self.uncommitted = self.tip != self.end
         self._tip_tree = git.run("rev-parse", f"{self.tip}^{{tree}}")
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
+        # For each file, its versions with only some changes (see states).
+        self._pure: dict[str, dict[frozenset[int], Version | None]] = {}
         # The author of the old commit that made each change, where known.
         self.origin: dict[int, Author] = {}
         # Files the range doesn't change that commits edit (see add_unchanged).
@@ -140,6 +142,8 @@ class Session:
         }
         self.origin = {new_ids[old_keys[i]]: author for i, author in self.origin.items() if old_keys[i] in new_ids}
         self.head, self.end, self.tip, self.files, self._tip_tree = head, end, tip, files, tree
+        # Change ids mean other changes in the new diff.
+        self._pure = {}
         changed = {diff.path for diff in files}
         for path in sorted(self.unchanged - changed):
             self.unchanged.discard(path)
@@ -235,7 +239,22 @@ class Session:
         """The file in each new commit, or in those up to the one at index
         upto (which is quicker, when the later ones don't matter)."""
         commits = self.plan.commits if upto is None else self.plan.commits[: upto + 1]
-        return file_states(diff, commits, self.plan.assignment, self.merge)
+        # Making a file with only some changes is most of the work, and the
+        # same changes come up again and again (e.g. for each commit, when
+        # starting from the old ones, and on each redraw). So keep the
+        # versions the last call made, to reuse: only those, so what's kept
+        # stays the size of one call's.
+        kept = self._pure.get(diff.path, {})
+        made: dict[frozenset[int], Version | None] = {}
+
+        def pure(selected: frozenset[int]) -> Version | None:
+            if selected not in made:
+                made[selected] = kept[selected] if selected in kept else pure_version(diff, selected)
+            return made[selected]
+
+        states = file_states(diff, commits, self.plan.assignment, self.merge, pure)
+        self._pure[diff.path] = made
+        return states
 
     def edit_text(self, key: int, diff: FileDiff) -> bytes:
         """The file in the commit, as an edit starts from (with conflict markers

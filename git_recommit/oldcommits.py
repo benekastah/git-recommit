@@ -160,9 +160,9 @@ def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
                 continue
             session.set_edit(commit.key, diff, session.git.blob(actual))
 
-    # Each file is reproduced on its own (its edits are its own), and nearly
-    # all the time goes to git merge-file processes, so files are done in
-    # parallel. An edit can't change a binary file.
+    # Each file is reproduced on its own (its edits are its own), so files
+    # are done in parallel, which overlaps their git merge-file processes
+    # (the rest holds the GIL). An edit can't change a binary file.
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
         list(pool.map(reproduce, [diff for diff in session.files if not diff.whole]))
 

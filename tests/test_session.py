@@ -7,6 +7,7 @@ import pytest
 from git_recommit.errors import RecommitError
 from git_recommit.revisions import resolve_range
 from git_recommit.session import Session
+from git_recommit.snapshot import Version
 from tests.helpers import Repo
 
 FEATURE = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
@@ -654,3 +655,16 @@ def test_building_a_rename_and_a_mode_change(repo: Repo) -> None:
     first, second = session.build()
     assert repo.git("ls-tree", first).endswith("\told") and "100644" in repo.git("ls-tree", first, "old")
     assert "100755" in repo.git("ls-tree", second, "new") and repo.show(second, "old") is None
+
+
+def test_reloading_makes_files_from_the_new_diff(repo: Repo) -> None:
+    repo.commit("base", f="1\n2\n")
+    repo.commit("add b", f="1\n2\nb\n")
+    session = repo.session("HEAD~")
+    plan = session.plan
+    plan.assign(files_ids(session, "f"), plan.add("first").key)
+    assert session.states(session.files[0])[0].version == Version("100644", content=b"1\n2\nb\n")
+    # The same change, with the same id, in another place.
+    repo.write("f", "1\nb\n2\n")
+    assert session.reload()
+    assert session.states(session.files[0])[0].version == Version("100644", content=b"1\nb\n2\n")

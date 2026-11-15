@@ -7,15 +7,14 @@ it was found by reading the code and still needs checking.
 
 With 60 files of 1,500 lines, each rewritten by all of 15 commits (so every
 commit needs an edit for every file, 900 in all), starting from the old
-commits takes about 15 seconds. Little of it is `git merge-file` (about 2.5
-seconds of 840 merges); most is Python. For each old commit,
-`oldcommits._reproduce` replays the file through every earlier commit from
-scratch (`Session.states` with `upto`), so the work grows with the square of
-the number of commits, and each replay rebuilds the file with `diff.apply` for
-every commit (16,200 times here). `FileDiff.ids` rebuilds its list each time
-it's read, which `file_states` does in its loop. Since that work holds the
-GIL, reproducing files in parallel barely helps. Going through each file once,
-keeping its state as it goes, and caching the ids should fix it.
+commits takes about 3 seconds. Most of it is Python, which holds the GIL, so
+reproducing files in parallel helps little: `oldcommits._reproduce` still
+calls `Session.states` once per commit (and again in `set_edit`), and each
+call groups all of the file's changes by commit again (`FileDiff.ids`
+rebuilds its list each time it's read); `diff.apply` and git blame take
+most of the rest. The 840 `git merge-file` processes are about half a second
+of it. Going through each file once, keeping its state as it goes, would
+take out the repeated calls; or the TUI could open first, and show progress.
 
 ## An uncommitted mode change goes to the last commit to change the file
 

@@ -15,6 +15,8 @@ from git_recommit.plan import NewCommit
 
 # (basis, ours, theirs) -> (merged, whether it conflicted)
 Merge = Callable[[bytes, bytes, bytes], tuple[bytes, bool]]
+# The changes selected -> the file with only them (see pure_version).
+Pure = Callable[[frozenset[int]], "Version | None"]
 
 
 @dataclass(frozen=True)
@@ -67,22 +69,28 @@ def _content(version: Version | None) -> bytes:
     return b"" if version is None or version.content is None else version.content
 
 
-def file_states(diff: FileDiff, commits: list[NewCommit], assignment: dict[int, int], merge: Merge) -> list[FileState]:
-    """The file in each of the commits, in order.
+def file_states(
+    diff: FileDiff, commits: list[NewCommit], assignment: dict[int, int], merge: Merge, pure: Pure
+) -> list[FileState]:
+    """The file in each of the commits, in order, making the file with only
+    some changes with pure (pure_version, or something that gives the same).
 
     For each commit: `assigned` is the file with only the changes assigned to
     it and earlier commits; `carried` is that with the edits of earlier
     commits carried in (merged); and `result` is that with this commit's own
     edit, if any, which is the file in the commit.
     """
-    selected: set[int] = set()
+    taken: dict[int | None, list[int]] = {}
+    for i in diff.ids:
+        taken.setdefault(assignment.get(i), []).append(i)
+    selected: frozenset[int] = frozenset()
     states = []
     edited = not diff.whole and any(diff.path in commit.edits for commit in commits)
-    prev_assigned = prev_result = pure_version(diff, selected)
+    prev_assigned = prev_result = pure(selected)
     prev_conflict = False
     for commit in commits:
-        selected.update(i for i in diff.ids if assignment.get(i) == commit.key)
-        assigned = pure_version(diff, selected)
+        selected = selected.union(taken.get(commit.key, ()))
+        assigned = pure(selected)
         path = diff.path_with(selected)
         if not edited:
             states.append(FileState(assigned, path, basis=_content(assigned)))

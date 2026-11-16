@@ -106,7 +106,7 @@ class Session:
 
     @property
     def history(self) -> str:
-        """The commits being rebuilt, as a revision range for git log."""
+        """The commits being rebuilt, as a revision range (for rev-list)."""
         return self.end if self.root else f"{self.base}..{self.end}"
 
     def describe_range(self) -> str:

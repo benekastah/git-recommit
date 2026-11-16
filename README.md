@@ -200,22 +200,28 @@ git puts its exec-path first), or the one `GIT_RECOMMIT_GIT` names, if set.
 
 ## Development
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), which
-sets up the dev dependencies, then clone the repository and run
-`./dev-install.sh`. It installs git-recommit in
-editable mode into `~/.local/share/git-recommit/venv`, links `git-recommit`
-into `~/.local/bin`, sets up the clone's `.venv` with the dev dependencies,
-and makes the clone use the hooks in `git_hooks/` (the pre-commit hook formats
-staged Python files, and the pre-push hook runs the checks).
+Clone the repository and run `python3 dev.py install` (on Windows,
+`py dev.py install`). It sets up the clone's `.venv` with git-recommit
+(editable) and the dev dependencies, with [uv](https://docs.astral.sh/uv/)
+from `uv.lock` if it's installed (or else venv and pip), links `git-recommit`
+into `~/.local/bin`, and makes the clone use the hooks in `git_hooks/` (the
+pre-commit hook formats and lint-fixes staged Python files, and the pre-push
+hook runs the checks before a push to `main`).
 
-Run every check (shellcheck, Ruff's formatter and linter, basedpyright in
-strict mode, then the tests) with `./check.sh`; arguments are passed to
-pytest. `./lint.sh` runs every check but the tests, with the tools
-`./check.sh` (or `./dev-venv.sh`) installed in `.venv`. The tests run git
-itself (git-core's, from `git --exec-path`), not a wrapper on your `PATH`,
-and set `GIT_RECOMMIT_GIT` to it.
+Run every check (Ruff's formatter and linter, basedpyright in strict mode,
+then the tests) with `python3 dev.py check`; arguments are passed to pytest.
+`python3 dev.py` lists the rest: `static` (every check but the tests),
+`tests`, `coverage`, and `types-windows` (basedpyright as if on Windows,
+which CI runs too). The tests run git itself (git-core's, from
+`git --exec-path`), not a wrapper on your `PATH`, and set `GIT_RECOMMIT_GIT`
+to it.
 
-`./dev-venv.sh` installs the dev dependencies from `uv.lock`, at the versions
-locked there. If you change the dependencies in `pyproject.toml`, it updates
-`uv.lock` too; commit both. CI installs from `uv.lock` and fails if it's out of
-date. Dependabot proposes new versions weekly.
+With uv, `dev.py` installs the dev dependencies at the versions locked in
+`uv.lock`, and updates it when you change the dependencies in
+`pyproject.toml`; commit both. CI installs from `uv.lock` and fails if it's
+out of date. Dependabot proposes new versions weekly.
+
+The tooling comes from the [python-template](https://github.com/benekastah/python-template)
+Copier template; take in its later changes with `uvx copier update --defaults`.
+`dev.py` is the template's and an update replaces it, so this project's own
+commands go in `dev_project.py`.

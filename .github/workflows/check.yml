@@ -40,10 +40,14 @@ jobs:
           enable-cache: false
           # The venv's Python (setup-python's), named so uv can't choose another.
           python-version: "3.11"
-      - name: Install the dev dependencies
-        run: uv sync --locked
+          # Makes .venv with that Python; dev.py installs into it from uv.lock.
+          activate-environment: true
       - name: Lint
-        run: ./lint.sh
+        run: python dev.py static
+      - name: Type-check as if on Windows
+        # Even if Lint failed, so one run reports both.
+        if: ${{ !cancelled() }}
+        run: python dev.py types-windows
 
   test:
     name: ${{ matrix.os }}, Python ${{ matrix.python }}
@@ -73,10 +77,8 @@ jobs:
           enable-cache: false
           python-version: ${{ matrix.python }}
           activate-environment: true
-      - name: Install the dev dependencies
-        run: uv sync --locked
       - name: Run the tests
-        run: python -m pytest
+        run: python dev.py tests
 
   # The one check the ruleset on main requires, so changing the jobs doesn't
   # change what's required. It runs even if a check failed (a skipped required

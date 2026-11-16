@@ -121,13 +121,23 @@ These were the user's choices for v0; ask before changing them.
   (e.g. ctrl+z really stopping the process) is tested in
   `tests/test_terminal.py`, which runs git recommit as a job in a
   pseudo-terminal, under `tests/job_control.py` (Unix only).
-- Run `./check.sh` (`lint.sh`: shellcheck, Ruff format and lint,
-  basedpyright strict; then the tests) before committing. The pre-push hook
-  runs it too. CI lints once, on Linux, and runs the tests on each OS.
-- Development needs uv: `dev-venv.sh` (which `check.sh` runs) syncs `.venv`
-  from `uv.lock`. Commit a change to `pyproject.toml`'s dependencies with
-  the `uv.lock` it makes; CI's `uv sync --locked` fails on a stale one.
-- Each CI job has a time limit (`timeout-minutes` in `ci.yml`), about 20%
+- Run `python3 dev.py check` (Ruff format and lint, basedpyright strict; then
+  the tests) before committing. The pre-push hook runs it before a push to
+  `main`. CI lints once, on Linux (also type-checking as if on Windows, with
+  `dev.py types-windows`), and runs the tests on each OS.
+- The tooling (`dev.py`, `git_hooks/`, `.github/dependabot.yml`, most of
+  `pyproject.toml`'s tool settings) comes from python-template, a Copier
+  template; `uvx copier update --defaults` takes in its changes. Don't edit
+  `dev.py`: add commands to `dev_project.py`. In `pyproject.toml`, put dev
+  dependencies in `dev` (not `template-dev`), and additions to Ruff's
+  `extend-select` and basedpyright's `include` below their "project's own"
+  line, so updates merge without conflicts. This project keeps its own
+  layout (`git_recommit/`, not `src/`), Ruff's 120 columns, and CI
+  (`.github/workflows/check.yml`, which an update leaves alone).
+- Commit a change to `pyproject.toml`'s dependencies with the `uv.lock` it
+  makes (`dev.py` updates it with uv); CI installs with `uv sync --locked`,
+  which fails on a stale one.
+- Each CI job has a time limit (`timeout-minutes` in `check.yml`), about 20%
   over the longest it has taken, in whole minutes. If a job runs into it,
   speed it up (e.g. the tests, or git-recommit itself) if you can; only if
   you can't, raise the limit.
@@ -156,4 +166,5 @@ git-recommit should run on all three (CI runs the tests on each).
   (`status --porcelain=v2`, `blame --porcelain`).
 - Don't assume `\n` line endings in files: diff.py keeps every line's own
   ending, and splits only at `\n`, as git does.
-- Shell scripts (`check.sh`, `lint.sh`, the hooks) are for development only.
+- The git hooks are shell scripts that run `dev.py`, which is standard
+  library Python and runs the same on all three.

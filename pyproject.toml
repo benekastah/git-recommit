@@ -1,7 +1,3 @@
-[build-system]
-requires = ["setuptools>=84"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "git-recommit"
 version = "0.1.0"
@@ -9,36 +5,80 @@ description = "Rebuild a run of commits into reviewable ones, in a TUI"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Paul Harper", email = "benekastah@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = ["textual>=8.2.8"]
-
-[dependency-groups]
-dev = ["basedpyright>=1.40.2", "pytest>=9.2.0", "pytest-xdist>=3.8.0", "ruff>=0.17.5", "shellcheck-py>=0.11.0.1"]
 
 [project.scripts]
 git-recommit = "git_recommit.cli:main"
 
-[tool.setuptools.packages.find]
-include = ["git_recommit*"]
+[dependency-groups]
+# The template's dev tools, kept current by `copier update`; the project's own go in `dev`
+# (`uv add --dev`), so the two never conflict.
+template-dev = [
+    "basedpyright>=1.40.2",
+    "coverage>=7.17.3",
+    "pytest>=9.2.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.17.5",
+]
+dev = [{ include-group = "template-dev" }]
+
+[build-system]
+requires = ["hatchling>=1.33.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["git_recommit"]
 
 [tool.pytest]
 testpaths = ["tests"]
-addopts = ["-n", "auto"]
+# One worker per CPU (pytest-xdist); `-n 0` runs them one at a time, e.g. to debug.
+addopts = ["--numprocesses", "auto"]
 
 [tool.ruff]
 line-length = 120
+# Even when a hook names it: dev.py is python-template's, formatted to its 100 columns.
+force-exclude = true
+target-version = "py311"
+# dev.py runs under an older Python too, to say it's too old: keep it to syntax that parses there.
+per-file-target-version = { "dev.py" = "py311" }
+
+[tool.ruff.format]
+exclude = ["dev.py"]
 
 [tool.ruff.lint]
-extend-select = ["I", "UP", "B", "C4", "SIM", "C901", "PERF401", "ANN"]
-# ANN: every function annotated, which basedpyright infers rather than requires.
+extend-select = [
+    "I",
+    "UP",
+    "B",
+    "C4",
+    "SIM",
+    # The project's own below:
+    "C901",
+    "PERF401",
+    # Every function annotated, which basedpyright infers rather than requires.
+    "ANN",
+]
 # An explicit Any (ANN401) is allowed.
 ignore = ["ANN401"]
 
+[tool.ruff.lint.per-file-ignores]
+# dev.py is python-template's, checked there with the template's rules only: not
+# this project's additions, which a template update could break.
+"dev.py" = ["C901", "PERF401", "ANN"]
+
 [tool.basedpyright]
-include = ["git_recommit", "tests"]
+include = [
+    "git_recommit",
+    "tests",
+    "dev.py",
+    # The project's own below:
+    "dev_project.py",
+]
 typeCheckingMode = "strict"
 pythonVersion = "3.11"
-# Linux, so it says the same on every system; lint.sh checks as if on Windows too.
+# Linux, so it says the same on every system; `dev.py types-windows` checks as if on Windows.
 pythonPlatform = "Linux"
 # A variable whose type is unknown is an error (e.g. a list made empty needs its
 # item type), as mypy's strict mode inferred or required it. Using an unknown
@@ -49,3 +89,11 @@ reportUnknownMemberType = false
 reportUnknownArgumentType = false
 reportUnknownLambdaType = false
 reportUnknownParameterType = false
+
+[tool.coverage.run]
+source = ["git_recommit"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

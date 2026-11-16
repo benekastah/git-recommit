@@ -119,8 +119,9 @@ These were the user's choices for v0; ask before changing them.
   (e.g. ctrl+z really stopping the process) is tested in
   `tests/test_terminal.py`, which runs git recommit as a job in a
   pseudo-terminal, under `tests/job_control.py` (Unix only).
-- Run `./check.sh` (shellcheck, Ruff format and lint, mypy strict, tests)
-  before committing. The pre-push hook runs it too.
+- Run `./check.sh` (`lint.sh`: shellcheck, Ruff format and lint, mypy
+  strict; then the tests) before committing. The pre-push hook runs it too.
+  CI lints once, on Linux, and runs the tests on each OS.
 - Update the README with behavior changes.
 
 ## Linux, macOS and Windows
@@ -132,4 +133,4 @@ git-recommit should run on all three (CI runs the tests on each).
   command are the user's shell commands, so those do run through one.)
 - Don't assume `\n` line endings in files: diff.py keeps every line's own
   ending, and splits only at `\n`, as git does.
-- Shell scripts (`check.sh`, the hooks) are for development only.
+- Shell scripts (`check.sh`, `lint.sh`, the hooks) are for development only.

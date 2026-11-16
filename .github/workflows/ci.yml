@@ -9,7 +9,32 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  # Linting and type checking give the same answer everywhere (mypy checks for
+  # Windows too, and for the oldest Python pyproject.toml allows), so they run
+  # once.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          # The venv's Python (setup-python's), named so uv can't choose another.
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+          # Makes .venv, where lint.sh looks for the tools.
+          activate-environment: true
+      - name: Install the dev dependencies
+        run: uv pip install --group dev --editable .
+      - name: Lint
+        run: ./lint.sh
+
+  test:
     name: ${{ matrix.os }}, Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -19,31 +44,38 @@ jobs:
         # The oldest Python pyproject.toml allows, and the newest.
         python: ["3.11", "3.15"]
     steps:
+      # Defender scans every file and process the tests make (each a git
+      # repository, run with many git commands), which slows them down a lot;
+      # the runner is thrown away after.
+      - name: Turn off Defender's real-time scanning
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
-      - name: Run every check
-        if: runner.os != 'Windows'
-        run: ./check.sh
-      # check.sh and dev-venv.sh need a POSIX shell and a .venv/bin, so on
-      # Windows, install the dev dependencies and run the tests directly.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+          activate-environment: true
+      - name: Install the dev dependencies
+        run: uv pip install --group dev --editable .
       - name: Run the tests
-        if: runner.os == 'Windows'
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --group dev --editable .
-          python -m pytest
+        run: python -m pytest
 
-  # The one check the ruleset on main requires, so changing the matrix doesn't
+  # The one check the ruleset on main requires, so changing the jobs doesn't
   # change what's required. It runs even if a check failed (a skipped required
   # check would count as passing), and fails unless every check passed.
   passed:
     name: CI passed
     if: always()
-    needs: check
+    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - name: Fail unless every check passed
-        if: needs.check.result != 'success'
+        if: needs.lint.result != 'success' || needs.test.result != 'success'
         run: exit 1

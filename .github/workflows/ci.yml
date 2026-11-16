@@ -8,11 +8,13 @@ on:
 permissions:
   contents: read
 
-# A pull request's new push cancels its older run, which would hold up the
-# account's few runners for a commit no branch has any more; each push to main
-# keeps its run (its own group).
+# A new push cancels the branch's run still going, which no longer says
+# anything about the branch and holds runners the new one needs (an account
+# runs only so many jobs at once). On main too: merging a stack pushes several
+# commits at once, and only the newest one's run matters, since each pull
+# request had to pass before it merged.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

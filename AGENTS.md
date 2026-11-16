@@ -128,7 +128,10 @@ These were the user's choices for v0; ask before changing them.
 - The tooling (`dev.py`, `git_hooks/`, `.github/dependabot.yml`, most of
   `pyproject.toml`'s tool settings) comes from python-template, a Copier
   template; `uvx copier update --defaults` takes in its changes. Don't edit
-  `dev.py`: add commands to `dev_project.py`. This project keeps its own
+  `dev.py`: add commands to `dev_project.py`. In `pyproject.toml`, put dev
+  dependencies in `dev` (not `template-dev`), and additions to Ruff's
+  `extend-select` and basedpyright's `include` below their "project's own"
+  line, so updates merge without conflicts. This project keeps its own
   layout (`git_recommit/`, not `src/`), Ruff's 120 columns, and CI
   (`.github/workflows/check.yml`, which an update leaves alone).
 - Commit a change to `pyproject.toml`'s dependencies with the `uv.lock` it

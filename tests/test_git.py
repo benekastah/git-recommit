@@ -57,6 +57,17 @@ def test_reading_goes_on_after_a_name_stops_git(repo: Repo) -> None:
     assert git.blob(repo.git("rev-parse", "HEAD:README")) == b"readme\n"
 
 
+def test_reading_goes_on_after_git_stopped_between_commands(repo: Repo) -> None:
+    git = repo.client
+    head = git.head()
+    # Killed, say, while git recommit was suspended.
+    process = git._cat_file
+    assert process is not None
+    process.kill()
+    process.wait()
+    assert git.head() == head
+
+
 def test_commit_sha_sees_refs_that_moved_since_it_last_looked(repo: Repo) -> None:
     git = repo.client
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")

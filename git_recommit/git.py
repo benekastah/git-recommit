@@ -229,6 +229,11 @@ class GitClient:
         contents, then the content and a newline), or "<name> missing" (or
         ambiguous), split. It sees refs and objects as they are when asked,
         even when other processes have changed them since it started."""
+        if self._cat_file is not None and self._cat_file.poll() is not None:
+            # It stopped since the last command (e.g. killed while git
+            # recommit was suspended): start another, rather than take this
+            # name for one that names nothing.
+            self.close()
         if self._cat_file is None:
             self._cat_file = subprocess.Popen(
                 self._command("cat-file", "--batch-command"),

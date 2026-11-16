@@ -101,17 +101,18 @@ class Repo:
         # What the test printed before, put back after (for its failure report).
         before = capture.readouterr()
         try:
-            returncode = cli.main(argv)
-        except SystemExit as e:
-            # argparse's, for a bad command line, always with a number.
-            if not isinstance(e.code, int):
-                raise
-            returncode = e.code
+            try:
+                returncode = cli.main(argv)
+            except SystemExit as e:
+                # argparse's, for a bad command line, always with a number.
+                if not isinstance(e.code, int):
+                    raise
+                returncode = e.code
+            out, err = capture.readouterr()
         finally:
             sys.stdin = stdin
-        out, err = capture.readouterr()
-        sys.stdout.write(before.out)
-        sys.stderr.write(before.err)
+            sys.stdout.write(before.out)
+            sys.stderr.write(before.err)
         return subprocess.CompletedProcess(argv, returncode, _text(out), _text(err))
 
     def _recommit_apart(

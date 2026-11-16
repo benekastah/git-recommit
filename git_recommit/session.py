@@ -240,7 +240,7 @@ class Session:
         if path.startswith(":/"):
             joined = path[2:]
         else:
-            joined = self.git.run("rev-parse", "--show-prefix") + path
+            joined = self.git.prefix() + path
         normal = posixpath.normpath(joined.replace(os.sep, "/"))
         if normal.startswith("../") or normal in (".", ".."):
             raise RecommitError(f"{path} is outside the repository")

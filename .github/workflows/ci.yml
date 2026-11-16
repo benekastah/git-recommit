@@ -37,11 +37,9 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.8"
+          enable-cache: false
           # The venv's Python (setup-python's), named so uv can't choose another.
           python-version: "3.11"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
       - name: Install the dev dependencies
         run: uv sync --locked
       - name: Lint
@@ -66,27 +64,14 @@ jobs:
           - os: windows-latest
             timeout: 5
     steps:
-      # Defender scans every file and process the tests make (each a git
-      # repository, run with many git commands), which slows them down a lot;
-      # the runner is thrown away after.
-      - name: Turn off Defender's real-time scanning
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Set-MpPreference -DisableRealtimeMonitoring $true
-      # Likewise, Spotlight indexes each file the tests write.
-      - name: Stop Spotlight indexing files
-        if: runner.os == 'macOS'
-        run: sudo mdutil -a -i off
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: "0.13.8"
+          enable-cache: false
           python-version: ${{ matrix.python }}
-          enable-cache: true
-          cache-dependency-glob: uv.lock
           activate-environment: true
       - name: Install the dev dependencies
         run: uv sync --locked

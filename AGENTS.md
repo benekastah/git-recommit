@@ -114,8 +114,10 @@ These were the user's choices for v0; ask before changing them.
 - Every change to behavior comes with tests, in the same commit. Tests say
   what's correct, not what the code happens to do.
 - Tests run git-recommit against real repositories (`tests/helpers.py`,
-  `tests/conftest.py`). `tests/test_tui.py` drives the app headless with
-  Textual's pilot and a fake `Terminal`. What the headless driver can't do
+  `tests/conftest.py`). `Repo.recommit` runs it in the test's process, so a
+  monkeypatch on git_recommit reaches it; with `env`, it runs it in its own.
+  `tests/test_tui.py` drives the app headless with Textual's pilot and a
+  fake `Terminal`. What the headless driver can't do
   (e.g. ctrl+z really stopping the process) is tested in
   `tests/test_terminal.py`, which runs git recommit as a job in a
   pseudo-terminal, under `tests/job_control.py` (Unix only).

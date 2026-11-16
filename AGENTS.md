@@ -124,6 +124,9 @@ These were the user's choices for v0; ask before changing them.
 - Run `./check.sh` (`lint.sh`: shellcheck, Ruff format and lint, mypy
   strict; then the tests) before committing. The pre-push hook runs it too.
   CI lints once, on Linux, and runs the tests on each OS.
+- Development needs uv: `dev-venv.sh` (which `check.sh` runs) syncs `.venv`
+  from `uv.lock`. Commit a change to `pyproject.toml`'s dependencies with
+  the `uv.lock` it makes; CI's `uv sync --locked` fails on a stale one.
 - Each CI job has a time limit (`timeout-minutes` in `ci.yml`), about 20%
   over the longest it has taken, in whole minutes. If a job runs into it,
   speed it up (e.g. the tests, or git-recommit itself) if you can; only if

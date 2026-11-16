@@ -3,8 +3,8 @@
 What's true of git-recommit alone. `AGENTS.md` has the rules it shares with
 every project made from python-template; where the two disagree, this file
 wins. Keep this file current when the shape of the code or a rule here
-changes. `ISSUES.md` lists known issues, most important first, and
-`ROADMAP.md` planned upgrades and the options for them.
+changes. `docs/issues.md` lists known issues, most important first, and
+`docs/roadmap.md` planned upgrades and the options for them.
 
 ## What it does
 
@@ -98,7 +98,7 @@ These were the user's choices for v0; ask before changing them.
   keeps its message and author, takes the changes git blame says it made, and
   gets edits where that alone wouldn't reproduce it. `C` clears the plan, `O`
   restores it. Commits the user creates are authored by them. Ideas for
-  authorship beyond that are in `ROADMAP.md`.
+  authorship beyond that are in `docs/roadmap.md`.
 - `ctrl+z` suspends; on resuming (and on `R`), the diff is reloaded from the
   working tree and HEAD, and assignments carry over by matching changes on
   `diff.change_keys` (path, kind, text, which occurrence), since ids change.

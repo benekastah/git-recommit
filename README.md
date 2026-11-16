@@ -194,7 +194,9 @@ Needs Python 3.11 or later and git 2.43 or later.
 pipx install git+https://github.com/benekastah/git-recommit
 ```
 
-git runs `git-recommit` on your `PATH` as `git recommit`.
+git runs `git-recommit` on your `PATH` as `git recommit`. It runs the first
+`git` on your `PATH` in turn (as `git recommit`, that's the git that ran it:
+git puts its exec-path first), or the one `GIT_RECOMMIT_GIT` names, if set.
 
 ## Development
 
@@ -207,4 +209,6 @@ staged Python files, and the pre-push hook runs the checks).
 Run every check (shellcheck, Ruff's formatter and linter, mypy in strict mode,
 then the tests) with `./check.sh`; arguments are passed to pytest. `./lint.sh`
 runs every check but the tests, with the tools `./check.sh` (or
-`./dev-venv.sh`) installed in `.venv`.
+`./dev-venv.sh`) installed in `.venv`. The tests run git itself (git-core's,
+from `git --exec-path`), not a wrapper on your `PATH`, and set
+`GIT_RECOMMIT_GIT` to it.

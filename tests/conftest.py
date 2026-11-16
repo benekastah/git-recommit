@@ -1,11 +1,16 @@
+import os
 import pathlib
 import shutil
 
 import pytest
 
-from tests.helpers import Repo
+from tests.helpers import GIT, Repo
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+# Before git recommit (in the tests' process, or one they start) first runs
+# git, which finds it then.
+os.environ["GIT_RECOMMIT_GIT"] = GIT
 
 
 def isolate(monkeypatch: pytest.MonkeyPatch, directory: pathlib.Path) -> None:

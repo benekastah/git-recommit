@@ -137,6 +137,9 @@ git-recommit should run on all three (CI runs the tests on each).
 - Use `os.path` or `pathlib` for paths. Run git through `GitClient`, with
   arguments as a list, never through a shell. (The editor and the validate
   command are the user's shell commands, so those do run through one.)
+  `GitClient` starts git as `git.git_executable` names it, by its full path,
+  with `git.CLOSE_FDS`, which makes it faster on macOS; the tests' own git
+  calls (`Repo.git`) do the same, with the real git (`helpers.GIT`).
 - Starting a process is slow, on Windows most of all, so read from git with
   as few as you can: names and objects through `GitClient`'s one `cat-file`
   process (`commit_sha`, `head`, `tree`, `read_object`), and one git command

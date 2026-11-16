@@ -1,9 +1,13 @@
+import os
 import pathlib
+import sys
+from collections.abc import Iterator
 
 import pytest
 
 from git_recommit.errors import RecommitError
-from tests.helpers import Repo
+from git_recommit.git import git_executable
+from tests.helpers import GIT, Repo
 
 
 def test_commit_sha_resolves_names_as_git_does(repo: Repo) -> None:
@@ -101,3 +105,56 @@ def test_reading_an_object_of_another_kind_is_refused(repo: Repo) -> None:
     # And objects can still be read after.
     assert git.blob(repo.git("rev-parse", "HEAD:README")) == b"readme\n"
     assert git.read_object(commit, "commit").startswith(b"tree ")
+
+
+@pytest.fixture
+def found_again() -> Iterator[None]:
+    """git_executable finds git again, in the test and after it."""
+    git_executable.cache_clear()
+    yield
+    git_executable.cache_clear()
+
+
+@pytest.mark.usefixtures("found_again")
+def test_runs_the_git_on_path_by_its_full_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Whatever it is (e.g. a wrapper, like git-ai's), from a directory on
+    # PATH given relative to the current one; but on Windows, only a program
+    # (git.exe), as Windows runs "git", not a batch file (e.g. an npm shim).
+    (tmp_path / "shims").mkdir()
+    (tmp_path / "shims" / "git.cmd").write_bytes(b"")
+    (tmp_path / "bin").mkdir()
+    wrapper = tmp_path / "bin" / ("git.exe" if sys.platform == "win32" else "git")
+    wrapper.write_bytes(b"")
+    wrapper.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", os.pathsep.join(["shims", "bin"]))
+    monkeypatch.delenv("GIT_RECOMMIT_GIT")
+    assert os.path.normcase(git_executable()) == os.path.normcase(wrapper)
+
+
+@pytest.mark.usefixtures("found_again")
+def test_runs_git_recommit_git_if_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_RECOMMIT_GIT", "/somewhere/git")
+    assert git_executable() == "/somewhere/git"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the wrapper is a shell script")
+def test_every_git_process_is_git_recommit_git(repo: Repo, tmp_path: pathlib.Path) -> None:
+    repo.commit("second", f="f\n")
+    log = tmp_path / "log"
+    wrapper = tmp_path / "git"
+    wrapper.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\nexec "{GIT}" "$@"\n')
+    wrapper.chmod(0o755)
+    hook = repo.path / ".git" / "hooks" / "commit-msg"
+    hook.write_text('#!/bin/sh\necho "Change-Id: I1" >> "$1"\n')
+    hook.chmod(0o755)
+    # With no git on PATH, so any that doesn't go through the wrapper fails.
+    (tmp_path / "empty").mkdir()
+    env = {"GIT_RECOMMIT_GIT": str(wrapper), "PATH": str(tmp_path / "empty")}
+    for args in (["start", "HEAD~"], ["commit", "reword", "1", "reworded"], ["write"]):
+        repo.recommit(*args, env=env)
+    commands = log.read_text()
+    # The cat-file process and the commit-msg hook's too.
+    assert "cat-file --batch-command" in commands
+    assert "hook run --ignore-missing commit-msg" in commands
+    assert repo.git("log", "-1", "--format=%B") == "reworded\nChange-Id: I1"

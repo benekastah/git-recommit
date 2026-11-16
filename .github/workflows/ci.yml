@@ -8,6 +8,13 @@ on:
 permissions:
   contents: read
 
+# A pull request's new push cancels its older run, which would hold up the
+# account's few runners for a commit no branch has any more; each push to main
+# keeps its run (its own group).
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   # Linting and type checking give the same answer everywhere (mypy checks for
   # Windows too, and for the oldest Python pyproject.toml allows), so they run

@@ -53,10 +53,10 @@ class GitClient:
         # once.
         self._cat_file: subprocess.Popen[bytes] | None = None
         self._cat_file_lock = threading.Lock()
-        # Where git keeps each file asked about (see git_paths), and the way
-        # up to the top of the worktree, which don't change.
+        # Where git keeps each file asked about (see git_paths), and the path
+        # from the top of the worktree down to directory, which don't change.
         self._git_paths: dict[str, str] = {}
-        self._cdup: str | None = None
+        self._prefix: str | None = None
 
     def __del__(self) -> None:
         self.close()
@@ -139,12 +139,19 @@ class GitClient:
             self._git_paths.update(zip(new, map(os.fsdecode, out.splitlines()), strict=True))
         return [self._git_paths[name] for name in names]
 
+    def prefix(self) -> str:
+        """The path from the top of the worktree down to directory, ending in
+        a slash (or empty, at the top or outside the worktree, where git takes
+        paths from the top), to put before a path from directory."""
+        if self._prefix is None:
+            self._prefix = self.run("rev-parse", "--show-prefix")
+        return self._prefix
+
     def cdup(self) -> str:
-        """The path from directory up to the top of the worktree, ending in a
-        slash (or empty, at the top), to put before a path from the top."""
-        if self._cdup is None:
-            self._cdup = self.run("rev-parse", "--show-cdup")
-        return self._cdup
+        """The path from directory up to the top of the worktree (as prefix,
+        the other way), to put before a path from the top."""
+        # Not --show-cdup, which outside the worktree gives its path.
+        return "../" * self.prefix().count("/")
 
     def commit_sha(self, rev: str) -> str | None:
         """The commit rev names, or None if it doesn't name one."""

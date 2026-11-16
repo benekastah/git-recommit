@@ -537,10 +537,14 @@ def test_a_submodule_the_config_ignores_has_no_uncommitted_changes(repo: Repo) -
     assert not repo.session("HEAD~").uncommitted
 
 
-def test_untracked_files_in_a_submodule_are_uncommitted_changes_only_when_included(repo: Repo) -> None:
+@pytest.mark.parametrize("dirty", ["untracked", "s"], ids=["untracked", "tracked"])
+def test_changes_in_a_submodule_it_hasnt_committed_are_no_uncommitted_changes(repo: Repo, dirty: str) -> None:
+    # An untracked file, or a change to a tracked one: the superproject can't
+    # commit either (even with untracked files included), only a new commit.
     sub = with_submodule(repo)
-    sub.write("untracked", "u\n")
+    sub.write(dirty, "dirty\n")
     assert not repo.session("HEAD~").uncommitted
+    assert not Session.load(repo.client, "HEAD~", include_untracked=True).uncommitted
 
 
 def test_including_untracked_files(repo: Repo) -> None:

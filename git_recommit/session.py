@@ -81,7 +81,7 @@ class Session:
     def load(cls, git: GitClient, spec: str | None, include_untracked: bool = False) -> "Session":
         """The recommit of the commits spec names, or with None, every commit
         up to HEAD (as `git rebase --root`)."""
-        status = worktree_status(git, include_untracked)
+        status = worktree_status(git)
         check_nothing_in_progress(git, status)
         base, end = resolve_root(git) if spec is None else resolve_range(git, spec)
         head = git.head()
@@ -121,7 +121,7 @@ class Session:
         working tree or HEAD's branch since, and keep the assignments of the
         changes that are still there. Return whether anything changed."""
         try:
-            status = worktree_status(self.git, self.include_untracked)
+            status = worktree_status(self.git)
             check_nothing_in_progress(self.git, status)
             if self.end != self.head:
                 # A range below HEAD stays as it is, but for what comes after.

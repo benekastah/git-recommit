@@ -1,10 +1,11 @@
 import pathlib
+import sys
 
 import pytest
 
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
-from tests.helpers import Repo
+from tests.helpers import GIT, Repo
 
 
 def test_commit_sha_resolves_names_as_git_does(repo: Repo) -> None:
@@ -26,6 +27,25 @@ def test_commit_sha_is_none_for_what_isnt_a_commit(repo: Repo) -> None:
         assert git.commit_sha(rev) is None, rev
     # And names are still resolved after.
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
+
+
+def test_names_git_cant_resolve_are_none_quietly(repo: Repo, capfd: pytest.CaptureFixture[str]) -> None:
+    git = repo.client
+    tree = repo.git("rev-parse", "HEAD^{tree}")
+    # No upstream, past the end of the reflog, a tree, as a commit. git
+    # cat-file exits at @{u}, so HEAD@{999} is the first name the next one
+    # gets: it exits there too, and the rev-parse that checks why fails.
+    for rev in ("@{u}", "HEAD@{999}", tree):
+        assert git.commit_sha(rev) is None, rev
+    assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
+    assert capfd.readouterr().err == ""
+
+
+def test_a_failing_git_command_is_a_recommit_error(repo: Repo) -> None:
+    git = repo.client
+    for run in (git.run, git.run_bytes):
+        with pytest.raises(RecommitError, match=r"^git rev-parse --verify nope failed:\nfatal: "):
+            run("rev-parse", "--verify", "nope")
 
 
 def test_resolve_commit_says_why_a_name_isnt_one(repo: Repo) -> None:
@@ -68,3 +88,25 @@ def test_reading_an_object_of_another_kind_is_refused(repo: Repo) -> None:
 def test_runs_git_recommit_git_if_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_RECOMMIT_GIT", "/somewhere/git")
     assert GitClient().program == "/somewhere/git"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the wrapper is a shell script")
+def test_every_git_process_is_git_recommit_git(repo: Repo, tmp_path: pathlib.Path) -> None:
+    repo.commit("second", f="f\n")
+    log = tmp_path / "log"
+    wrapper = tmp_path / "git"
+    wrapper.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\nexec "{GIT}" "$@"\n')
+    wrapper.chmod(0o755)
+    hook = repo.path / ".git" / "hooks" / "commit-msg"
+    hook.write_text('#!/bin/sh\necho "Change-Id: I1" >> "$1"\n')
+    hook.chmod(0o755)
+    # With no git on PATH, so any that doesn't go through the wrapper fails.
+    (tmp_path / "empty").mkdir()
+    env = {"GIT_RECOMMIT_GIT": str(wrapper), "PATH": str(tmp_path / "empty")}
+    for args in (["start", "HEAD~"], ["commit", "reword", "1", "reworded"], ["write"]):
+        repo.recommit(*args, env=env)
+    commands = log.read_text()
+    # The cat-file process and the commit-msg hook's too.
+    assert "cat-file --batch-command" in commands
+    assert "hook run --ignore-missing commit-msg" in commands
+    assert repo.git("log", "-1", "--format=%B") == "reworded\nChange-Id: I1"

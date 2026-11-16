@@ -13,7 +13,10 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Repo:
     recommit run as a separate process, see an isolated git config and
     identity for the rest of the test."""
     global_config = tmp_path / "gitconfig"
-    global_config.write_text("[init]\n\tdefaultBranch = main\n")
+    # Without auto-maintenance, which would otherwise start a `git maintenance
+    # run --auto` after each commit, fetch, merge and push: hundreds of
+    # processes over the tests, none of which they need.
+    global_config.write_text("[init]\n\tdefaultBranch = main\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n")
     for name, value in {
         "GIT_CONFIG_GLOBAL": str(global_config),
         "GIT_CONFIG_NOSYSTEM": "1",

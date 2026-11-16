@@ -45,6 +45,8 @@ jobs:
       - name: Lint
         run: python dev.py static
       - name: Type-check as if on Windows
+        # Even if Lint failed, so one run reports both.
+        if: ${{ !cancelled() }}
         run: python dev.py types-windows
 
   test:

@@ -505,6 +505,33 @@ def test_unassigned_new_files_that_look_like_patterns(repo: Repo) -> None:
     assert sorted(repo.git("status", "--porcelain").splitlines()) == ["A b[1].txt"]
 
 
+def with_submodule(repo: Repo) -> Repo:
+    """A submodule at sub (its own repository, checked out), added in a
+    commit, then a commit after."""
+    sub = Repo(repo.path / "sub")
+    sub.path.mkdir()
+    sub.git("init", "--quiet")
+    sub.commit("in sub", s="s\n")
+    repo.write(".gitmodules", '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n')
+    repo.commit("add sub")
+    repo.commit("after", f="f\n")
+    return sub
+
+
+def test_a_submodule_the_config_ignores_has_no_uncommitted_changes(repo: Repo) -> None:
+    sub = with_submodule(repo)
+    sub.commit("moved", s="s2\n")
+    assert repo.session("HEAD~").uncommitted
+    repo.git("config", "submodule.sub.ignore", "all")
+    assert not repo.session("HEAD~").uncommitted
+
+
+def test_untracked_files_in_a_submodule_are_uncommitted_changes_only_when_included(repo: Repo) -> None:
+    sub = with_submodule(repo)
+    sub.write("untracked", "u\n")
+    assert not repo.session("HEAD~").uncommitted
+
+
 def test_including_untracked_files(repo: Repo) -> None:
     feature_repo(repo)
     repo.write(".gitignore", "*.log\n")

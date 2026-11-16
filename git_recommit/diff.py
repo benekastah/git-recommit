@@ -81,14 +81,15 @@ class FileDiff:
     def describe_meta(self) -> str:
         """What the file's change to itself (its meta change) is."""
         renamed = [f"renamed from {self.old_path}"] if self.old_path is not None else []
+        both = self.old_mode is not None and self.new_mode is not None
+        mode = [f"mode {self.old_mode} -> {self.new_mode}"] if both and self.old_mode != self.new_mode else []
         if self.binary:
-            return ", ".join(["binary", *renamed])
+            return ", ".join(["binary", *renamed, *mode])
         if self.whole:
             modes = f"{self.old_mode or 'none'} -> {self.new_mode or 'none'}"
             return ", ".join([*renamed, modes] if not renamed or self.old_mode != self.new_mode else renamed)
         if self.status in ("A", "D"):
             return "added, empty" if self.status == "A" else "deleted, empty"
-        mode = [f"mode {self.old_mode} -> {self.new_mode}"] if self.old_mode != self.new_mode else []
         return ", ".join([*renamed, *mode])
 
     def path_with(self, selected: Container[int]) -> str:
@@ -200,16 +201,45 @@ def _patch_parts(patch: bytes) -> Iterator[list[bytes]]:
         yield part
 
 
-def _raw_entries(raw: bytes) -> Iterator[tuple[str, str, str, str, str, str, str | None]]:
-    """(old mode, new mode, old blob, new blob, status, path, old path) for
-    each file in `git diff-tree --raw -z` output; the old path is only for a
-    rename."""
-    fields = iter(raw.split(b"\0")[:-1])
-    for meta in fields:
-        old_mode, new_mode, old_blob, new_blob, status = meta.decode().lstrip(":").split(" ")
-        old_path = next(fields).decode(errors="surrogateescape") if status[:1] == "R" else None
-        path = next(fields).decode(errors="surrogateescape")
-        yield old_mode, new_mode, old_blob, new_blob, status[:1], path, old_path
+RawEntry = tuple[str, str, str, str, str, str, str | None]
+
+
+def _split_diff(out: bytes) -> tuple[list[RawEntry], set[str], bytes]:
+    """`git diff-tree --raw --numstat -p -z` output, as: (old mode, new mode,
+    old blob, new blob, status, path, old path) for each file, where the old
+    path is only for a rename; the files git counts as binary (by their
+    content, or their attributes), by new path; and the patch."""
+    pos = 0
+
+    def field() -> bytes:
+        nonlocal pos
+        end = out.index(b"\0", pos)
+        value, pos = out[pos:end], end + 1
+        return value
+
+    entries: list[RawEntry] = []
+    # ":<old mode> <new mode> <old blob> <new blob> <status>", then the path
+    # (for a rename, the old path, then the new one).
+    while out.startswith(b":", pos):
+        old_mode, new_mode, old_blob, new_blob, status = field().decode().lstrip(":").split(" ")
+        old_path = field().decode(errors="surrogateescape") if status[:1] == "R" else None
+        path = field().decode(errors="surrogateescape")
+        entries.append((old_mode, new_mode, old_blob, new_blob, status[:1], path, old_path))
+    # A file's added and deleted lines (- and - if it's binary), and its path
+    # (for a rename, empty, then its old path and its new one).
+    binary = set()
+    for _ in entries:
+        added, deleted, numstat_path = field().split(b"\t", 2)
+        if not numstat_path:
+            field()
+            numstat_path = field()
+        if (added, deleted) == (b"-", b"-"):
+            binary.add(numstat_path.decode(errors="surrogateescape"))
+    # Then an empty field, and the patch, which can have NULs in it (a file
+    # with them that its attributes say is text).
+    if entries and field():
+        raise RecommitError("git diff-tree's output doesn't end its file list where expected")
+    return entries, binary, out[pos:]
 
 
 ChangeKey = tuple[str, str, bytes, int]
@@ -238,45 +268,38 @@ def renames(git: GitClient) -> str:
     """How to have git diff-tree find renames as git diff does: unless
     diff.renames is off. (Copies, which diff.renames can ask for too, are
     left as added files, since what they copy stays where it is.)"""
-    if git.run("config", "diff.renames", check=False).lower() in ("copies", "copy"):
-        return "-M"
-    return "--no-renames" if git.run("config", "--type=bool", "diff.renames", check=False) == "false" else "-M"
-
-
-def _binary_paths(git: GitClient, common: tuple[str, ...]) -> set[str]:
-    """The files git counts as binary in the diff (by their content, or
-    their attributes), as given by --numstat, as a file's new path."""
-    fields = iter(git.run_bytes(*common, "--numstat", "-z").split(b"\0")[:-1])
-    binary = set()
-    for stat in fields:
-        added, deleted, path = stat.split(b"\t", 2)
-        if not path:
-            # A rename: its old path, then its new one.
-            next(fields)
-            path = next(fields)
-        if (added, deleted) == (b"-", b"-"):
-            binary.add(path.decode(errors="surrogateescape"))
-    return binary
+    # As a bool, as true or false; or as it is (e.g. copies).
+    return "--no-renames" if git.run("config", "--type=bool-or-str", "diff.renames", check=False) == "false" else "-M"
 
 
 def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
     """The changes from base to tip, file by file."""
-    common = ("diff-tree", "-r", renames(git), "--no-abbrev", base, tip)
-    raw = git.run_bytes(*common, "--raw", "-z")
-    patch = git.run_bytes(*common, "-p", "-U3", "--full-index")
+    out = git.run_bytes(
+        "diff-tree",
+        # Even a submodule submodule.<name>.ignore leaves out, as even
+        # plumbing does.
+        "--ignore-submodules=none",
+        "-r",
+        renames(git),
+        "--no-abbrev",
+        "--raw",
+        "--numstat",
+        "-p",
+        "-U3",
+        "--full-index",
+        "-z",
+        base,
+        tip,
+    )
+    entries, binary_paths, patch = _split_diff(out)
     # Both list the files in the same order, but the patch shows a change of
     # kind (status T, e.g. a file to a symlink) as two parts: a deletion, then
     # an addition. A file of either kind changes as a whole, so its parts
     # don't matter.
-    entries = list(_raw_entries(raw))
     parts = list(_patch_parts(patch))
     if len(parts) != len(entries) + sum(1 for entry in entries if entry[4] == "T"):
         raise RecommitError(f"git diff-tree listed {len(entries)} files, but its patch doesn't match")
     remaining = iter(parts)
-    # A rename that changes nothing else has no patch to say whether the
-    # file is binary.
-    pure_renames = any(entry[4] == "R" and entry[2] == entry[3] for entry in entries)
-    binary_paths = _binary_paths(git, common) if pure_renames else set()
     ids = count()
     files = []
     for old_mode, new_mode, old_blob, new_blob, status, path, old_path in entries:
@@ -290,8 +313,7 @@ def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
             new_mode=None if new_mode == NO_MODE else new_mode,
             old_blob=None if status == "A" else old_blob,
             new_blob=None if status == "D" else new_blob,
-            binary=path in binary_paths
-            or any(line.startswith((b"Binary files ", b"GIT binary patch")) for line in part),
+            binary=path in binary_paths,
             old_path=old_path,
         )
         if diff.whole:

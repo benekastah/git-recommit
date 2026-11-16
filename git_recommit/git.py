@@ -48,10 +48,15 @@ class GitClient:
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         self.directory = os.fspath(directory)
-        # `git cat-file --batch`, started the first time a blob is read, and
-        # what keeps threads from talking to it at once.
+        # `git cat-file --batch-command`, started the first time an object is
+        # read or a name resolved, and what keeps threads from talking to it at
+        # once.
         self._cat_file: subprocess.Popen[bytes] | None = None
         self._cat_file_lock = threading.Lock()
+        # Where git keeps each file asked about (see git_paths), and the way
+        # up to the top of the worktree, which don't change.
+        self._git_paths: dict[str, str] = {}
+        self._cdup: str | None = None
 
     def __del__(self) -> None:
         self.close()
@@ -60,7 +65,12 @@ class GitClient:
         """Stop the cat-file process, if one was started."""
         if self._cat_file is not None:
             if self._cat_file.stdin is not None:
-                self._cat_file.stdin.close()
+                try:
+                    self._cat_file.stdin.close()
+                except OSError:
+                    # It had stopped already (on Windows, maybe not as a
+                    # BrokenPipeError).
+                    pass
             self._cat_file.wait()
             self._cat_file = None
 
@@ -122,45 +132,132 @@ class GitClient:
     def git_paths(self, *names: str) -> list[str]:
         """Where each of names is in the git directory (as `git rev-parse
         --git-path` says), as paths in the filesystem: so in its encoding,
-        not as text."""
-        args = [a for name in names for a in ("--git-path", name)]
-        out = self.run_bytes("rev-parse", "--path-format=absolute", *args)
-        return [os.fsdecode(path) for path in out.splitlines()]
+        not as text. Each is only asked of git once."""
+        if new := [name for name in dict.fromkeys(names) if name not in self._git_paths]:
+            args = [a for name in new for a in ("--git-path", name)]
+            out = self.run_bytes("rev-parse", "--path-format=absolute", *args)
+            self._git_paths.update(zip(new, map(os.fsdecode, out.splitlines()), strict=True))
+        return [self._git_paths[name] for name in names]
+
+    def cdup(self) -> str:
+        """The path from directory up to the top of the worktree, ending in a
+        slash (or empty, at the top), to put before a path from the top."""
+        if self._cdup is None:
+            self._cdup = self.run("rev-parse", "--show-cdup")
+        return self._cdup
 
     def commit_sha(self, rev: str) -> str | None:
         """The commit rev names, or None if it doesn't name one."""
-        return (
-            self.run("rev-parse", "--verify", "--quiet", "--end-of-options", f"{rev}^{{commit}}", check=False) or None
+        try:
+            return self._resolve(f"{rev}^{{commit}}")
+        except RecommitError:
+            # git cat-file exits for some names (e.g. @{u} without an
+            # upstream), rather than saying they name nothing.
+            return None
+
+    def resolve_commit(self, rev: str) -> str:
+        """The commit rev names (e.g. one the user typed), or if it doesn't
+        name one, an error that says why, as git does."""
+        if (sha := self.commit_sha(rev)) is not None:
+            return sha
+        # Only now, for the reason, which git cat-file doesn't give.
+        result = subprocess.run(
+            self._command("rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}"),
+            capture_output=True,
+            env=self._env(),
+            check=False,
         )
+        # But for what git says for any name that isn't a commit.
+        lines = result.stderr.decode(errors="replace").splitlines()
+        reason = "\n".join(line for line in lines if line != "fatal: Needed a single revision")
+        raise RecommitError(f"{rev} isn't a commit" + (f":\n{reason}" if reason else ""))
+
+    def head(self) -> str | None:
+        """The commit HEAD is at, or None if there's none yet."""
+        return self.commit_sha("HEAD")
+
+    def tree(self, sha: str) -> str:
+        """The tree of the commit with id sha, without starting a process (or
+        itself, if it's a tree)."""
+        tree = self._resolve(f"{sha}^{{tree}}")
+        if tree is None:
+            raise RecommitError(f"{sha} isn't a commit or tree")
+        return tree
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         return self.ok("merge-base", "--is-ancestor", ancestor, descendant)
 
     def blob(self, sha: str) -> bytes:
-        """A blob's content, read with one `git cat-file --batch` process kept
-        for all of them, rather than a process each."""
+        """A blob's content."""
+        return self.read_object(sha, "blob")
+
+    def read_object(self, sha: str, kind: str) -> bytes:
+        """An object's content (as `git cat-file <kind> <sha>`, e.g. a
+        commit's, its headers and message, exactly as they are)."""
         if not OBJECT_ID.fullmatch(sha):
             # Anything else (e.g. a line ending) would put the process out of
             # step with what's read back.
             raise RecommitError(f"{sha!r} isn't an object id")
         with self._cat_file_lock:
-            return self._read_blob(sha)
+            header = self._cat_file_command(b"contents " + sha.encode())
+            if len(header) != 3:
+                raise RecommitError(f"{sha} isn't a {kind}")
+            assert self._cat_file is not None and self._cat_file.stdout is not None
+            # Read even if it's another kind, so the process stays in step.
+            content = self._cat_file.stdout.read(int(header[2]))
+            self._cat_file.stdout.read(1)
+        if header[1] != kind.encode():
+            raise RecommitError(f"{sha} isn't a {kind}")
+        return content
 
-    def _read_blob(self, sha: str) -> bytes:
+    def _resolve(self, name: str) -> str | None:
+        """The object name names (as rev-parse --verify would find it), or
+        None if it names none, without starting a process."""
+        if not name or "\n" in name:
+            # A line ending would put the process out of step.
+            return None
+        with self._cat_file_lock:
+            header = self._cat_file_command(b"info " + encode(name))
+        # "<name> missing" can split in three too, if name has a space.
+        found = len(header) == 3 and OBJECT_ID.fullmatch(header[0].decode()) and header[2].isdigit()
+        return header[0].decode() if found else None
+
+    def _cat_file_command(self, command: bytes) -> list[bytes]:
+        """Send command to one `git cat-file --batch-command` process, kept for
+        reading every object and resolving every name, rather than a process
+        each; and return the reply's first line: "<sha> <type> <size>" (for
+        contents, then the content and a newline), or "<name> missing" (or
+        ambiguous), split. It sees refs and objects as they are when asked,
+        even when other processes have changed them since it started."""
+        if self._cat_file is not None and self._cat_file.poll() is not None:
+            # It stopped since the last command (e.g. killed while git
+            # recommit was suspended): start another, rather than take this
+            # name for one that names nothing.
+            self.close()
         if self._cat_file is None:
             self._cat_file = subprocess.Popen(
-                self._command("cat-file", "--batch"), stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=self._env()
+                self._command("cat-file", "--batch-command"),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                # Which has warnings even for names it resolves (e.g. a ref
+                # name that's both a branch and a tag), as rev-parse --quiet
+                # doesn't; errors are for resolve_commit to say.
+                stderr=subprocess.DEVNULL,
+                env=self._env(),
             )
         assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
-        self._cat_file.stdin.write(sha.encode() + b"\n")
-        self._cat_file.stdin.flush()
-        # "<sha> <type> <size>", then the content and a newline; or "<sha> missing".
-        header = self._cat_file.stdout.readline().split()
-        if len(header) != 3 or header[1] != b"blob":
-            raise RecommitError(f"{sha} isn't a blob")
-        content = self._cat_file.stdout.read(int(header[2]))
-        self._cat_file.stdout.read(1)
-        return content
+        try:
+            self._cat_file.stdin.write(command + b"\n")
+            self._cat_file.stdin.flush()
+            reply = self._cat_file.stdout.readline()
+        except OSError:
+            # It had stopped (see close).
+            reply = b""
+        if not reply:
+            # It stopped; the next command starts another.
+            self.close()
+            raise RecommitError(f"git cat-file stopped at {command.decode(errors='replace')!r}")
+        return reply.split()
 
     def clean(self, path: str, content: bytes) -> bytes:
         """content as `git add` would commit it at path: through the clean

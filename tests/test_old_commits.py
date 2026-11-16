@@ -6,6 +6,7 @@ import pytest
 
 from git_recommit import oldcommits
 from git_recommit.errors import RecommitError
+from git_recommit.git import GitClient
 from git_recommit.session import Session
 from tests.helpers import Repo
 
@@ -43,6 +44,82 @@ def test_starts_with_the_old_commits_and_their_messages(repo: Repo) -> None:
 def test_rebuilding_them_unchanged_makes_the_same_trees(repo: Repo) -> None:
     old = history(repo)
     session = restored(repo, "HEAD~3")
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_a_commit_that_changes_nothing_is_kept(repo: Repo) -> None:
+    old = [repo.commit("first", f="f\n"), repo.commit("empty"), repo.commit("third", g="g\n")]
+    session = restored(repo, "HEAD~3")
+    assert [c.message for c in session.plan.commits] == ["first", "empty", "third"]
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_rebuilding_them_unchanged_in_a_sha256_repository(repo: Repo) -> None:
+    sha256 = Repo(repo.path.parent / "sha256")
+    sha256.path.mkdir()
+    sha256.git("init", "--quiet", "--object-format=sha256")
+    old = history(sha256)
+    session = restored(sha256, "HEAD~3")
+    assert [len(sha) for sha in old] == [64] * 3
+    assert trees(sha256, session.build()) == trees(sha256, old)
+    assert [set(commit.edits) for commit in session.plan.commits] == [{"f"}, {"f"}, set()]
+
+
+@pytest.mark.parametrize("ignored_by", ["diff.ignoreSubmodules", "submodule.sub.ignore", ".gitmodules"])
+def test_a_submodule_is_reproduced_whatever_config_ignores_it(repo: Repo, ignored_by: str) -> None:
+    ignore = "\tignore = all\n" if ignored_by == ".gitmodules" else ""
+    repo.commit("gitmodules", **{".gitmodules": f'[submodule "sub"]\n\tpath = sub\n{ignore}'})
+    if ignored_by != ".gitmodules":
+        repo.git("config", ignored_by, "all")
+    old = [repo.commit("other", f="f\n")]
+    # As a submodule that isn't checked out is: an empty directory.
+    (repo.path / "sub").mkdir()
+    repo.git("update-index", "--add", "--cacheinfo", f"160000,{old[0]},sub")
+    repo.git("commit", "--quiet", "-m", "add sub")
+    old.append(repo.git("rev-parse", "HEAD"))
+    session = restored(repo, "HEAD~2")
+    assert [diff.path for diff in session.files] == ["f", "sub"]
+    assert session.unassigned() == []
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_blame_takes_every_commit_whatever_config_ignores(repo: Repo) -> None:
+    repo.commit("base", f=LINES)
+    first = repo.commit("first", f=LINES.replace("line 5\n", "five\n"))
+    repo.commit("second", f=LINES.replace("line 5\n", "five\n").replace("line 15\n", "fifteen\n"))
+    (repo.path / "ignored").write_text(first + "\n")
+    repo.git("config", "blame.ignoreRevsFile", str(repo.path / "ignored"))
+    session = restored(repo, "HEAD~2")
+    # Each takes the line it changed, so neither needs an edit.
+    assert [commit.edits for commit in session.plan.commits] == [{}, {}]
+
+
+def test_restoring_from_a_subdirectory_with_a_relative_git_dir(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo.commit("base", **{"dir/f": LINES})
+    old = [
+        repo.commit("first", **{"dir/f": LINES.replace("line 5\n", "five\n")}),
+        repo.commit("second", **{"dir/f": LINES.replace("line 5\n", "FIVE\n")}),
+    ]
+    with monkeypatch.context() as env:
+        env.setenv("GIT_DIR", "../.git")
+        env.setenv("GIT_WORK_TREE", "..")
+        session = Session.load(GitClient(repo.path / "dir"), "HEAD~2")
+        session.restore_old_commits()
+        new = session.build()
+    assert trees(repo, new) == trees(repo, old)
+
+
+@pytest.mark.parametrize("relative", [False, True])
+def test_restoring_from_a_subdirectory(repo: Repo, relative: bool) -> None:
+    repo.commit("base", **{"dir/f": LINES, "top": "top\n"})
+    old = [
+        repo.commit("first", **{"dir/f": LINES.replace("line 5\n", "five\n"), "top": "top\nmore\n"}),
+        repo.commit("second", **{"dir/f": LINES.replace("line 5\n", "FIVE\n")}),
+    ]
+    repo.git("config", "diff.relative", str(relative).lower())
+    session = Session.load(GitClient(repo.path / "dir"), "HEAD~2")
+    session.restore_old_commits()
+    assert session.unassigned() == []
     assert trees(repo, session.build()) == trees(repo, old)
 
 

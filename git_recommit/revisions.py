@@ -101,8 +101,9 @@ class WorktreeStatus:
 def worktree_status(git: GitClient) -> WorktreeStatus:
     """The working tree's status, as worktree_commit takes it: as `git status`
     has it (with the user's config, e.g. submodule.<name>.ignore), but for a
-    submodule with only untracked files in it, which has no change to commit
-    (even with untracked files included: they're the submodule's)."""
+    submodule whose only changes are inside it (untracked files, or tracked
+    ones changed), which has nothing to commit until it commits them (even
+    with untracked files included: they're the submodule's)."""
     # --no-optional-locks: don't refresh (and so write) the user's index.
     out = git.run_bytes(
         "--no-optional-locks", "status", "--porcelain=v2", "-z", "--no-renames", "--untracked-files=all"
@@ -110,12 +111,12 @@ def worktree_status(git: GitClient) -> WorktreeStatus:
     changed = unmerged = False
     untracked = []
     # "? <path>" for an untracked file; for a changed one, "1 <XY> <submodule>
-    # ..." (or "u ..." unmerged), where <submodule> is S..U for a submodule
-    # with only untracked files in it. Paths are from the top.
+    # ..." (or "u ..." unmerged), where <submodule> is S<c><m><u> for a
+    # submodule: "." for c if it hasn't a new commit. Paths are from the top.
     for entry in out.split(b"\0"):
         if entry.startswith(b"? "):
             untracked.append(entry[2:].decode(errors="surrogateescape"))
-        elif entry.startswith(b"1 .M S..U "):
+        elif entry.startswith(b"1 .M S."):
             continue
         elif entry:
             changed = True

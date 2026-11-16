@@ -200,28 +200,42 @@ git puts its exec-path first), or the one `GIT_RECOMMIT_GIT` names, if set.
 
 ## Development
 
-Clone the repository and run `python3 dev.py install` (on Windows,
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), clone
+the repository, then run `python3 dev.py install` (on Windows,
 `py dev.py install`). It sets up the clone's `.venv` with git-recommit
-(editable) and the dev dependencies, with [uv](https://docs.astral.sh/uv/)
-from `uv.lock` if it's installed (or else venv and pip), links `git-recommit`
-into `~/.local/bin`, and makes the clone use the hooks in `git_hooks/` (the
+(editable) and the dev tools, from `uv.lock`, links `git-recommit` into
+`~/.local/bin`, and makes the clone use the hooks in `git_hooks/`: the
 pre-commit hook formats and lint-fixes staged Python files, and the pre-push
-hook runs the checks before a push to `main`).
+hook runs the static checks before every push. CI runs the tests.
 
-Run every check (Ruff's formatter and linter, basedpyright in strict mode,
-then the tests) with `python3 dev.py check`; arguments are passed to pytest.
-`python3 dev.py` lists the rest: `static` (every check but the tests),
-`tests`, `coverage`, and `types-windows` (basedpyright as if on Windows,
-which CI runs too). The tests run git itself (git-core's, from
-`git --exec-path`), not a wrapper on your `PATH`, and set `GIT_RECOMMIT_GIT`
-to it.
+```sh
+python3 dev.py check          # every check: static, then tests
+python3 dev.py static         # Ruff's formatter and linter, and basedpyright in strict mode
+python3 dev.py tests          # the tests, in parallel (arguments go to pytest)
+python3 dev.py coverage       # the tests under coverage.py, and the lines they don't run
+python3 dev.py types-windows  # basedpyright as if on Windows (dev_project.py)
+```
 
-With uv, `dev.py` installs the dev dependencies at the versions locked in
-`uv.lock`, and updates it when you change the dependencies in
-`pyproject.toml`; commit both. CI installs from `uv.lock` and fails if it's
-out of date. Dependabot proposes new versions weekly.
+The tests run git itself (git-core's, from `git --exec-path`), not a wrapper
+on your `PATH`, and set `GIT_RECOMMIT_GIT` to it.
+
+`dev.py` installs the dev dependencies at the versions locked in `uv.lock`,
+and updates it when you change the dependencies in `pyproject.toml`; commit
+both. Dependabot proposes new versions weekly.
+
+CI (`.github/workflows/ci.yml`) runs the static checks once, on Linux, the
+tests on Linux, macOS and Windows with the oldest and newest Python
+supported, and a coverage report, along with this project's own jobs in
+`.github/workflows/project.yml` (the type check as if on Windows). It installs
+from `uv.lock` and fails if it's out of date.
+
+### Updating from the template
 
 The tooling comes from the [python-template](https://github.com/benekastah/python-template)
 Copier template; take in its later changes with `uvx copier update --defaults`.
-`dev.py` is the template's and an update replaces it, so this project's own
-commands go in `dev_project.py`.
+An update never changes this README, `PROJECT_AGENTS.md`, `docs/issues.md`,
+`docs/roadmap.md` or `.github/workflows/project.yml`: they're this project's
+own. `dev.py`, `AGENTS.md`, `CLAUDE.md`, `.github/workflows/ci.yml`,
+`.github/workflows/cancel.yml` and `.github/actions/setup` are the
+template's: this project's own commands go in `dev_project.py`, its rules for
+agents in `PROJECT_AGENTS.md`, and its CI jobs in `project.yml`.

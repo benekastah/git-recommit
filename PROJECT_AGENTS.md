@@ -121,7 +121,7 @@ These were the user's choices for v0; ask before changing them.
   its 100), and out of the Ruff rules this project adds (C901, PERF401, ANN).
 - basedpyright checks as if on Linux; `python3 dev.py types-windows`
   (`dev_project.py`) checks again as if on Windows, for the code only
-  Windows runs. CI runs it too.
+  Windows runs. CI runs it in `.github/workflows/project.yml`.
 
 ## Linux, macOS and Windows
 

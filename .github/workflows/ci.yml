@@ -67,7 +67,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 1  # git-recommit: 20s at most
+    timeout-minutes: 1  # git-recommit: 27s at most
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -87,7 +87,7 @@ jobs:
   tests:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    # git-recommit: by system, from at most 35s on Linux, 1m47s on macOS and 2m26s on Windows.
+    # git-recommit: by system, from at most 35s on Linux, 2m on macOS and 2m26s on Windows.
     timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 1 || 3 }}
     strategy:
       fail-fast: false

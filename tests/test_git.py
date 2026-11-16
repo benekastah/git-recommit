@@ -118,13 +118,16 @@ def found_again() -> Iterator[None]:
 @pytest.mark.usefixtures("found_again")
 def test_runs_the_git_on_path_by_its_full_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Whatever it is (e.g. a wrapper, like git-ai's), from a directory on
-    # PATH given relative to the current one.
+    # PATH given relative to the current one; but on Windows, only a program
+    # (git.exe), as Windows runs "git", not a batch file (e.g. an npm shim).
+    (tmp_path / "shims").mkdir()
+    (tmp_path / "shims" / "git.cmd").write_bytes(b"")
     (tmp_path / "bin").mkdir()
     wrapper = tmp_path / "bin" / ("git.exe" if sys.platform == "win32" else "git")
     wrapper.write_bytes(b"")
     wrapper.chmod(0o755)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PATH", "bin")
+    monkeypatch.setenv("PATH", os.pathsep.join(["shims", "bin"]))
     monkeypatch.delenv("GIT_RECOMMIT_GIT")
     assert os.path.normcase(git_executable()) == os.path.normcase(wrapper)
 
@@ -142,8 +145,16 @@ def test_every_git_process_is_git_recommit_git(repo: Repo, tmp_path: pathlib.Pat
     wrapper = tmp_path / "git"
     wrapper.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\nexec "{GIT}" "$@"\n')
     wrapper.chmod(0o755)
-    repo.recommit("start", "HEAD~", env={"GIT_RECOMMIT_GIT": str(wrapper)})
+    hook = repo.path / ".git" / "hooks" / "commit-msg"
+    hook.write_text('#!/bin/sh\necho "Change-Id: I1" >> "$1"\n')
+    hook.chmod(0o755)
+    # With no git on PATH, so any that doesn't go through the wrapper fails.
+    (tmp_path / "empty").mkdir()
+    env = {"GIT_RECOMMIT_GIT": str(wrapper), "PATH": str(tmp_path / "empty")}
+    for args in (["start", "HEAD~"], ["commit", "reword", "1", "reworded"], ["write"]):
+        repo.recommit(*args, env=env)
     commands = log.read_text()
-    # The cat-file process too.
+    # The cat-file process and the commit-msg hook's too.
     assert "cat-file --batch-command" in commands
-    assert "diff-tree" in commands
+    assert "hook run --ignore-missing commit-msg" in commands
+    assert repo.git("log", "-1", "--format=%B") == "reworded\nChange-Id: I1"

@@ -28,19 +28,22 @@ IDENTITY = {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE"}
 # Whether git's processes are started with close_fds. Not on Linux or macOS:
 # without it, Python can start them with posix_spawn, which on macOS is about
 # a third faster, and its own file descriptors aren't inherited anyway (PEP
-# 446). On Windows, yes: without it, a process one thread starts could
-# inherit (and hold open) the pipes of one another thread is starting.
+# 446), but for a moment on macOS (see GitClient._cat_file_command). On
+# Windows, yes: without it, a process one thread starts could inherit (and
+# hold open) the pipes of one another thread is starting.
 CLOSE_FDS = sys.platform == "win32"
 
 
 @functools.cache
 def git_executable() -> str:
-    """The git that git recommit runs: $GIT_RECOMMIT_GIT, or else the git on
-    PATH, whatever it is (e.g. a wrapper), found once, by its full path
-    (which posix_spawn needs)."""
+    """The git that git recommit runs: $GIT_RECOMMIT_GIT, or else the first
+    git on PATH (which, as `git recommit` runs it, is the git that did: git
+    puts its exec-path first), found once, by its full path (which
+    posix_spawn needs). On Windows, only a program (git.exe), as Windows
+    runs "git", not a batch file (e.g. an npm shim)."""
     if configured := os.environ.get("GIT_RECOMMIT_GIT"):
         return configured
-    found = shutil.which("git")
+    found = shutil.which("git.exe" if sys.platform == "win32" else "git")
     return os.path.abspath(found) if found else "git"
 
 
@@ -289,7 +292,11 @@ class GitClient:
                 # doesn't; errors are for resolve_commit to say.
                 stderr=subprocess.DEVNULL,
                 env=self._env(),
-                close_fds=CLOSE_FDS,
+                # Even outside Windows, as it runs as long as git recommit
+                # does: macOS makes a pipe, then makes it non-inheritable, so
+                # it could otherwise keep (and so never close) the pipe of a
+                # process another thread is starting.
+                close_fds=True,
             )
         assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
         try:

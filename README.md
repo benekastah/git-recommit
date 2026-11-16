@@ -194,9 +194,10 @@ Needs Python 3.11 or later and git 2.43 or later.
 pipx install git+https://github.com/benekastah/git-recommit
 ```
 
-git runs `git-recommit` on your `PATH` as `git recommit`. It runs the `git`
-on your `PATH` in turn (whatever that is, e.g. a wrapper), or the one
-`GIT_RECOMMIT_GIT` names, if set.
+git runs `git-recommit` on your `PATH` as `git recommit`. It runs the first
+`git` on your `PATH` in turn (as `git recommit`, that's the git that ran it,
+which puts its own directory first), or the one `GIT_RECOMMIT_GIT` names, if
+set.
 
 ## Development
 

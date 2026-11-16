@@ -98,11 +98,11 @@ class WorktreeStatus:
     unmerged: bool
 
 
-def worktree_status(git: GitClient, include_untracked: bool = False) -> WorktreeStatus:
+def worktree_status(git: GitClient) -> WorktreeStatus:
     """The working tree's status, as worktree_commit takes it: as `git status`
     has it (with the user's config, e.g. submodule.<name>.ignore), but for a
-    submodule with untracked files in it, which only has changes with
-    include_untracked."""
+    submodule with only untracked files in it, which has no change to commit
+    (even with untracked files included: they're the submodule's)."""
     # --no-optional-locks: don't refresh (and so write) the user's index.
     out = git.run_bytes(
         "--no-optional-locks", "status", "--porcelain=v2", "-z", "--no-renames", "--untracked-files=all"
@@ -115,7 +115,7 @@ def worktree_status(git: GitClient, include_untracked: bool = False) -> Worktree
     for entry in out.split(b"\0"):
         if entry.startswith(b"? "):
             untracked.append(entry[2:].decode(errors="surrogateescape"))
-        elif entry.startswith(b"1 .M S..U ") and not include_untracked:
+        elif entry.startswith(b"1 .M S..U "):
             continue
         elif entry:
             changed = True

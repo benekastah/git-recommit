@@ -537,10 +537,12 @@ def test_a_submodule_the_config_ignores_has_no_uncommitted_changes(repo: Repo) -
     assert not repo.session("HEAD~").uncommitted
 
 
-def test_untracked_files_in_a_submodule_are_uncommitted_changes_only_when_included(repo: Repo) -> None:
+def test_untracked_files_in_a_submodule_are_no_uncommitted_changes(repo: Repo) -> None:
+    # The superproject can't commit them, even with untracked files included.
     sub = with_submodule(repo)
     sub.write("untracked", "u\n")
     assert not repo.session("HEAD~").uncommitted
+    assert not Session.load(repo.client, "HEAD~", include_untracked=True).uncommitted
 
 
 def test_including_untracked_files(repo: Repo) -> None:

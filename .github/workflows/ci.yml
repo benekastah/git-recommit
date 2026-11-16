@@ -8,6 +8,15 @@ on:
 permissions:
   contents: read
 
+# A new push cancels the branch's run still going, which no longer says
+# anything about the branch and holds runners the new one needs (an account
+# runs only so many jobs at once). On main too: merging a stack pushes several
+# commits at once, and only the newest one's run matters, since each pull
+# request had to pass before it merged.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Linting and type checking give the same answer everywhere (mypy checks for
   # Windows too, and for the oldest Python pyproject.toml allows), so they run

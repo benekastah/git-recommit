@@ -98,15 +98,20 @@ class Repo:
     ) -> subprocess.CompletedProcess[str]:
         stdin = sys.stdin
         sys.stdin = io.TextIOWrapper(io.BytesIO(b"" if input is None else input.encode()))
-        capture.readouterr()
+        # What the test printed before, put back after (for its failure report).
+        before = capture.readouterr()
         try:
             returncode = cli.main(argv)
         except SystemExit as e:
-            # argparse's, for a bad command line.
-            returncode = e.code if isinstance(e.code, int) else 1
+            # argparse's, for a bad command line, always with a number.
+            if not isinstance(e.code, int):
+                raise
+            returncode = e.code
         finally:
             sys.stdin = stdin
         out, err = capture.readouterr()
+        sys.stdout.write(before.out)
+        sys.stderr.write(before.err)
         return subprocess.CompletedProcess(argv, returncode, _text(out), _text(err))
 
     def _recommit_apart(

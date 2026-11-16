@@ -1,6 +1,5 @@
 import pathlib
 import shutil
-from collections.abc import Iterator
 
 import pytest
 
@@ -32,8 +31,8 @@ def isolate(monkeypatch: pytest.MonkeyPatch, directory: pathlib.Path) -> None:
 
 
 @pytest.fixture(scope="session")
-def template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[pathlib.Path]:
-    """The repository each test's starts as a copy of (see repo), made once
+def template(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
+    """The repository each test's repository starts as a copy of (see repo), made once
     (for each worker), since making it takes several git processes, which
     are slow to start on macOS and Windows."""
     directory = tmp_path_factory.mktemp("template")
@@ -46,7 +45,7 @@ def template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[pathlib.Path]
     # Fewer files to copy for each test; the hooks directory stays.
     for sample in (template.path / ".git" / "hooks").glob("*.sample"):
         sample.unlink()
-    yield template.path
+    return template.path
 
 
 @pytest.fixture

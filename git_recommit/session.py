@@ -236,10 +236,7 @@ class Session:
     def plain_path(self, path: str) -> str:
         """path, relative to the current directory (or with :/, the top), as a
         path from the top, as git takes a path that isn't a pattern."""
-        if path.startswith(":/"):
-            joined = path[2:]
-        else:
-            joined = self.git.prefix() + path
+        joined = path[2:] if path.startswith(":/") else self.git.prefix() + path
         normal = posixpath.normpath(joined.replace(os.sep, "/"))
         if normal.startswith("../") or normal in (".", ".."):
             raise RecommitError(f"{path} is outside the repository")

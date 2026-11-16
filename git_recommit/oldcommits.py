@@ -2,6 +2,7 @@
 new commit for each, with its message and author, taking the changes git
 blame says it made, and the edits it needs to be as it was."""
 
+import contextlib
 import hashlib
 import os
 import re
@@ -55,10 +56,8 @@ def restore(session: "Session") -> None:
     # add them, so the edits can reproduce them (but for submodules).
     changed = {path for diff in session.files for path in (diff.path, diff.old_path) if path is not None}
     for path in sorted(set(touched_by) - changed):
-        try:
+        with contextlib.suppress(RecommitError):
             session.add_unchanged(path)
-        except RecommitError:
-            pass
     for diff in session.files:
         # The last commit to change the file takes what blame can't say
         # who made, as well as what blame doesn't cover.

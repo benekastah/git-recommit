@@ -28,7 +28,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    # 24s.
+    # 27s.
     timeout-minutes: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,14 +59,14 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         # The oldest Python pyproject.toml allows, and the newest.
         python: ["3.11", "3.15"]
-        # Each OS's time limit, in minutes (from 55s, 2m39s and 3m35s).
+        # Each OS's time limit, in minutes (from 35s, 2m and 2m26s).
         include:
           - os: ubuntu-latest
-            timeout: 2
+            timeout: 1
           - os: macos-latest
-            timeout: 4
+            timeout: 3
           - os: windows-latest
-            timeout: 5
+            timeout: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0

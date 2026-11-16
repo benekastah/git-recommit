@@ -22,9 +22,9 @@ concurrency:
 # a hung job fails soon. If a job runs into it, speed the job up if
 # possible, and only then raise the limit (see AGENTS.md).
 jobs:
-  # Linting and type checking give the same answer everywhere (mypy checks for
-  # Windows too, and for the oldest Python pyproject.toml allows), so they run
-  # once.
+  # Linting and type checking give the same answer everywhere (basedpyright
+  # checks for Windows too, and for the oldest Python pyproject.toml allows),
+  # so they run once.
   lint:
     name: Lint
     runs-on: ubuntu-latest

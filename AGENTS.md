@@ -121,9 +121,9 @@ These were the user's choices for v0; ask before changing them.
   (e.g. ctrl+z really stopping the process) is tested in
   `tests/test_terminal.py`, which runs git recommit as a job in a
   pseudo-terminal, under `tests/job_control.py` (Unix only).
-- Run `./check.sh` (`lint.sh`: shellcheck, Ruff format and lint, mypy
-  strict; then the tests) before committing. The pre-push hook runs it too.
-  CI lints once, on Linux, and runs the tests on each OS.
+- Run `./check.sh` (`lint.sh`: shellcheck, Ruff format and lint,
+  basedpyright strict; then the tests) before committing. The pre-push hook
+  runs it too. CI lints once, on Linux, and runs the tests on each OS.
 - Development needs uv: `dev-venv.sh` (which `check.sh` runs) syncs `.venv`
   from `uv.lock`. Commit a change to `pyproject.toml`'s dependencies with
   the `uv.lock` it makes; CI's `uv sync --locked` fails on a stale one.

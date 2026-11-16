@@ -46,7 +46,7 @@ class FileState:
 def pure_version(diff: FileDiff, selected: Container[int]) -> Version | None:
     """The file with only the selected changes."""
     if diff.whole:
-        take = diff.meta_id in selected
+        take = diff.meta_id is not None and diff.meta_id in selected
         mode, blob = (diff.new_mode, diff.new_blob) if take else (diff.old_mode, diff.old_blob)
         return None if mode is None else Version(mode, sha=blob)
     ids = diff.ids
@@ -57,7 +57,7 @@ def pure_version(diff: FileDiff, selected: Container[int]) -> Version | None:
         return None
     if diff.status == "D" and all(i in selected for i in ids):
         return None
-    if diff.status == "A" or (diff.status in "MR" and diff.meta_id in selected):
+    if diff.status == "A" or (diff.status in "MR" and diff.meta_id is not None and diff.meta_id in selected):
         mode = diff.new_mode
     else:
         mode = diff.old_mode

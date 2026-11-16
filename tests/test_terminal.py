@@ -12,7 +12,8 @@ import pytest
 from tests.helpers import Repo
 
 if sys.platform == "win32":
-    pytest.skip("needs a Unix pseudo-terminal", allow_module_level=True)
+    # Raised rather than pytest.skip(), so the type checker sees the rest as Unix only.
+    raise pytest.skip.Exception("needs a Unix pseudo-terminal", allow_module_level=True)
 
 import select
 

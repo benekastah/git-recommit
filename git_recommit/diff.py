@@ -95,7 +95,11 @@ class FileDiff:
     def path_with(self, selected: Container[int]) -> str:
         """Where the file is with only the selected changes: for a renamed
         file, its old path unless the rename is selected."""
-        return self.old_path if self.old_path is not None and self.meta_id not in selected else self.path
+        return (
+            self.old_path
+            if self.old_path is not None and (self.meta_id is None or self.meta_id not in selected)
+            else self.path
+        )
 
     @property
     def ids(self) -> list[int]:
@@ -146,10 +150,10 @@ def apply(diff: FileDiff, selected: Container[int]) -> bytes:
                 out.append(old[pos])
                 pos += 1
             elif line.kind == "-":
-                if line.id not in selected:
+                if line.id is None or line.id not in selected:
                     out.append(old[pos])
                 pos += 1
-            elif line.id in selected:
+            elif line.id is not None and line.id in selected:
                 out.append(line.text)
     out.extend(old[pos:])
     return join_lines(out)

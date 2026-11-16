@@ -208,12 +208,12 @@ into `~/.local/bin`, sets up the clone's `.venv` with the dev dependencies,
 and makes the clone use the hooks in `git_hooks/` (the pre-commit hook formats
 staged Python files, and the pre-push hook runs the checks).
 
-Run every check (shellcheck, Ruff's formatter and linter, mypy in strict mode,
-then the tests) with `./check.sh`; arguments are passed to pytest. `./lint.sh`
-runs every check but the tests, with the tools `./check.sh` (or
-`./dev-venv.sh`) installed in `.venv`. The tests run git itself (git-core's,
-from `git --exec-path`), not a wrapper on your `PATH`, and set
-`GIT_RECOMMIT_GIT` to it.
+Run every check (shellcheck, Ruff's formatter and linter, basedpyright in
+strict mode, then the tests) with `./check.sh`; arguments are passed to
+pytest. `./lint.sh` runs every check but the tests, with the tools
+`./check.sh` (or `./dev-venv.sh`) installed in `.venv`. The tests run git
+itself (git-core's, from `git --exec-path`), not a wrapper on your `PATH`,
+and set `GIT_RECOMMIT_GIT` to it.
 
 `./dev-venv.sh` installs the dev dependencies from `uv.lock`, at the versions
 locked there. If you change the dependencies in `pyproject.toml`, it updates

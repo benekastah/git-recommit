@@ -195,9 +195,8 @@ pipx install git+https://github.com/benekastah/git-recommit
 ```
 
 git runs `git-recommit` on your `PATH` as `git recommit`. It runs the first
-`git` on your `PATH` in turn (as `git recommit`, that's the git that ran it,
-which puts its own directory first), or the one `GIT_RECOMMIT_GIT` names, if
-set.
+`git` on your `PATH` in turn (as `git recommit`, that's the git that ran it:
+git puts its exec-path first), or the one `GIT_RECOMMIT_GIT` names, if set.
 
 ## Development
 

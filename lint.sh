@@ -5,8 +5,8 @@
 # runs even if one before it failed, so one run reports every failure.
 #
 # Uses the tools in .venv, which dev-venv.sh (which check.sh runs) or, in CI,
-# `uv sync --locked` installs. It doesn't run dev-venv.sh itself, so CI's
-# install fails if uv.lock is out of date rather than updating it.
+# `uv sync --locked` installs. It doesn't run dev-venv.sh itself: check.sh
+# does, and CI has its own install step.
 
 set -eu
 

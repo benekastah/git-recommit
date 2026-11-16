@@ -42,8 +42,6 @@ jobs:
           python-version: "3.11"
           enable-cache: true
           cache-dependency-glob: uv.lock
-          # Makes .venv, where lint.sh looks for the tools.
-          activate-environment: true
       - name: Install the dev dependencies
         run: uv sync --locked
       - name: Lint

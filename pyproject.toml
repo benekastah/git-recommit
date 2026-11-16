@@ -37,10 +37,12 @@ typeCheckingMode = "strict"
 pythonVersion = "3.11"
 # Linux, so it says the same on every system; lint.sh checks as if on Windows too.
 pythonPlatform = "Linux"
-# Strict, but for values whose type is only inferred as unknown (e.g. an
-# empty list's items).
+# A variable whose type is unknown is an error (e.g. a list made empty needs its
+# item type), as mypy's strict mode inferred or required it. Using an unknown
+# value isn't: Textual's `App.app`, parsed JSON, a bare `set()` argument or a
+# test's lambda: mypy's strict mode treats those as Any, and doesn't check
+# their use either.
 reportUnknownMemberType = false
 reportUnknownArgumentType = false
-reportUnknownVariableType = false
 reportUnknownLambdaType = false
 reportUnknownParameterType = false

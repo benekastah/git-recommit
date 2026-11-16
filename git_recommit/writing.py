@@ -36,7 +36,7 @@ def blocker(session: Session) -> str | None:
 
 def warnings(session: Session) -> list[str]:
     """What the user may not mean to write."""
-    result = []
+    result: list[str] = []
     if unassigned := session.unassigned():
         verb = "isn't" if len(unassigned) == 1 else "aren't"
         result.append(f"{_plural(len(unassigned), 'change')} {verb} assigned to a commit")

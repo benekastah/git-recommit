@@ -36,7 +36,7 @@ class Row:
 
 
 def build_rows(files: list[FileDiff]) -> list[Row]:
-    rows = []
+    rows: list[Row] = []
     for f, diff in enumerate(files):
         rows.append(Row("file", f))
         if diff.meta_id is not None:

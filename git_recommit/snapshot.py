@@ -113,7 +113,7 @@ def file_states(
     for i in diff.ids:
         taken.setdefault(assignment.get(i), []).append(i)
     selected: frozenset[int] = frozenset()
-    states = []
+    states: list[FileState] = []
     edited = any(diff.path in commit.edits for commit in commits)
     prev_assigned = prev_result = pure(selected)
     prev_conflict = False

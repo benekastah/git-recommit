@@ -230,7 +230,7 @@ def test_changes_blame_cant_attribute_go_to_the_last_commit_to_change_the_file(
 def test_paths_that_look_like_patterns(repo: Repo) -> None:
     # As a pathspec, a[1].txt would match a1.txt, and :x is magic (but not a
     # name Windows allows).
-    magic = [":x"] if os.name != "nt" else []
+    magic: list[str] = [":x"] if os.name != "nt" else []
     repo.commit("base", **{"a1.txt": "1\n", "a[1].txt": "1\n"}, **dict.fromkeys(magic, "1\n"))
     old = [
         repo.commit("first", **{"a1.txt": "1\nfirst\n"}),

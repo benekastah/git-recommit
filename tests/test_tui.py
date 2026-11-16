@@ -354,7 +354,7 @@ def edit_file(repo: Repo, edit_with: Callable[[bytes], bytes]) -> tuple[Session,
     repo.commit("wip", a="real\n")
     session = repo.session("HEAD~")
     opened: list[bytes] = []
-    status = []
+    status: list[str] = []
 
     def editor(content: bytes) -> bytes:
         opened.append(content)

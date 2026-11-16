@@ -328,7 +328,7 @@ class GitClient:
         if not contents:
             return []
         with tempfile.TemporaryDirectory() as scratch:
-            paths = []
+            paths: list[str] = []
             for i, content in enumerate(contents):
                 paths.append(os.path.join(scratch, str(i)))
                 with open(paths[-1], "wb") as f:

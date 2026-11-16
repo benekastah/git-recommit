@@ -58,15 +58,15 @@ class Session:
         self.root = root
         self.include_untracked = include_untracked
         self._untracked = untracked
-        self.base = base
-        self.head = head
-        self.end = end or head
-        self.tip = tip or self.end
+        self.base: str = base
+        self.head: str = head
+        self.end: str = end or head
+        self.tip: str = tip or self.end
         self.files = files
         self.plan = Plan()
         self.old_commits = self._old_commits()
         self.uncommitted = self.tip != self.end
-        self._tip_tree = git.tree(self.tip)
+        self._tip_tree: str = git.tree(self.tip)
         self._merges: dict[tuple[bytes, bytes, bytes], tuple[bytes, bool]] = {}
         # For each file, its versions with only some changes (see states).
         self._pure: dict[str, dict[frozenset[int], Version | None]] = {}
@@ -166,7 +166,7 @@ class Session:
         a file that changes as a whole), whose edits are kept differently
         (see plan.Edit); and say which."""
         files = {diff.path: diff for diff in self.files}
-        dropped = []
+        dropped: list[str] = []
         for number, commit in enumerate(self.plan.commits, start=1):
             for path, edit in list(commit.edits.items()):
                 diff = files.get(path)
@@ -215,7 +215,7 @@ class Session:
     def authorship_warnings(self) -> list[str]:
         """For each commit that will be authored by one person but takes
         changes another made, a warning saying so."""
-        warnings = []
+        warnings: list[str] = []
         me = self.me()
         for number, commit in enumerate(self.plan.commits, start=1):
             author = commit.author or me
@@ -358,7 +358,7 @@ class Session:
         return self._conflicts[1]
 
     def _find_conflicts(self) -> list[Conflict]:
-        result = []
+        result: list[Conflict] = []
         for diff in self.files:
             if any(diff.path in commit.edits for commit in self.plan.commits):
                 for commit, state in zip(self.plan.commits, self.states(diff), strict=True):
@@ -418,7 +418,7 @@ class Session:
 
         # commit-tree only signs when asked to, unlike git commit.
         sign = ["-S"] if self.git.run("config", "--type=bool", "commit.gpgSign", check=False) == "true" else []
-        shas = []
+        shas: list[str] = []
         with tempfile.TemporaryDirectory() as scratch:
             env = {"GIT_INDEX_FILE": os.path.join(scratch, "index")}
             self.git.run("read-tree", self.base, env=env)

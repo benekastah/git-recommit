@@ -35,10 +35,10 @@ def restore(session: "Session") -> None:
     """
     old = _old_commits(session)
     # The commit of the uncommitted changes, after them, isn't one of them.
-    uncommitted = set(old.pop().changed) if session.uncommitted else set()
+    uncommitted: set[str] = set(old.pop().changed) if session.uncommitted else set()
     shas = [commit.sha for commit in old]
     session.plan = plan = Plan()
-    keys = {}
+    keys: dict[str, int] = {}
     for commit in old:
         # Exactly as it is in the commit (git log would trim it), for
         # writing it unchanged; in the plan, without its final newline,
@@ -245,7 +245,7 @@ def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
 
 def _trees(session: "Session", commits: list[_OldCommit]) -> list[dict[str, str]]:
     """Each file's blob in each commit: base's, as each commit changes them."""
-    blobs = {}
+    blobs: dict[str, str] = {}
     if not session.root:
         for entry in session.git.run_bytes("ls-tree", "-r", "-z", "--full-tree", session.base).split(b"\0"):
             if entry:
@@ -253,7 +253,7 @@ def _trees(session: "Session", commits: list[_OldCommit]) -> list[dict[str, str]
                 _, kind, blob = meta.decode().split(" ")
                 if kind == "blob":
                     blobs[name.decode(errors="surrogateescape")] = blob
-    trees = []
+    trees: list[dict[str, str]] = []
     for commit in commits:
         for path, change in commit.changes:
             if change is None:

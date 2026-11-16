@@ -1,5 +1,6 @@
 """Running the --validate command on each new commit."""
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -7,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from git_recommit.git import GitClient, fs_path
+from git_recommit.git import GitClient
 
 
 @dataclass(frozen=True)
@@ -31,9 +32,9 @@ def run(
     worktree = tempfile.mkdtemp(prefix="git-recommit-")
     try:
         # A path in the filesystem, so in its encoding.
-        git.run("worktree", "add", "--quiet", "--detach", fs_path(worktree), commits[0][0])
+        git.run("worktree", "add", "--quiet", "--detach", os.fsencode(worktree), commits[0][0])
         for index, (sha, subject) in enumerate(commits):
-            git.run("-C", fs_path(worktree), "checkout", "--quiet", "--detach", "--force", sha)
+            git.run("-C", os.fsencode(worktree), "checkout", "--quiet", "--detach", "--force", sha)
             say(f"==> [{index + 1}/{len(commits)}] {subject}: {command}")
             if subprocess.run(command, shell=True, cwd=worktree, check=False).returncode == 0:
                 continue
@@ -46,7 +47,7 @@ def run(
                     continue
         return Outcome("ok")
     finally:
-        git.run("worktree", "remove", "--force", fs_path(worktree), check=False)
+        git.run("worktree", "remove", "--force", os.fsencode(worktree), check=False)
         shutil.rmtree(worktree, ignore_errors=True)
         git.run("worktree", "prune", check=False)
 

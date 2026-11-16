@@ -6,10 +6,12 @@ import posixpath
 import tempfile
 from dataclasses import dataclass
 
+from git_client import EnvValue, encode
+
 from git_recommit import oldcommits
 from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, split_lines
 from git_recommit.errors import RecommitError
-from git_recommit.git import GitClient, encode, fs_path
+from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit, NewCommit, Plan
 from git_recommit.revisions import (
     check_nothing_in_progress,
@@ -420,7 +422,8 @@ class Session:
         sign = ["-S"] if self.git.run("config", "--type=bool", "commit.gpgSign", check=False) == "true" else []
         shas: list[str] = []
         with tempfile.TemporaryDirectory() as scratch:
-            env = {"GIT_INDEX_FILE": os.path.join(scratch, "index")}
+            # A path in the filesystem, so in its encoding.
+            env = {"GIT_INDEX_FILE": os.fsencode(os.path.join(scratch, "index"))}
             self.git.run("read-tree", self.base, env=env)
             # From the root, the first new commit has no parent, as the root does.
             parent: str | None = None if self.root else self.base
@@ -484,7 +487,7 @@ class Session:
             with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
                 f.write(message)
             result = self.git.process(
-                "hook", "run", "--ignore-missing", "commit-msg", "--", fs_path(path), capture_output=True
+                "hook", "run", "--ignore-missing", "commit-msg", "--", os.fsencode(path), capture_output=True
             )
             if result.returncode != 0:
                 output = (result.stdout + result.stderr).decode(errors="replace").strip()
@@ -570,13 +573,13 @@ def _check_editable(diff: FileDiff) -> None:
         raise RecommitError(f"{diff.path} is a submodule, so it can't be edited")
 
 
-def _author_env(commit: NewCommit) -> dict[str, str]:
+def _author_env(commit: NewCommit) -> dict[str, EnvValue]:
     """What tells commit-tree who wrote commit, and when (none: whoever runs
     git recommit, now)."""
     author = commit.author
     if author is None:
         return {}
-    env = {"GIT_AUTHOR_NAME": author.name, "GIT_AUTHOR_EMAIL": author.email}
+    env: dict[str, EnvValue] = {"GIT_AUTHOR_NAME": author.name, "GIT_AUTHOR_EMAIL": author.email}
     if author.date is not None:
         env["GIT_AUTHOR_DATE"] = author.date
     return env

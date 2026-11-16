@@ -142,7 +142,7 @@ def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_u
         # second as the index was written has to be read, as git knows.
         index = os.path.join(scratch, "index")
         shutil.copy2(git.git_paths("index")[0], index)
-        env = {"GIT_INDEX_FILE": index}
+        env = {"GIT_INDEX_FILE": os.fsencode(index)}
         git.run("add", "--all" if include_untracked else "--update", "--", ":/", env=env)
         tree = git.run("write-tree", env=env)
     return git.run("commit-tree", tree, "-p", head, "-m", "Uncommitted changes")

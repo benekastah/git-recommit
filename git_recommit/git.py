@@ -1,83 +1,43 @@
+"""Running git, through py-git-client (`git_client`), which starts every git
+process the quickest way each system allows and reads objects through one
+`git cat-file --batch-command`. This adds what git recommit needs on top:
+its errors as RecommitErrors, the user's locale for git, and the reads it
+makes (commits, trees and blobs, paths in the git directory, merges)."""
+
 import contextlib
-import functools
 import os
-import re
-import shutil
-import subprocess
-import sys
 import tempfile
-import threading
-from collections.abc import Mapping
-from typing import TypeAlias
+from collections.abc import Generator, Mapping
+
+from git_client import CLIENT_TIMEOUT, CatFile, EnvValue, Git, GitError, Timeout, UnknownRevisionError, decode, encode
+from git_client import hash_blobs as _hash_blobs
 
 from git_recommit.errors import RecommitError
 
-# A command and an environment for git: on Windows, as str, as the OS keeps
-# them; elsewhere, as bytes (see GitClient._command and _env).
-if sys.platform == "win32":
-    Command: TypeAlias = list[str]
-    Env: TypeAlias = Mapping[str, str]
-else:
-    Command: TypeAlias = list[bytes]
-    Env: TypeAlias = Mapping[str, str] | Mapping[bytes, bytes]
 
-# What git stores as text (UTF-8), rather than as a path in the filesystem's
-# encoding, of what git recommit puts in git's environment.
-IDENTITY = {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE"}
+@contextlib.contextmanager
+def reported() -> Generator[None]:
+    """Turn a GitError in the block into a RecommitError saying what git
+    said, to report to the user without a traceback."""
+    try:
+        yield
+    except GitError as e:
+        raise RecommitError(f"git {' '.join(e.command)} failed:\n{e.stderr.strip()}") from e
 
 
-# Whether git's processes are started with close_fds. Not on Linux or macOS:
-# without it, Python can start them with posix_spawn, which on macOS is about
-# a third faster, and its own file descriptors aren't inherited anyway (PEP
-# 446), but for a moment on macOS (see GitClient._cat_file_command). On
-# Windows, yes: without it, a process one thread starts could inherit (and
-# hold open) the pipes of one another thread is starting.
-CLOSE_FDS = sys.platform == "win32"
-
-
-@functools.cache
-def git_executable() -> str:
-    """The git that git recommit runs: $GIT_RECOMMIT_GIT, or else the first
-    git on PATH (which, as `git recommit` runs it, is the git that did: git
-    puts its exec-path first), found once, by its full path (which
-    posix_spawn needs). On Windows, only a program (git.exe), as Windows
-    runs "git", not a batch file (e.g. an npm shim)."""
-    if configured := os.environ.get("GIT_RECOMMIT_GIT"):
-        return configured
-    found = shutil.which("git.exe" if sys.platform == "win32" else "git")
-    return os.path.abspath(found) if found else "git"
-
-
-def encode(text: str) -> bytes:
-    """What git gave as text (e.g. a path or a message, decoded as UTF-8 with
-    surrogateescape, as GitClient.run does), as git gave it."""
-    return text.encode("utf-8", errors="surrogateescape")
-
-
-def fs_path(path: str) -> str | bytes:
-    """A path in the filesystem (e.g. a temporary file, not a path git gave),
-    as an argument for GitClient: in the filesystem's encoding."""
-    return path if sys.platform == "win32" else os.fsencode(path)
-
-
-def _describe(args: tuple[str | bytes, ...]) -> str:
-    return " ".join(map(os.fsdecode, args))
-
-
-# A full object id: SHA-1 or SHA-256.
-OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-
-
-class GitClient:
-    """Runs git in directory, as `git -C <directory>` does."""
+class GitClient(Git):
+    """Runs git in directory, as `git -C <directory>` does: the git
+    $GIT_RECOMMIT_GIT names, or else the first git on PATH (which, as `git
+    recommit` runs it, is the git that did: git puts its exec-path first),
+    by its full path. run, run_bytes and the reads it adds raise
+    RecommitErrors, not GitErrors."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
-        self.directory = os.fspath(directory)
-        # `git cat-file --batch-command`, started the first time an object is
-        # read or a name resolved, and what keeps threads from talking to it at
-        # once.
-        self._cat_file: subprocess.Popen[bytes] | None = None
-        self._cat_file_lock = threading.Lock()
+        # For reading every object and resolving every name, rather than a
+        # process each; started the first time it's needed. Before finding
+        # git, which can fail, so __del__ finds it.
+        self.cat_file = CatFile(self)
+        super().__init__(directory, env_var="GIT_RECOMMIT_GIT")
         # Where git keeps each file asked about (see git_paths), and the path
         # from the top of the worktree down to directory, which don't change.
         self._git_paths: dict[str, str] = {}
@@ -88,91 +48,44 @@ class GitClient:
 
     def close(self) -> None:
         """Stop the cat-file process, if one was started."""
-        if self._cat_file is not None:
-            if self._cat_file.stdin is not None:
-                # It may have stopped already (on Windows, maybe not as a
-                # BrokenPipeError).
-                with contextlib.suppress(OSError):
-                    self._cat_file.stdin.close()
-            self._cat_file.wait()
-            self._cat_file = None
+        self.cat_file.close()
 
-    def _command(self, *args: str | bytes) -> Command:
-        """git's command line. Bytes are paths in the filesystem, from fs_path
-        (on Windows, they're str)."""
-        if sys.platform == "win32":
-            return [git_executable(), "-C", self.directory, *map(os.fsdecode, args)]
-        # The arguments (e.g. paths git gave) as git gave them, whatever the
-        # locale's encoding (which, e.g. with LC_ALL=C, can't hold a name that
-        # isn't ASCII); the directory, a path in the filesystem's encoding.
-        return [
-            os.fsencode(git_executable()),
-            b"-C",
-            os.fsencode(self.directory),
-            *(a if isinstance(a, bytes) else encode(a) for a in args),
-        ]
-
-    def _env(self, env: Mapping[str, str] | None = None) -> Env:
-        # Not GIT_LITERAL_PATHSPECS, which the user's hooks would inherit: a
-        # command given paths git reported marks them literal (see literal).
-        if sys.platform == "win32" or not env:
-            return {**os.environ, **(env or {})}
-        # An author as git gave it (or the user typed it), whatever the
-        # locale's encoding; other values are paths (e.g. GIT_INDEX_FILE), in
-        # the filesystem's encoding.
-        added = {key.encode(): encode(value) if key in IDENTITY else os.fsencode(value) for key, value in env.items()}
-        return {**os.environb, **added}
-
-    def process(
-        self,
-        *args: str | bytes,
-        capture_output: bool = False,
-        input: bytes | None = None,
-        env: Mapping[str, str] | None = None,
-    ) -> subprocess.CompletedProcess[bytes]:
-        """Run git and return the process when it's done, whatever its exit
-        status; every git process but cat-file's is run by this."""
-        return subprocess.run(
-            self._command(*args),
-            capture_output=capture_output,
-            input=input,
-            env=self._env(env),
-            close_fds=CLOSE_FDS,
-            check=False,
-        )
+    def environment(self, env: Mapping[str, EnvValue] | None = None, *, english: bool = False) -> dict[str, str]:
+        """As Git's, but always in the user's locale, never with the LC_ALL=C
+        Git gives a command whose output it reads: the hooks, filters and
+        signing programs git runs for git recommit (e.g. commit-msg) would
+        inherit it, and git's messages are for the user to read."""
+        del english
+        return super().environment(env)
 
     def run(
-        self, *args: str | bytes, check: bool = True, input: str | None = None, env: Mapping[str, str] | None = None
+        self,
+        *args: str | bytes,
+        check: bool = True,
+        input: str | None = None,
+        env: Mapping[str, EnvValue] | None = None,
+        timeout: Timeout = CLIENT_TIMEOUT,
     ) -> str:
-        """Run git and return stripped stdout."""
-        # UTF-8, as git writes (not the locale's encoding, e.g. cp1252 on
-        # Windows), keeping what isn't as surrogates, as paths are; and as
-        # bytes, so line endings stay as they are (text mode would write \r\n
-        # for each \n on Windows).
-        result = self.process(
-            *args,
-            capture_output=True,
-            input=None if input is None else input.encode("utf-8", errors="surrogateescape"),
-            env=env,
-        )
-        if check and result.returncode != 0:
-            raise RecommitError(f"git {_describe(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
-        return result.stdout.decode("utf-8", errors="surrogateescape").strip()
+        """Run git and return its stdout, stripped; unless check is False,
+        raise a RecommitError if it fails."""
+        if check:
+            with reported():
+                return super().run(*args, input=input, env=env, timeout=timeout)
+        encoded = None if input is None else encode(input)
+        result = self.process(*args, capture_output=True, input=encoded, env=env, timeout=timeout)
+        return decode(result.stdout).strip()
 
-    def run_bytes(self, *args: str | bytes, input: bytes | None = None, env: Mapping[str, str] | None = None) -> bytes:
-        """Run git and return stdout as it is, for file contents and patches."""
-        result = self.process(*args, capture_output=True, input=input, env=env)
-        if result.returncode != 0:
-            raise RecommitError(f"git {_describe(args)} failed:\n{result.stderr.decode(errors='replace').strip()}")
-        return result.stdout
-
-    def ok(self, *args: str | bytes) -> bool:
-        """Run git and report whether it succeeded."""
-        return self.process(*args, capture_output=True).returncode == 0
-
-    def passthrough(self, *args: str | bytes, env: Mapping[str, str] | None = None) -> bool:
-        """Run git with its output going straight to the terminal."""
-        return self.process(*args, env=env).returncode == 0
+    def run_bytes(
+        self,
+        *args: str | bytes,
+        input: bytes | None = None,
+        env: Mapping[str, EnvValue] | None = None,
+        timeout: Timeout = CLIENT_TIMEOUT,
+    ) -> bytes:
+        """Run git and return its stdout as it is, for file contents and
+        patches; raise a RecommitError if it fails."""
+        with reported():
+            return super().run_bytes(*args, input=input, env=env, timeout=timeout)
 
     def git_paths(self, *names: str) -> list[str]:
         """Where each of names is in the git directory (as `git rev-parse
@@ -199,12 +112,11 @@ class GitClient:
         return "../" * self.prefix().count("/")
 
     def commit_sha(self, rev: str) -> str | None:
-        """The commit rev names, or None if it doesn't name one."""
+        """The commit rev names, or None if it doesn't name one (or git can't
+        say: resolve_commit says why)."""
         try:
-            return self._resolve(f"{rev}^{{commit}}")
-        except RecommitError:
-            # git cat-file exits for some names (e.g. @{u} without an
-            # upstream), rather than saying they name nothing.
+            return self.cat_file.resolve(f"{rev}^{{commit}}")
+        except GitError:
             return None
 
     def resolve_commit(self, rev: str) -> str:
@@ -226,13 +138,16 @@ class GitClient:
     def tree(self, sha: str) -> str:
         """The tree of the commit with id sha, without starting a process (or
         itself, if it's a tree)."""
-        tree = self._resolve(f"{sha}^{{tree}}")
+        with reported():
+            tree = self.cat_file.resolve(f"{sha}^{{tree}}")
         if tree is None:
             raise RecommitError(f"{sha} isn't a commit or tree")
         return tree
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
-        return self.ok("merge-base", "--is-ancestor", ancestor, descendant)
+        """Whether ancestor is in descendant's history (or is descendant);
+        False too if git can't say (e.g. one names nothing)."""
+        return self.process("merge-base", "--is-ancestor", ancestor, descendant, capture_output=True).returncode == 0
 
     def blob(self, sha: str) -> bytes:
         """A blob's content."""
@@ -241,75 +156,16 @@ class GitClient:
     def read_object(self, sha: str, kind: str) -> bytes:
         """An object's content (as `git cat-file <kind> <sha>`, e.g. a
         commit's, its headers and message, exactly as they are)."""
-        if not OBJECT_ID.fullmatch(sha):
-            # Anything else (e.g. a line ending) would put the process out of
-            # step with what's read back.
-            raise RecommitError(f"{sha!r} isn't an object id")
-        with self._cat_file_lock:
-            header = self._cat_file_command(b"contents " + sha.encode())
-            if len(header) != 3:
-                raise RecommitError(f"{sha} isn't a {kind}")
-            assert self._cat_file is not None and self._cat_file.stdout is not None
-            # Read even if it's another kind, so the process stays in step.
-            content = self._cat_file.stdout.read(int(header[2]))
-            self._cat_file.stdout.read(1)
-        if header[1] != kind.encode():
+        with reported():
+            try:
+                found, content = self.cat_file.read(sha)
+            except ValueError as e:
+                raise RecommitError(f"{sha!r} isn't an object id") from e
+            except UnknownRevisionError as e:
+                raise RecommitError(f"{sha} isn't a {kind}") from e
+        if found != kind:
             raise RecommitError(f"{sha} isn't a {kind}")
         return content
-
-    def _resolve(self, name: str) -> str | None:
-        """The object name names (as rev-parse --verify would find it), or
-        None if it names none, without starting a process."""
-        if not name or "\n" in name:
-            # A line ending would put the process out of step.
-            return None
-        with self._cat_file_lock:
-            header = self._cat_file_command(b"info " + encode(name))
-        # "<name> missing" can split in three too, if name has a space.
-        found = len(header) == 3 and OBJECT_ID.fullmatch(header[0].decode()) and header[2].isdigit()
-        return header[0].decode() if found else None
-
-    def _cat_file_command(self, command: bytes) -> list[bytes]:
-        """Send command to one `git cat-file --batch-command` process, kept for
-        reading every object and resolving every name, rather than a process
-        each; and return the reply's first line: "<sha> <type> <size>" (for
-        contents, then the content and a newline), or "<name> missing" (or
-        ambiguous), split. It sees refs and objects as they are when asked,
-        even when other processes have changed them since it started."""
-        if self._cat_file is not None and self._cat_file.poll() is not None:
-            # It stopped since the last command (e.g. killed while git
-            # recommit was suspended): start another, rather than take this
-            # name for one that names nothing.
-            self.close()
-        if self._cat_file is None:
-            self._cat_file = subprocess.Popen(
-                self._command("cat-file", "--batch-command"),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                # Which has warnings even for names it resolves (e.g. a ref
-                # name that's both a branch and a tag), as rev-parse --quiet
-                # doesn't; errors are for resolve_commit to say.
-                stderr=subprocess.DEVNULL,
-                env=self._env(),
-                # Even outside Windows, as it runs as long as git recommit
-                # does: macOS makes a pipe, then makes it non-inheritable, so
-                # it could otherwise keep (and so never close) the pipe of a
-                # process another thread is starting.
-                close_fds=True,
-            )
-        assert self._cat_file.stdin is not None and self._cat_file.stdout is not None
-        try:
-            self._cat_file.stdin.write(command + b"\n")
-            self._cat_file.stdin.flush()
-            reply = self._cat_file.stdout.readline()
-        except OSError:
-            # It had stopped (see close).
-            reply = b""
-        if not reply:
-            # It stopped; the next command starts another.
-            self.close()
-            raise RecommitError(f"git cat-file stopped at {command.decode(errors='replace')!r}")
-        return reply.split()
 
     def clean(self, path: str, content: bytes) -> bytes:
         """content as `git add` would commit it at path: through the clean
@@ -322,21 +178,10 @@ class GitClient:
         return self.hash_blobs([content])[0]
 
     def hash_blobs(self, contents: list[bytes]) -> list[str]:
-        """Write each content to the object database with one git process,
-        and return their ids."""
-        if not contents:
-            return []
-        with tempfile.TemporaryDirectory() as scratch:
-            paths: list[str] = []
-            for i, content in enumerate(contents):
-                paths.append(os.path.join(scratch, str(i)))
-                with open(paths[-1], "wb") as f:
-                    f.write(content)
-            # --no-filters: the contents are what to commit, as they are.
-            # (Paths in the filesystem, so in its encoding.)
-            stdin = b"".join(os.fsencode(path) + b"\n" for path in paths)
-            out = self.run_bytes("hash-object", "-w", "--no-filters", "--stdin-paths", input=stdin)
-        return out.decode().split()
+        """Write each content to the object database, as it is (no filters),
+        with one git process, and return their ids."""
+        with reported():
+            return _hash_blobs(self, contents)
 
     def merge_file(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         """Merge the changes from basis to ours and from basis to theirs, as
@@ -349,7 +194,8 @@ class GitClient:
             for path, content in zip(paths, (ours, basis, theirs), strict=True):
                 with open(path, "wb") as f:
                     f.write(content)
-            result = self.process("merge-file", "-p", *labels, *map(fs_path, paths), capture_output=True)
+            # Paths in the filesystem, so in its encoding.
+            result = self.process("merge-file", "-p", *labels, *map(os.fsencode, paths), capture_output=True)
         # The exit status is the number of conflicts, or negative (shown as
         # 128 or more) on an error.
         if not 0 <= result.returncode < 128:

@@ -127,22 +127,23 @@ These were the user's choices for v0; ask before changing them.
   Windows runs. CI runs it in `.github/workflows/project.yml`.
 - CI's time limits in `.github/workflows/ci.yml` (the template's) are set to
   this project's times, each edit marked "git-recommit:".
-- Two tests fake a program with a shell script, and are skipped on Windows:
-  gpg, to check that commits are signed (`tests/test_session.py`), and a git
-  wrapper, to check that every git process is the one git-recommit names
-  (`tests/test_git.py`). That's deliberate: each fakes what git itself runs,
-  in the way git runs it. They have no Windows counterpart yet (see
-  `docs/issues.md`).
+- One test fakes a program with a shell script, and is skipped on Windows:
+  gpg, to check that commits are signed (`tests/test_session.py`). That's
+  deliberate: it fakes what git itself runs, in the way git runs it. It has
+  no Windows counterpart yet (see `docs/issues.md`).
 
 ## Linux, macOS and Windows
 
 - `os.path` is fine for paths, as well as `pathlib`. Run git through
   `GitClient`, with arguments as a list, never through a shell. The editor
   and the validate command are the user's shell commands, so those do run
-  through one. `GitClient` starts git as `git.git_executable` names it, by
-  its full path, with `git.CLOSE_FDS`, which makes it faster on macOS; the
-  tests' own git calls (`Repo.git`) run py-git-client's `Git`, which does
-  the same, with the real git (`helpers.GIT`).
+  through one. `GitClient` (`git_recommit/git.py`) is py-git-client's `Git`
+  (`git_client`), which starts git by its full path, the quickest way each
+  system allows; it adds the reads git recommit makes, raises
+  `RecommitError`s rather than `GitError`s, and keeps git in the user's
+  locale (`Git` gives LC_ALL=C to a git whose output it reads, which hooks
+  would inherit). The tests' own git calls (`Repo.git`) use `Git` too, with
+  the real git (`helpers.GIT`).
 - Read from git with as few processes as you can: names and objects through
   `GitClient`'s one `cat-file` process (`commit_sha`, `head`, `tree`,
   `read_object`), and one git command for many things (e.g. one

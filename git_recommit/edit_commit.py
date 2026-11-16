@@ -1,6 +1,7 @@
 """`git recommit --edit <commit>`: stop at a commit to change it, then replay
 the later ones on top, as `git rebase -i` with that commit marked "edit" does."""
 
+import os
 import shlex
 import sys
 
@@ -23,5 +24,8 @@ def edit_commit(git: GitClient, rev: str) -> bool:
         "to replay the later commits (resolving any conflicts as it asks)."
     )
     # --no-autosquash: only stop to edit, even if rebase.autoSquash is set
-    # (which would also squash fixup! commits).
-    return git.passthrough("rebase", "--interactive", "--no-autosquash", *onto, env={"GIT_SEQUENCE_EDITOR": editor})
+    # (which would also squash fixup! commits). The editor is a path (Python's)
+    # in the filesystem, so in its encoding.
+    return git.passthrough(
+        "rebase", "--interactive", "--no-autosquash", *onto, env={"GIT_SEQUENCE_EDITOR": os.fsencode(editor)}
+    )

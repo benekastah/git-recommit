@@ -4,8 +4,10 @@ import subprocess
 import sys
 import tempfile
 
+from git_client import encode
+
 from git_recommit.errors import RecommitError
-from git_recommit.git import GitClient, encode
+from git_recommit.git import GitClient
 
 
 def shell_quote(arg: str) -> str:

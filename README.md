@@ -238,4 +238,5 @@ An update never changes this README, `PROJECT_AGENTS.md`, `docs/issues.md`,
 own. `dev.py`, `AGENTS.md`, `CLAUDE.md`, `.github/workflows/ci.yml`,
 `.github/workflows/cancel.yml` and `.github/actions/setup` are the
 template's: this project's own commands go in `dev_project.py`, its rules for
-agents in `PROJECT_AGENTS.md`, and its CI jobs in `project.yml`.
+agents in `PROJECT_AGENTS.md`, and its CI jobs in `project.yml`. Its edits to
+`ci.yml`, the time limits, are each marked "git-recommit:".

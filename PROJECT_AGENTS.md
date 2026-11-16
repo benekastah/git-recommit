@@ -122,6 +122,8 @@ These were the user's choices for v0; ask before changing them.
 - basedpyright checks as if on Linux; `python3 dev.py types-windows`
   (`dev_project.py`) checks again as if on Windows, for the code only
   Windows runs. CI runs it in `.github/workflows/project.yml`.
+- CI's time limits in `.github/workflows/ci.yml` (the template's) are set to
+  this project's times, each edit marked "git-recommit:".
 
 ## Linux, macOS and Windows
 

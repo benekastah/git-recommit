@@ -1,9 +1,10 @@
-# Working on git-recommit
+# git-recommit's own rules
 
-Notes for agents (and people) changing this repo. The README is the user
-documentation; its Development section says how to set up a clone and run the
-checks. `ISSUES.md` lists known issues, most important first, and `ROADMAP.md`
-planned upgrades and the options for them; keep them up to date.
+What's true of git-recommit alone. `AGENTS.md` has the rules it shares with
+every project made from python-template; where the two disagree, this file
+wins. Keep this file current when the shape of the code or a rule here
+changes. `ISSUES.md` lists known issues, most important first, and
+`ROADMAP.md` planned upgrades and the options for them.
 
 ## What it does
 
@@ -102,69 +103,44 @@ These were the user's choices for v0; ask before changing them.
   working tree and HEAD, and assignments carry over by matching changes on
   `diff.change_keys` (path, kind, text, which occurrence), since ids change.
 
-## Tests and checks
+## Tests
 
-- Work test-first: write the tests for a change (or a bug) first, run them and
-  see them fail for the reason you expect, then make the change and see them
-  pass. If the tests need the code reshaped first (e.g. injecting a dependency
-  they replace), do only that before seeing them fail: refactors that let the
-  tests run, not ones that fix the bug, so the failure still shows the old
-  behavior, or a good approximation of it. The failing tests can be committed
-  on their own, before the commit that fixes them.
-- Every change to behavior comes with tests, in the same commit. Tests say
-  what's correct, not what the code happens to do.
 - Tests run git-recommit against real repositories (`tests/helpers.py`,
   `tests/conftest.py`). `Repo.recommit` runs it in the test's process, so a
   monkeypatch on git_recommit reaches it; with `env`, it runs it in its own.
   `tests/test_tui.py` drives the app headless with Textual's pilot and a
-  fake `Terminal`. What the headless driver can't do
-  (e.g. ctrl+z really stopping the process) is tested in
-  `tests/test_terminal.py`, which runs git recommit as a job in a
-  pseudo-terminal, under `tests/job_control.py` (Unix only).
-- Run `python3 dev.py check` (Ruff format and lint, basedpyright strict; then
-  the tests) before committing. The pre-push hook runs it before a push to
-  `main`. CI lints once, on Linux (also type-checking as if on Windows, with
-  `dev.py types-windows`), and runs the tests on each OS.
-- The tooling (`dev.py`, `git_hooks/`, `.github/dependabot.yml`, most of
-  `pyproject.toml`'s tool settings) comes from python-template, a Copier
-  template; `uvx copier update --defaults` takes in its changes. Don't edit
-  `dev.py`: add commands to `dev_project.py`. In `pyproject.toml`, put dev
-  dependencies in `dev` (not `template-dev`), and additions to Ruff's
-  `extend-select` and basedpyright's `include` below their "project's own"
-  line, so updates merge without conflicts. This project keeps its own
-  layout (`git_recommit/`, not `src/`), Ruff's 120 columns, and CI
-  (`.github/workflows/check.yml`, which an update leaves alone).
-- Commit a change to `pyproject.toml`'s dependencies with the `uv.lock` it
-  makes (`dev.py` updates it with uv); CI installs with `uv sync --locked`,
-  which fails on a stale one.
-- Each CI job has a time limit (`timeout-minutes` in `check.yml`), about 20%
-  over the longest it has taken, in whole minutes. If a job runs into it,
-  speed it up (e.g. the tests, or git-recommit itself) if you can; only if
-  you can't, raise the limit.
-- Update the README with behavior changes.
+  fake `Terminal`. What the headless driver can't do (e.g. ctrl+z really
+  stopping the process) is tested in `tests/test_terminal.py`, which runs
+  git recommit as a job in a pseudo-terminal, under `tests/job_control.py`
+  (Unix only).
+
+## Where it differs from the template
+
+- The package is `git_recommit/`, not `src/git_recommit/`, and Ruff's lines
+  are 120 columns. `dev.py` is left out of formatting (it's the template's, at
+  its 100), and out of the Ruff rules this project adds (C901, PERF401, ANN).
+- basedpyright checks as if on Linux; `python3 dev.py types-windows`
+  (`dev_project.py`) checks again as if on Windows, for the code only
+  Windows runs. CI runs it too.
 
 ## Linux, macOS and Windows
 
-git-recommit should run on all three (CI runs the tests on each).
-
-- Use `os.path` or `pathlib` for paths. Run git through `GitClient`, with
-  arguments as a list, never through a shell. (The editor and the validate
-  command are the user's shell commands, so those do run through one.)
-  `GitClient` starts git as `git.git_executable` names it, by its full path,
-  with `git.CLOSE_FDS`, which makes it faster on macOS; the tests' own git
-  calls (`Repo.git`) do the same, with the real git (`helpers.GIT`).
-- Starting a process is slow, on Windows most of all, so read from git with
-  as few as you can: names and objects through `GitClient`'s one `cat-file`
-  process (`commit_sha`, `head`, `tree`, `read_object`), and one git command
-  for many things (e.g. one `diff-tree --stdin` for every commit) over one
-  each.
+- `os.path` is fine for paths, as well as `pathlib`. Run git through
+  `GitClient`, with arguments as a list, never through a shell. The editor
+  and the validate command are the user's shell commands, so those do run
+  through one. `GitClient` starts git as `git.git_executable` names it, by
+  its full path, with `git.CLOSE_FDS`, which makes it faster on macOS; the
+  tests' own git calls (`Repo.git`) do the same, with the real git
+  (`helpers.GIT`).
+- Read from git with as few processes as you can: names and objects through
+  `GitClient`'s one `cat-file` process (`commit_sha`, `head`, `tree`,
+  `read_object`), and one git command for many things (e.g. one
+  `diff-tree --stdin` for every commit) over one each.
 - Read plumbing's output (`rev-list`, `diff-tree`, `ls-tree`, `cat-file`),
   not porcelain's (e.g. `git log`), which the user's config changes (e.g.
   `diff.relative`). Even plumbing leaves out submodules that
   `submodule.<name>.ignore` ignores, so diffs say `--ignore-submodules=none`.
   Where there's no plumbing for it, use the format git keeps for scripts
   (`status --porcelain=v2`, `blame --porcelain`).
-- Don't assume `\n` line endings in files: diff.py keeps every line's own
-  ending, and splits only at `\n`, as git does.
-- The git hooks are shell scripts that run `dev.py`, which is standard
-  library Python and runs the same on all three.
+- diff.py keeps every line's own ending, and splits only at `\n`, as git
+  does.

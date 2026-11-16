@@ -72,10 +72,11 @@ IN_PROGRESS = {
 
 def check_nothing_in_progress(git: GitClient, status: "WorktreeStatus | None" = None) -> None:
     """Refuse while another operation (a merge, cherry-pick, revert or rebase)
-    is in progress, or the index has unresolved conflicts (as status, from
-    worktree_status, says, if given): taking the working tree as uncommitted
-    changes would take the conflict markers, and writing (which resets the
-    index) would end the operation."""
+    is in progress, or the index has unresolved conflicts: taking the working
+    tree as uncommitted changes would take the conflict markers, and writing
+    (which resets the index) would end the operation. status, if given, is
+    worktree_status's, which says if there are conflicts; without it, git
+    ls-files finds them."""
     # With the paths worktree_commit and Session.finish need, so one git
     # process finds them all (GitClient keeps them).
     paths = git.git_paths(*IN_PROGRESS, "index", "index.lock")[: len(IN_PROGRESS)]

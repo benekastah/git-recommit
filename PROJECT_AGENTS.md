@@ -106,7 +106,10 @@ These were the user's choices for v0; ask before changing them.
 ## Tests
 
 - Tests run git-recommit against real repositories (`tests/helpers.py`,
-  `tests/conftest.py`). `Repo.recommit` runs it in the test's process, so a
+  `tests/conftest.py`), under py-git-client's pytest plugin
+  (`git_client.testing`): each test's git has a config of its own, and runs
+  from a directory outside any repository. Only tests may import it (it
+  imports pytest). `Repo.recommit` runs it in the test's process, so a
   monkeypatch on git_recommit reaches it; with `env`, it runs it in its own.
   `tests/test_tui.py` drives the app headless with Textual's pilot and a
   fake `Terminal`. What the headless driver can't do (e.g. ctrl+z really
@@ -138,8 +141,8 @@ These were the user's choices for v0; ask before changing them.
   and the validate command are the user's shell commands, so those do run
   through one. `GitClient` starts git as `git.git_executable` names it, by
   its full path, with `git.CLOSE_FDS`, which makes it faster on macOS; the
-  tests' own git calls (`Repo.git`) do the same, with the real git
-  (`helpers.GIT`).
+  tests' own git calls (`Repo.git`) run py-git-client's `Git`, which does
+  the same, with the real git (`helpers.GIT`).
 - Read from git with as few processes as you can: names and objects through
   `GitClient`'s one `cat-file` process (`commit_sha`, `head`, `tree`,
   `read_object`), and one git command for many things (e.g. one

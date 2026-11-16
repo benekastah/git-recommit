@@ -2,31 +2,22 @@ import io
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 
 import pytest
+from git_client import CLOSE_FDS, Git
+from git_client.testing import real_git
 
 from git_recommit import cli
-from git_recommit.git import CLOSE_FDS, GitClient
+from git_recommit.git import GitClient
 from git_recommit.session import Session
 
-
-def _real_git() -> str:
-    """git itself, which git --exec-path names, rather than whatever git is
-    on PATH (e.g. a wrapper, like git-ai's, which would be slower)."""
-    on_path = shutil.which("git") or "git"
-    exec_path = subprocess.run([on_path, "--exec-path"], capture_output=True, text=True, check=True).stdout.strip()
-    real = os.path.join(exec_path, "git.exe" if sys.platform == "win32" else "git")
-    return real if os.path.exists(real) else on_path
-
-
 # The git the tests run, and git recommit too (conftest sets
-# GIT_RECOMMIT_GIT): by its full path, with CLOSE_FDS, as git recommit runs
-# it, which on macOS is faster (see git_recommit.git.CLOSE_FDS).
-GIT = _real_git()
+# GIT_RECOMMIT_GIT): git itself, rather than whatever git is on PATH (e.g. a
+# wrapper, like git-ai's, which would be slower).
+GIT = real_git()
 
 
 @dataclass
@@ -41,13 +32,7 @@ class Repo:
         return GitClient(self.path)
 
     def git(self, *args: str) -> str:
-        # UTF-8, as git writes, whatever the locale's encoding.
-        result = subprocess.run(
-            [GIT, "-C", str(self.path), *args], capture_output=True, encoding="utf-8", close_fds=CLOSE_FDS, check=False
-        )
-        if result.returncode != 0:
-            pytest.fail(f"git {' '.join(args)} failed:\n{result.stderr}")
-        return result.stdout.strip()
+        return Git(self.path, program=GIT).run(*args)
 
     def write(self, name: str, content: str | bytes) -> None:
         path = self.path / name
@@ -81,9 +66,7 @@ class Repo:
 
     def show(self, rev: str, name: str) -> str | None:
         """The file in rev, or None if it isn't there."""
-        result = subprocess.run(
-            [GIT, "-C", str(self.path), "show", f"{rev}:{name}"], capture_output=True, close_fds=CLOSE_FDS, check=False
-        )
+        result = Git(self.path, program=GIT).process("show", f"{rev}:{name}", capture_output=True)
         return result.stdout.decode() if result.returncode == 0 else None
 
     def session(self, spec: str) -> Session:

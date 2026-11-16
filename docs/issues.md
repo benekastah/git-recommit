@@ -74,9 +74,3 @@ the index, through stdin) works.
 and git with shell scripts, so they're skipped on Windows, and nothing tests
 either there. `AGENTS.md` asks for a test of its own on the other systems: a
 fake written in Python, with a launcher Windows can run.
-
-## The tests' helpers read git's output with `text=True`
-
-`tests/helpers.py` runs `git --exec-path` with `text=True`, which decodes
-with the locale's encoding (the code page, on Windows), where `AGENTS.md`
-asks for UTF-8. A path that isn't ASCII could be misread.

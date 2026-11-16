@@ -1,7 +1,11 @@
-# Known issues
+# Issues
 
-Most important first. "Confirmed" means it was reproduced; "suspected" means
-it was found by reading the code and still needs checking.
+What's wrong with what's built: bugs, and gaps against the rules in `AGENTS.md` and
+`PROJECT_AGENTS.md`, most severe first. New work is in [roadmap.md](roadmap.md). When a change
+fixes one, remove it in the same change; when a change leaves something wrong, add it.
+
+"Confirmed" means it was reproduced; "suspected" means it was found by reading the code and
+still needs checking.
 
 ## Starting from heavily overlapping commits takes seconds
 
@@ -62,3 +66,17 @@ Arguments on Windows are Unicode, so a path that isn't UTF-8 (from a
 repository made elsewhere) can't be given to git as one, e.g. to git blame
 when starting from the old commits. Writing such a name into a commit (by
 the index, through stdin) works.
+
+## Signing and the git wrapper aren't tested on Windows
+
+`test_signs_commits_when_git_is_set_to` (`tests/test_session.py`) and
+`test_every_git_process_is_git_recommit_git` (`tests/test_git.py`) fake gpg
+and git with shell scripts, so they're skipped on Windows, and nothing tests
+either there. `AGENTS.md` asks for a test of its own on the other systems: a
+fake written in Python, with a launcher Windows can run.
+
+## The tests' helpers read git's output with `text=True`
+
+`tests/helpers.py` runs `git --exec-path` with `text=True`, which decodes
+with the locale's encoding (the code page, on Windows), where `AGENTS.md`
+asks for UTF-8. A path that isn't ASCII could be misread.

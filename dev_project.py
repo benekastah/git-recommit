@@ -1,5 +1,5 @@
 """git-recommit's additions to dev.py (see its docstring): `python dev.py types-windows`
-type-checks as if on Windows, which CI runs alongside `static`."""
+type-checks as if on Windows, which CI runs too (project.yml)."""
 
 import dev
 

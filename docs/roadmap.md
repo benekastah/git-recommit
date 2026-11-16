@@ -1,6 +1,10 @@
 # Roadmap
 
-Planned upgrades, and the options for them. Known problems are in ISSUES.md.
+What's left to build in git-recommit. Only what's still to do lives here: when something
+is done, remove it in the same change. What's wrong with what's built is in
+[issues.md](issues.md).
+
+Each item gives the options for it.
 
 ## Preserving authorship
 

@@ -44,6 +44,11 @@ extend-select = ["I", "UP", "B", "C4", "SIM", "C901", "PERF401", "ANN"]
 # An explicit Any (ANN401) is allowed.
 ignore = ["ANN401"]
 
+[tool.ruff.lint.per-file-ignores]
+# dev.py is python-template's, checked there with the template's rules only: not
+# this project's additions, which a template update could break.
+"dev.py" = ["C901", "PERF401", "ANN"]
+
 [tool.basedpyright]
 include = ["git_recommit", "tests", "dev.py", "dev_project.py"]
 typeCheckingMode = "strict"

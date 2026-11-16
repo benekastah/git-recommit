@@ -460,6 +460,22 @@ def test_runs_the_commit_msg_hook_on_new_and_reworded_messages(repo: Repo) -> No
     assert raw.endswith(b"\n\nmine\n\nChange-Id: I123\n")
 
 
+def test_the_commit_msg_hook_runs_in_the_users_locale(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Not the C locale py-git-client gives the git whose output it reads.
+    monkeypatch.setenv("LC_ALL", "C.UTF-8")
+    repo.commit("base", f="1\n")
+    repo.commit("change", f="2\n")
+    hooks = repo.path / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    script(hooks / "commit-msg", 'printf "\\nLC_ALL=%s\\n" "$LC_ALL" >> "$1"\n')
+    session = repo.session("HEAD~")
+    session.restore_old_commits()
+    # The hook runs on a message that's changed.
+    session.plan.commits[0].message = "reworded"
+    (sha,) = session.build()
+    assert repo.git("log", "-1", "--format=%B", sha) == "reworded\n\nLC_ALL=C.UTF-8"
+
+
 def test_a_commit_msg_hook_can_refuse_a_message(repo: Repo) -> None:
     feature_repo(repo)
     hooks = repo.path / ".git" / "hooks"

@@ -99,7 +99,7 @@ def targets_for(session: Session, ids: list[int]) -> list[Target]:
     """Targets that name exactly the changes with ids: a file's path when it's
     all of the file's, else its lines (and its change to the file itself)."""
     wanted = set(ids)
-    targets = []
+    targets: list[Target] = []
     for diff in session.files:
         mine = [i for i in diff.ids if i in wanted]
         if not mine:

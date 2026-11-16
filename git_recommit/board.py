@@ -20,7 +20,7 @@ from git_recommit.session import Session
 # any; a hunk's header; a line.
 RowKind = Literal["file", "meta", "hunk", "line"]
 # Control characters (but tab) shown as "?", so they don't upset the terminal.
-CONTROL = {**{i: "?" for i in range(32)}, ord("\t"): "\t", 127: "?"}
+CONTROL = {**dict.fromkeys(range(32), "?"), ord("\t"): "\t", 127: "?"}
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class Row:
 
 
 def build_rows(files: list[FileDiff]) -> list[Row]:
-    rows = []
+    rows: list[Row] = []
     for f, diff in enumerate(files):
         rows.append(Row("file", f))
         if diff.meta_id is not None:

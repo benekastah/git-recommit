@@ -95,7 +95,11 @@ class FileDiff:
     def path_with(self, selected: Container[int]) -> str:
         """Where the file is with only the selected changes: for a renamed
         file, its old path unless the rename is selected."""
-        return self.old_path if self.old_path is not None and self.meta_id not in selected else self.path
+        return (
+            self.old_path
+            if self.old_path is not None and (self.meta_id is None or self.meta_id not in selected)
+            else self.path
+        )
 
     @property
     def ids(self) -> list[int]:
@@ -146,10 +150,10 @@ def apply(diff: FileDiff, selected: Container[int]) -> bytes:
                 out.append(old[pos])
                 pos += 1
             elif line.kind == "-":
-                if line.id not in selected:
+                if line.id is None or line.id not in selected:
                     out.append(old[pos])
                 pos += 1
-            elif line.id in selected:
+            elif line.id is not None and line.id in selected:
                 out.append(line.text)
     out.extend(old[pos:])
     return join_lines(out)
@@ -227,7 +231,7 @@ def _split_diff(out: bytes) -> tuple[list[RawEntry], set[str], bytes]:
         entries.append((old_mode, new_mode, old_blob, new_blob, status[:1], path, old_path))
     # A file's added and deleted lines (- and - if it's binary), and its path
     # (for a rename, empty, then its old path and its new one).
-    binary = set()
+    binary: set[str] = set()
     for _ in entries:
         added, deleted, numstat_path = field().split(b"\t", 2)
         if not numstat_path:
@@ -250,7 +254,7 @@ def change_keys(files: list[FileDiff]) -> dict[int, ChangeKey]:
     another diff of the same files (e.g. after the user changes one): its
     path, kind and text, and which of the file's changes with that kind and
     text it is."""
-    keys = {}
+    keys: dict[int, ChangeKey] = {}
     for diff in files:
         seen: dict[tuple[str, bytes], int] = {}
         if diff.meta_id is not None:
@@ -301,7 +305,7 @@ def load_diff(git: GitClient, base: str, tip: str) -> list[FileDiff]:
         raise RecommitError(f"git diff-tree listed {len(entries)} files, but its patch doesn't match")
     remaining = iter(parts)
     ids = count()
-    files = []
+    files: list[FileDiff] = []
     for old_mode, new_mode, old_blob, new_blob, status, path, old_path in entries:
         part = next(remaining)
         if status == "T":

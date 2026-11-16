@@ -354,7 +354,7 @@ def edit_file(repo: Repo, edit_with: Callable[[bytes], bytes]) -> tuple[Session,
     repo.commit("wip", a="real\n")
     session = repo.session("HEAD~")
     opened: list[bytes] = []
-    status = []
+    status: list[str] = []
 
     def editor(content: bytes) -> bytes:
         opened.append(content)
@@ -452,7 +452,7 @@ def test_a_rename_is_a_row_of_its_own(repo: Repo) -> None:
     session = repo.session("HEAD~")
 
     async def script(pilot: Pilot[Any]) -> None:
-        texts = pilot.app.screen.query_one(DiffView)._texts
+        texts = pilot.app.screen.query_one(DiffView)._texts  # pyright: ignore[reportPrivateUsage]
         assert texts[:2] == ["R old -> new", "  renamed from old"]
         await create(pilot, "Rename")
         await pilot.press("j", "space")  # the rename's row

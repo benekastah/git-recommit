@@ -1,6 +1,7 @@
 """git recommit run in a real (pseudo-)terminal, for what Textual's headless
 test driver can't do, like suspending with ctrl+z."""
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -12,7 +13,8 @@ import pytest
 from tests.helpers import Repo
 
 if sys.platform == "win32":
-    pytest.skip("needs a Unix pseudo-terminal", allow_module_level=True)
+    # Raised rather than pytest.skip(), so the type checker sees the rest as Unix only.
+    raise pytest.skip.Exception("needs a Unix pseudo-terminal", allow_module_level=True)
 
 import select
 
@@ -80,10 +82,8 @@ class Terminal:
         pytest.fail(f"it didn't exit; the output ends {self.output[-2000:]!r}")
 
     def close(self) -> None:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.kill(self.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         self.shell.kill()
         self.shell.wait()
         os.close(self.fd)

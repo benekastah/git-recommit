@@ -50,7 +50,7 @@ def diff(session: Session) -> list[str]:
     def marker(i: int | None) -> str:
         return "" if i is None else str(numbers.get(i, "·"))
 
-    lines = []
+    lines: list[str] = []
     for file in session.files:
         # As git status shows a rename.
         lines.append(f"{file.status} {file.old_path} -> {file.path}" if file.old_path else f"{file.status} {file.path}")
@@ -69,7 +69,7 @@ def diff(session: Session) -> list[str]:
 def as_json(session: Session) -> dict[str, Any]:
     numbers = _numbers(session)
     conflicts = session.conflicts()
-    files = []
+    files: list[dict[str, Any]] = []
     for file in session.files:
         changes: list[dict[str, Any]] = []
         if file.meta_id is not None:

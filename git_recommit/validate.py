@@ -42,6 +42,8 @@ def run(
                     return Outcome("edit", index)
                 case "a":
                     return Outcome("abort")
+                case "p":
+                    continue
         return Outcome("ok")
     finally:
         git.run("worktree", "remove", "--force", fs_path(worktree), check=False)
@@ -49,7 +51,7 @@ def run(
         git.run("worktree", "prune", check=False)
 
 
-def _ask_on_failure(index: int, subject: str, ask: Callable[[str], str]) -> str:
+def _ask_on_failure(index: int, subject: str, ask: Callable[[str], str]) -> Literal["e", "a", "p"]:
     while True:
         try:
             answer = ask(f"Validation failed for commit {index + 1} ({subject}). [e]dit, [a]bort or [p]roceed? ")

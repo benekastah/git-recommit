@@ -65,7 +65,7 @@ def test_reading_goes_on_after_git_stopped_between_commands(repo: Repo) -> None:
     git = repo.client
     head = git.head()
     # Killed, say, while git recommit was suspended.
-    process = git._cat_file
+    process = git._cat_file  # pyright: ignore[reportPrivateUsage]
     assert process is not None
     process.kill()
     process.wait()

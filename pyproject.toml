@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 dependencies = ["textual>=8.2.8"]
 
 [dependency-groups]
-dev = ["mypy>=2.4.1", "pytest>=9.2.0", "pytest-xdist>=3.8.0", "ruff>=0.17.5", "shellcheck-py>=0.11.0.1"]
+dev = ["basedpyright>=1.40.2", "pytest>=9.2.0", "pytest-xdist>=3.8.0", "ruff>=0.17.5", "shellcheck-py>=0.11.0.1"]
 
 [project.scripts]
 git-recommit = "git_recommit.cli:main"
@@ -29,9 +29,23 @@ addopts = ["-n", "auto"]
 line-length = 120
 
 [tool.ruff.lint]
-extend-select = ["B904", "B905", "C901", "PERF401", "I", "UP"]
+extend-select = ["I", "UP", "B", "C4", "SIM", "C901", "PERF401", "ANN"]
+# ANN: every function annotated, which basedpyright infers rather than requires.
+# An explicit Any (ANN401) is allowed.
+ignore = ["ANN401"]
 
-[tool.mypy]
-strict = true
-python_version = "3.11"
-files = ["git_recommit", "tests"]
+[tool.basedpyright]
+include = ["git_recommit", "tests"]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"
+# Linux, so it says the same on every system; lint.sh checks as if on Windows too.
+pythonPlatform = "Linux"
+# A variable whose type is unknown is an error (e.g. a list made empty needs its
+# item type), as mypy's strict mode inferred or required it. Using an unknown
+# value isn't: Textual's `App.app`, parsed JSON, a bare `set()` argument or a
+# test's lambda: mypy's strict mode treats those as Any, and doesn't check
+# their use either.
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownLambdaType = false
+reportUnknownParameterType = false

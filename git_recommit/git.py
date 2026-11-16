@@ -1,3 +1,4 @@
+import contextlib
 import functools
 import os
 import re
@@ -89,12 +90,10 @@ class GitClient:
         """Stop the cat-file process, if one was started."""
         if self._cat_file is not None:
             if self._cat_file.stdin is not None:
-                try:
+                # It may have stopped already (on Windows, maybe not as a
+                # BrokenPipeError).
+                with contextlib.suppress(OSError):
                     self._cat_file.stdin.close()
-                except OSError:
-                    # It had stopped already (on Windows, maybe not as a
-                    # BrokenPipeError).
-                    pass
             self._cat_file.wait()
             self._cat_file = None
 
@@ -328,7 +327,7 @@ class GitClient:
         if not contents:
             return []
         with tempfile.TemporaryDirectory() as scratch:
-            paths = []
+            paths: list[str] = []
             for i, content in enumerate(contents):
                 paths.append(os.path.join(scratch, str(i)))
                 with open(paths[-1], "wb") as f:

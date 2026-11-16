@@ -29,7 +29,7 @@ class GitClient(Git):
     """Runs git in directory, as `git -C <directory>` does: the git
     $GIT_RECOMMIT_GIT names, or else the first git on PATH (which, as `git
     recommit` runs it, is the git that did: git puts its exec-path first),
-    by its full path. run, run_bytes and the reads it adds raise
+    by its full path (a RecommitError if there's none). run, run_bytes and the reads it adds raise
     RecommitErrors, not GitErrors."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
@@ -37,7 +37,11 @@ class GitClient(Git):
         # process each; started the first time it's needed. Before finding
         # git, which can fail, so __del__ finds it.
         self.cat_file = CatFile(self)
-        super().__init__(directory, env_var="GIT_RECOMMIT_GIT")
+        try:
+            super().__init__(directory, env_var="GIT_RECOMMIT_GIT")
+        except (FileNotFoundError, ValueError) as e:
+            # find_git's: no git on PATH, or on Windows, a batch file.
+            raise RecommitError(str(e)) from e
         # Where git keeps each file asked about (see git_paths), and the path
         # from the top of the worktree down to directory, which don't change.
         self._git_paths: dict[str, str] = {}

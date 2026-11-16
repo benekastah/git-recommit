@@ -142,10 +142,13 @@ def main(argv: list[str] | None = None) -> int:
         p.error("give either a RANGE, --root, or --edit COMMIT")
     if args.edit is not None and args.validate is not None:
         p.error("--validate only applies to rebuilding a RANGE")
-    git = GitClient(args.directory)
     if args.edit is not None:
-        return _report(lambda: 0 if edit_commit(git, args.edit) else 1)
-    return _report(lambda: recommit(git, None if args.root else args.range, args.validate, args.include_untracked))
+        return _report(lambda: 0 if edit_commit(GitClient(args.directory), args.edit) else 1)
+    return _report(
+        lambda: recommit(
+            GitClient(args.directory), None if args.root else args.range, args.validate, args.include_untracked
+        )
+    )
 
 
 def _report(run: Callable[[], int]) -> int:

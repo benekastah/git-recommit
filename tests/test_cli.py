@@ -1,4 +1,7 @@
 import json
+import pathlib
+
+import pytest
 
 from tests.helpers import Repo
 
@@ -12,6 +15,18 @@ def test_reports_errors_without_a_traceback(repo: Repo) -> None:
     result = repo.recommit("nope", expect_success=False)
     assert result.returncode == 1
     assert result.stderr == "git-recommit: nope isn't a commit\n"
+
+
+@pytest.mark.usefixtures("fresh_find_git")
+@pytest.mark.parametrize("args", [["HEAD~"], ["start", "HEAD~"]])
+def test_says_when_theres_no_git(
+    repo: Repo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    (tmp_path / "empty").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    monkeypatch.delenv("GIT_RECOMMIT_GIT")
+    result = repo.recommit(*args, expect_success=False)
+    assert result.stderr.startswith("git-recommit: git isn't in any directory on PATH")
 
 
 def test_says_why_git_cant_resolve_a_name(repo: Repo) -> None:

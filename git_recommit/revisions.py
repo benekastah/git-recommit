@@ -70,18 +70,21 @@ IN_PROGRESS = {
 }
 
 
-def check_nothing_in_progress(git: GitClient) -> None:
+def check_nothing_in_progress(git: GitClient, status: "WorktreeStatus | None" = None) -> None:
     """Refuse while another operation (a merge, cherry-pick, revert or rebase)
     is in progress, or the index has unresolved conflicts: taking the working
     tree as uncommitted changes would take the conflict markers, and writing
-    (which resets the index) would end the operation."""
+    (which resets the index) would end the operation. status, if given, is
+    worktree_status's, which says if there are conflicts; without it, git
+    ls-files finds them."""
     # With the paths worktree_commit and Session.finish need, so one git
     # process finds them all (GitClient keeps them).
     paths = git.git_paths(*IN_PROGRESS, "index", "index.lock")[: len(IN_PROGRESS)]
     for path, what in zip(paths, IN_PROGRESS.values(), strict=True):
         if os.path.exists(path):
             raise RecommitError(f"{what} is in progress; finish it or abort it first")
-    if git.run("ls-files", "--unmerged"):
+    unmerged = status.unmerged if status is not None else bool(git.run("ls-files", "--unmerged"))
+    if unmerged:
         raise RecommitError("there are unresolved conflicts; resolve them first")
 
 
@@ -91,6 +94,8 @@ class WorktreeStatus:
     changed: bool
     # The untracked files that aren't ignored, from the top.
     untracked: list[str]
+    # Whether the index has unresolved conflicts.
+    unmerged: bool
 
 
 def worktree_status(git: GitClient, include_untracked: bool = False) -> WorktreeStatus:
@@ -102,7 +107,7 @@ def worktree_status(git: GitClient, include_untracked: bool = False) -> Worktree
     out = git.run_bytes(
         "--no-optional-locks", "status", "--porcelain=v2", "-z", "--no-renames", "--untracked-files=all"
     )
-    changed = False
+    changed = unmerged = False
     untracked = []
     # "? <path>" for an untracked file; for a changed one, "1 <XY> <submodule>
     # ..." (or "u ..." unmerged), where <submodule> is S..U for a submodule
@@ -114,7 +119,8 @@ def worktree_status(git: GitClient, include_untracked: bool = False) -> Worktree
             continue
         elif entry:
             changed = True
-    return WorktreeStatus(changed=changed, untracked=untracked)
+            unmerged = unmerged or entry.startswith(b"u ")
+    return WorktreeStatus(changed=changed, untracked=untracked, unmerged=unmerged)
 
 
 def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_untracked: bool = False) -> str | None:

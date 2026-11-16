@@ -311,17 +311,36 @@ def test_refuses_to_start_in_the_middle_of_another_operation(repo: Repo, start: 
         repo.session("HEAD~2")
 
 
-def test_refuses_to_start_with_unresolved_conflicts(repo: Repo) -> None:
-    # A conflicted `git stash pop` leaves conflicts, but no MERGE_HEAD.
-    diverge(repo)
+def conflict_without_an_operation(repo: Repo) -> None:
+    """Leave unresolved conflicts, as a conflicted `git stash pop` does,
+    without an operation in progress (no MERGE_HEAD)."""
     repo.write("f", "stashed\n")
     repo.git("stash", "--quiet")
     repo.write("f", "different\n")
     repo.git("commit", "--quiet", "-am", "different")
     repo.client.ok("stash", "pop")
     assert repo.git("ls-files", "--unmerged")
+
+
+def test_refuses_to_start_with_unresolved_conflicts(repo: Repo) -> None:
+    diverge(repo)
+    conflict_without_an_operation(repo)
     with pytest.raises(RecommitError, match="unresolved conflicts"):
         repo.session("HEAD~3")
+
+
+def test_reloading_and_writing_refuse_once_there_are_unresolved_conflicts(repo: Repo) -> None:
+    diverge(repo)
+    session = repo.session("HEAD~2")
+    session.restore_old_commits()
+    shas = session.build()
+    conflict_without_an_operation(repo)
+    head = repo.git("rev-parse", "HEAD")
+    with pytest.raises(RecommitError, match="unresolved conflicts"):
+        session.reload()
+    with pytest.raises(RecommitError, match="unresolved conflicts"):
+        session.finish(shas)
+    assert repo.git("rev-parse", "HEAD") == head
 
 
 def test_reloading_and_writing_refuse_once_another_operation_starts(repo: Repo) -> None:

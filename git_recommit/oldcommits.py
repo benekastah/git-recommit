@@ -241,6 +241,11 @@ def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
     # (the rest holds the GIL).
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
         list(pool.map(reproduce, [diff for diff in session.files if not diff.submodule]))
+    # They finish in any order: put each commit's edits in the diff's, so
+    # the plan is the same every time.
+    order = {diff.path: index for index, diff in enumerate(session.files)}
+    for commit in session.plan.commits:
+        commit.edits = dict(sorted(commit.edits.items(), key=lambda item: order[item[0]]))
 
 
 def _trees(session: "Session", commits: list[_OldCommit]) -> list[dict[str, str]]:

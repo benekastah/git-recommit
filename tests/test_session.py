@@ -461,7 +461,7 @@ def test_runs_the_commit_msg_hook_on_new_and_reworded_messages(repo: Repo) -> No
 
 
 def test_the_commit_msg_hook_runs_in_the_users_locale(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Not the C locale py-git-client gives the git whose output it reads.
+    # Not one py-git-client sets to read git's messages.
     monkeypatch.setenv("LC_ALL", "C.UTF-8")
     repo.commit("base", f="1\n")
     repo.commit("change", f="2\n")

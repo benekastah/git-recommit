@@ -71,7 +71,8 @@ These were the user's choices for v0; ask before changing them.
   does, messages are cleaned by `commit.cleanup` and `core.commentChar`, and
   commits are signed per `commit.gpgSign`. And don't change git's behavior
   for the user: e.g. no environment variables that their hooks would
-  inherit.
+  inherit. (py-git-client's GIT_TEXTDOMAINDIR, which keeps git's messages in
+  English, is the one exception: hooks and filters keep the user's locale.)
 
 - The TUI uses Textual. Use the latest stable version of any library added,
   and add libraries sparingly: dev dependencies are fine, runtime ones need a
@@ -146,9 +147,8 @@ These were the user's choices for v0; ask before changing them.
   `run_bytes` and those reads raise `RecommitError`s rather than
   `GitError`s (its `ok` is False for any failure, though a timeout still
   raises `GitTimeoutError`; `var` and `resolve`, as
-  `Git`'s, raise `GitError`s), and it keeps git in the user's
-  locale (`Git` gives LC_ALL=C to a git whose output it reads, which hooks
-  would inherit). The tests' own git calls (`Repo.git`) use `Git` too, with
+  `Git`'s, raise `GitError`s). git's messages are in English, as
+  py-git-client has them. The tests' own git calls (`Repo.git`) use `Git` too, with
   the real git (`helpers.GIT`).
 - Read from git with as few processes as you can: names and objects through
   `GitClient`'s one `cat-file` process (`commit_sha`, `head`, `tree`,

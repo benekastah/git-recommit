@@ -96,8 +96,8 @@ def test_reading_an_object_of_another_kind_is_refused(repo: Repo) -> None:
 
 
 def test_a_client_no_longer_used_is_freed_at_once(repo: Repo) -> None:
-    # By its reference count, as __del__ then stops its cat-file process,
-    # rather than whenever the cycle collector gets to it.
+    # By its reference count, which stops its cat-file process, rather than
+    # whenever the cycle collector gets to it.
     git = GitClient(repo.path)
     git.head()
     # CatFile's own, as nothing else says whether its process is running.
@@ -116,7 +116,6 @@ def test_a_client_no_longer_used_is_freed_at_once(repo: Repo) -> None:
 @pytest.mark.usefixtures("fresh_find_git")
 @pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
 def test_a_client_that_finds_no_git_is_freed_quietly(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Its __del__ runs too, with no cat_file made.
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.delenv("GIT_RECOMMIT_GIT")
     with pytest.raises(RecommitError, match="git isn't in any directory on PATH"):

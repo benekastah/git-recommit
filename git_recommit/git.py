@@ -1,8 +1,8 @@
 """Running git, through py-git-client (`git_client`), which starts every git
 process the quickest way each system allows and reads objects through one
 `git cat-file --batch-command`. This adds what git recommit needs on top:
-its errors as RecommitErrors, the user's locale for git, and the reads it
-makes (commits, trees and blobs, paths in the git directory, merges)."""
+its errors as RecommitErrors, and the reads it makes (commits, trees and
+blobs, paths in the git directory, merges)."""
 
 import contextlib
 import os
@@ -43,32 +43,14 @@ class GitClient(Git):
             # find_git's: no git on PATH, or on Windows, a batch file.
             raise RecommitError(str(e)) from e
         # For reading every object and resolving every name, rather than a
-        # process each; started the first time it's needed. Through a Git of
-        # its own, not this client, which would make a reference cycle, so
-        # __del__ would only stop it when the cycle collector ran. (It runs
-        # nothing that inherits the C locale that Git gives it.)
-        self.cat_file = CatFile(Git(self.directory, program=self.program))
+        # process each; started the first time it's needed. Weakly, so that
+        # it stops as soon as this client is no longer used, not when the
+        # cycle collector runs.
+        self.cat_file = CatFile(self, weak=True)
         # Where git keeps each file asked about (see git_paths), and the path
         # from the top of the worktree down to directory, which don't change.
         self._git_paths: dict[str, str] = {}
         self._prefix: str | None = None
-
-    def __del__(self) -> None:
-        # Not if __init__ failed before making it.
-        if hasattr(self, "cat_file"):
-            self.close()
-
-    def close(self) -> None:
-        """Stop the cat-file process, if one was started."""
-        self.cat_file.close()
-
-    def environment(self, env: Mapping[str, EnvValue] | None = None, *, english: bool = False) -> dict[str, str]:
-        """As Git's, but always in the user's locale, never with the LC_ALL=C
-        Git gives a command whose output it reads: the hooks, filters and
-        signing programs git runs for git recommit (e.g. commit-msg) would
-        inherit it, and git's messages are for the user to read."""
-        del english
-        return super().environment(env)
 
     def run(
         self,
@@ -77,17 +59,19 @@ class GitClient(Git):
         input: str | None = None,
         env: Mapping[str, EnvValue] | None = None,
         timeout: Timeout = CLIENT_TIMEOUT,
+        strip: bool = True,
     ) -> str:
-        """Run git and return its stdout, stripped; unless check is False,
-        raise a RecommitError if it fails."""
+        """Run git and return its stdout, stripped unless strip is False;
+        unless check is False, raise a RecommitError if it fails."""
         if check:
             # Git.run calls run_bytes, whose reported() does this too; here
             # as well, in case py-git-client's Git.run stops calling it.
             with reported():
-                return super().run(*args, input=input, env=env, timeout=timeout)
+                return super().run(*args, input=input, env=env, timeout=timeout, strip=strip)
         encoded = None if input is None else encode(input)
         result = self.process(*args, capture_output=True, input=encoded, env=env, timeout=timeout)
-        return decode(result.stdout).strip()
+        output = decode(result.stdout)
+        return output.strip() if strip else output
 
     def run_bytes(
         self,
@@ -111,12 +95,12 @@ class GitClient(Git):
             self._git_paths.update(zip(new, map(os.fsdecode, out.splitlines()), strict=True))
         return [self._git_paths[name] for name in names]
 
-    def prefix(self) -> str:
-        """The path from the top of the worktree down to directory, ending in
-        a slash (or empty, at the top or outside the worktree, where git takes
-        paths from the top), to put before a path from directory."""
+    def prefix(self, *, timeout: Timeout = CLIENT_TIMEOUT) -> str:
+        """As Git's (the path from the top of the worktree down to directory,
+        to put before a path from directory), but only asked of git once."""
         if self._prefix is None:
-            self._prefix = self.run("rev-parse", "--show-prefix")
+            with reported():
+                self._prefix = super().prefix(timeout=timeout)
         return self._prefix
 
     def cdup(self) -> str:

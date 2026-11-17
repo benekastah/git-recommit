@@ -50,6 +50,15 @@ def test_a_failing_git_command_is_a_recommit_error(repo: Repo) -> None:
             run("rev-parse", "--verify", "nope")
 
 
+def test_ok_says_whether_git_succeeded(repo: Repo) -> None:
+    git = repo.client
+    assert git.ok("rev-parse", "--verify", "HEAD")
+    repo.write("README", "changed\n")
+    # Exit status 1, and 128.
+    assert not git.ok("diff", "--quiet")
+    assert not git.ok("rev-parse", "--verify", "nope")
+
+
 def test_resolve_commit_says_why_a_name_isnt_one(repo: Repo) -> None:
     git = repo.client
     assert git.resolve_commit("HEAD") == repo.git("rev-parse", "HEAD")

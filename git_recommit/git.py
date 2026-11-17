@@ -6,6 +6,7 @@ makes (commits, trees and blobs, paths in the git directory, merges)."""
 
 import contextlib
 import os
+import subprocess
 import tempfile
 from collections.abc import Generator, Mapping
 
@@ -29,8 +30,11 @@ class GitClient(Git):
     """Runs git in directory, as `git -C <directory>` does: the git
     $GIT_RECOMMIT_GIT names, or else the first git on PATH (which, as `git
     recommit` runs it, is the git that did: git puts its exec-path first),
-    by its full path (a RecommitError if there's none). run, run_bytes and the reads it adds raise
-    RecommitErrors, not GitErrors."""
+    by its full path (a RecommitError if there's none).
+
+    run, run_bytes and the reads it adds raise RecommitErrors, not
+    GitErrors; ok and passthrough say whether git succeeded. What it has of
+    Git's as it is (var, resolve, object_id_length) raises GitErrors."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         try:
@@ -152,10 +156,18 @@ class GitClient(Git):
             raise RecommitError(f"{sha} isn't a commit or tree")
         return tree
 
+    def ok(
+        self, *args: str | bytes, env: Mapping[str, EnvValue] | None = None, timeout: Timeout = CLIENT_TIMEOUT
+    ) -> bool:
+        """Whether git succeeded: False for any failure, not only git's no
+        (exit status 1), unlike Git's, which raises for the rest."""
+        result = self.process(*args, capture_output=True, stdout=subprocess.DEVNULL, env=env, timeout=timeout)
+        return result.returncode == 0
+
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         """Whether ancestor is in descendant's history (or is descendant);
         False too if git can't say (e.g. one names nothing)."""
-        return self.process("merge-base", "--is-ancestor", ancestor, descendant, capture_output=True).returncode == 0
+        return self.ok("merge-base", "--is-ancestor", ancestor, descendant)
 
     def blob(self, sha: str) -> bytes:
         """A blob's content."""

@@ -141,8 +141,10 @@ These were the user's choices for v0; ask before changing them.
   and the validate command are the user's shell commands, so those do run
   through one. `GitClient` (`git_recommit/git.py`) is py-git-client's `Git`
   (`git_client`), which starts git by its full path, the quickest way each
-  system allows; it adds the reads git recommit makes, raises
-  `RecommitError`s rather than `GitError`s, and keeps git in the user's
+  system allows; it adds the reads git recommit makes, its `run`,
+  `run_bytes` and those reads raise `RecommitError`s rather than
+  `GitError`s (its `ok` is False for any failure; `var` and `resolve`, as
+  `Git`'s, raise `GitError`s), and it keeps git in the user's
   locale (`Git` gives LC_ALL=C to a git whose output it reads, which hooks
   would inherit). The tests' own git calls (`Repo.git`) use `Git` too, with
   the real git (`helpers.GIT`).

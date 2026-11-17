@@ -382,9 +382,8 @@ def test_conflict_markers_are_carried_into_later_commits(repo: Repo, third_takes
 
 
 def test_editing_a_resolved_conflict_back_to_what_was_assigned_keeps_it_resolved(repo: Repo) -> None:
-    # Content that's what the commit's changes alone make it, with nothing
-    # carried in: an edit still, which resolves the conflict, as the first
-    # did, not none.
+    # After one edit has resolved the conflict, editing again to just what
+    # the commit's changes make it is still an edit, and keeps it resolved.
     s = session(repo)
     AddCommit("Stub f").run(s)
     AddCommit("Change f").run(s)
@@ -399,7 +398,15 @@ def test_editing_a_resolved_conflict_back_to_what_was_assigned_keeps_it_resolved
     assert repo.show(second, "f") == assigned.decode()
 
 
-def test_a_kept_deletion_can_be_resolved_to_the_files_end_state(repo: Repo) -> None:
+def test_deleting_a_file_the_commits_own_edit_added_leaves_no_edit(repo: Repo) -> None:
+    s = session(repo)
+    AddCommit("Add new").run(s)
+    Edit(1, "new", b"new\n").run(s)
+    assert Edit(1, "new", None).run(s).message == "new in commit 1 has no edits."
+    assert s.plan.commits[0].edits == {}
+
+
+def test_a_kept_deletion_can_be_resolved_to_the_files_end_state_in_two_steps(repo: Repo) -> None:
     # Saving the end state it opens with keeps the deletion; but editing it
     # to anything, then to that, gives the file.
     s = nul_session(repo)

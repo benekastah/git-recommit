@@ -224,6 +224,16 @@ the repository, then run `python3 dev.py install` (on Windows,
 pre-commit hook formats and lint-fixes staged Python files, and the pre-push
 hook runs the static checks before every push. CI runs the tests.
 
+If `~/.local/bin` already has `git-recommit` from another clone (or installed
+another way), `dev.py install` stops and says so, changing nothing:
+`dev.py install --replace` takes it over (except, on Windows, another
+install's `git-recommit.exe`, which you uninstall). A link to a clone that's
+since been deleted it just replaces. It won't install a clone in a temporary
+directory (the system's, `/tmp` or `/var/tmp`), which would leave the command
+broken once it's deleted: there, run `python3 dev.py venv` and
+`git config core.hooksPath git_hooks`, and use `.venv/bin/git-recommit` (on
+Windows, `.venv\Scripts\git-recommit.exe`).
+
 ```sh
 python3 dev.py check          # every check: static, then tests
 python3 dev.py static         # Ruff's formatter and linter, and basedpyright in strict mode

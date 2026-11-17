@@ -301,15 +301,20 @@ class Session:
 
     def set_edit(self, key: int, diff: FileDiff, content: bytes | None) -> None:
         """Make the file content in the commit, or with None, delete it (and
-        carry that into later ones)."""
+        carry that into later ones). It replaces the commit's own edit, so
+        it's judged against the file without that: content that's what the
+        file would be anyway (and isn't a conflict's resolution) is no
+        edit."""
         _check_editable(diff)
         if diff.whole and content is not None:
             # Kept as its blob id (see plan.Edit).
             content = self.git.hash_blob(content).encode()
         commit = self.plan.get(key)
         index = self.plan.index(key)
-        state = self.states(diff, upto=index)[index]
+        # The file as it'd be without the commit's own edit, which this one
+        # replaces: with it, the conflict it resolved wouldn't show.
         commit.edits.pop(diff.path, None)
+        state = self.states(diff, upto=index)[index]
         # Even an edit that changes nothing resolves a conflict.
         if content is None:
             if state.version is not None or state.conflict:

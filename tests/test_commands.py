@@ -381,6 +381,46 @@ def test_conflict_markers_are_carried_into_later_commits(repo: Repo, third_takes
     assert Edit(3, "data", opened).run(s).message == "data is unchanged in commit 3."
 
 
+def test_editing_a_resolved_conflict_back_to_what_was_assigned_keeps_it_resolved(repo: Repo) -> None:
+    # After one edit has resolved the conflict, editing again to just what
+    # the commit's changes make it is still an edit, and keeps it resolved.
+    s = session(repo)
+    AddCommit("Stub f").run(s)
+    AddCommit("Change f").run(s)
+    Assign((Target("f"),), 2).run(s)
+    Edit(1, "f", LINES.replace("2\n", "TWO\n").encode()).run(s)
+    assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "f")]
+    Edit(2, "f", b"anything\n").run(s)
+    assigned = s.states(s.files[0])[1].basis
+    Edit(2, "f", assigned).run(s)
+    assert s.conflicts() == []
+    _, second = s.build()
+    assert repo.show(second, "f") == assigned.decode()
+
+
+def test_deleting_a_file_the_commits_own_edit_added_leaves_no_edit(repo: Repo) -> None:
+    s = session(repo)
+    AddCommit("Add new").run(s)
+    Edit(1, "new", b"new\n").run(s)
+    assert Edit(1, "new", None).run(s).message == "new in commit 1 has no edits."
+    assert s.plan.commits[0].edits == {}
+
+
+def test_a_kept_deletion_can_be_resolved_to_the_files_end_state_in_two_steps(repo: Repo) -> None:
+    # Saving the end state it opens with keeps the deletion; but editing it
+    # to anything, then to that, gives the file.
+    s = nul_session(repo)
+    AddCommit("Delete data").run(s)
+    AddCommit("Change data").run(s)
+    Assign((Target("data"),), 2).run(s)
+    Edit(1, "data", None).run(s)
+    Edit(2, "data", b"a\0\nanything\n").run(s)
+    Edit(2, "data", b"a\0\nb\nc\n").run(s)
+    assert s.conflicts() == []
+    _, second = s.build()
+    assert repo.git("cat-file", "blob", f"{second}:data") == "a\0\nb\nc"
+
+
 def test_deleting_a_text_file_conflicts_with_a_later_change_with_markers(repo: Repo) -> None:
     s = session(repo)
     AddCommit("Delete f").run(s)

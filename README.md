@@ -127,7 +127,8 @@ Where the edit carried in deleted such a file (or a binary file or symlink),
 the commit that conflicts doesn't have it, so `e` opens its end state (or, for
 a binary file, asks for a file). Saving that unchanged (or giving that same
 file) keeps the deletion, resolving the conflict, as does
-`git recommit edit N path --delete`.
+`git recommit edit N path --delete`. To have the file there as it ends up
+instead, edit it to anything, then back.
 
 **Changing your mind** about the code itself: press `ctrl+z`, change files (or
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd

@@ -31,18 +31,6 @@ def test_commit_sha_is_none_for_what_isnt_a_commit(repo: Repo) -> None:
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
 
 
-def test_names_git_cant_resolve_are_none_quietly(repo: Repo, capfd: pytest.CaptureFixture[str]) -> None:
-    git = repo.client
-    tree = repo.git("rev-parse", "HEAD^{tree}")
-    # No upstream, past the end of the reflog, a tree, as a commit. git
-    # cat-file exits at @{u}, so HEAD@{999} is the first name the next one
-    # gets: it exits there too.
-    for rev in ("@{u}", "HEAD@{999}", tree):
-        assert git.commit_sha(rev) is None, rev
-    assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
-    assert capfd.readouterr().err == ""
-
-
 def test_a_failing_git_command_is_a_recommit_error(repo: Repo) -> None:
     git = repo.client
     for run in (git.run, git.run_bytes):

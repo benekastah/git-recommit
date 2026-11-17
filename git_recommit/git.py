@@ -18,6 +18,7 @@ from git_client import (
     decode,
     encode,
     git_paths,
+    hash_blob_at,
     hash_blobs,
 )
 from git_client import merge_file as _merge_file
@@ -173,8 +174,11 @@ class GitClient(Git):
     def clean(self, path: str, content: bytes) -> bytes:
         """content as `git add` would commit it at path: through the clean
         filters and line-ending conversion its attributes and config ask for
-        (e.g. CRLF to LF with core.autocrlf)."""
-        return self.blob(self.run_bytes("hash-object", "-w", "--path", path, "--stdin", input=content).decode().strip())
+        (e.g. CRLF to LF with core.autocrlf). path is from the top of the
+        worktree."""
+        with reported():
+            sha = hash_blob_at(self, self.cdup() + path, content, write=True)
+        return self.blob(sha)
 
     def hash_blob(self, content: bytes) -> str:
         """Write content to the object database, and return its id."""

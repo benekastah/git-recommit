@@ -284,8 +284,8 @@ def test_a_binary_conflict_can_be_resolved_by_keeping_the_edit(repo: Repo) -> No
     assert repo.git("cat-file", "blob", f"{second}:data") == "\0stub"
 
 
-# The edit with a NUL, and without one (which it's merged as binary for all
-# the same, as the other sides have them).
+# An edit with a NUL, and one without: it's merged as binary either way,
+# since the other sides have a NUL.
 @pytest.mark.parametrize("stub", [b"a\0\nstub\n", b"stub\n"], ids=["nul", "no-nul"])
 def test_a_file_with_nuls_diffed_as_text_conflicts_as_a_binary_file(repo: Repo, stub: bytes) -> None:
     # git won't merge it, so a change on both sides conflicts, and it opens
@@ -325,6 +325,55 @@ def test_a_conflict_with_markers_isnt_resolved_by_saving_it_unchanged(repo: Repo
     assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
 
 
+def nul_session(repo: Repo) -> Session:
+    """data, with a NUL, diffed as text: c added."""
+    repo.commit("base", data=b"a\0\nb\n", **{".gitattributes": "data diff\n"})
+    repo.commit("change", data=b"a\0\nb\nc\n")
+    return repo.session("HEAD~")
+
+
+def test_an_edit_to_a_file_with_nuls_conflicts_with_more_changes_in_its_commit(repo: Repo) -> None:
+    s = nul_session(repo)
+    AddCommit("Edit data").run(s)
+    Edit(1, "data", b"a\0\nstub\n").run(s)
+    Assign((Target("data"),), 1).run(s)
+    assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(0, "data")]
+
+
+def test_deleting_a_file_with_nuls_conflicts_with_a_later_change_as_a_deletion(repo: Repo) -> None:
+    s = nul_session(repo)
+    AddCommit("Delete data").run(s)
+    AddCommit("Change data").run(s)
+    Assign((Target("data"),), 2).run(s)
+    Edit(1, "data", None).run(s)
+    assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
+    assert s.states(s.files[0])[1].version is None
+    Edit(2, "data", None).run(s)
+    assert s.conflicts() == []
+    _, second = s.build()
+    assert repo.show(second, "data") is None
+
+
+@pytest.mark.parametrize("third_takes_the_nul", [True, False], ids=["merged-as-binary", "taking-nothing"])
+def test_conflict_markers_are_carried_into_later_commits(repo: Repo, third_takes_the_nul: bool) -> None:
+    # A conflict with markers in the second commit; the third keeps them,
+    # even merging as binary (keeping them, as the edit carried in), so
+    # saving them there is no resolution either.
+    repo.commit("base", data=LINES, **{".gitattributes": "data diff\n"})
+    repo.commit("change", data=LINES.replace("1\n", "one\n", 1).encode() + b"z\0\n")
+    s = repo.session("HEAD~")
+    for message in ("Edit data", "Change data", "Add a NUL"):
+        AddCommit(message).run(s)
+    Assign((Target("data", hunk=1),), 2).run(s)
+    if third_takes_the_nul:
+        Assign((Target("data", hunk=2),), 3).run(s)
+    Edit(1, "data", LINES.replace("1\n", "uno\n", 1).encode()).run(s)
+    third = s.plan.commits[2].key
+    opened = s.edit_text(third, s.files[0])
+    assert b"<<<<<<< edit" in opened
+    assert Edit(3, "data", opened).run(s).message == "data is unchanged in commit 3."
+
+
 def test_deleting_a_binary_file_conflicts_with_a_later_change_to_it(repo: Repo) -> None:
     s = binary_session(repo)
     AddCommit("Delete data").run(s)
@@ -333,6 +382,9 @@ def test_deleting_a_binary_file_conflicts_with_a_later_change_to_it(repo: Repo) 
     Assign((Target("data"),), 2).run(s)
     Edit(1, "data", None).run(s)
     assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
+    # Deleting it there too resolves it.
+    Edit(2, "data", None).run(s)
+    assert s.conflicts() == []
 
 
 @pytest.mark.skipif(os.name == "nt", reason="needs symlinks")

@@ -148,11 +148,14 @@ def file_states(
             merged, conflict, markers = _merge(
                 merge, diff.whole, content(prev_assigned), content(prev_result), content(assigned)
             )
+            # A conflict without markers keeps the edits carried in as they
+            # are: a deletion too, which merged as content would be empty.
+            kept_deletion = conflict and not markers and prev_result is None
             conflict, markers = conflict or prev_conflict, markers or prev_markers
             mode = (
                 assigned or prev_result or prev_assigned or Version(diff.old_mode or diff.new_mode or "100644")
             ).mode
-            gone = assigned is None and not merged and not conflict
+            gone = kept_deletion or (assigned is None and not merged and not conflict)
             carried = None if gone else version(mode, merged)
         # A conflicted file is no basis for an edit, which resolves it.
         basis = content(assigned if conflict else carried)

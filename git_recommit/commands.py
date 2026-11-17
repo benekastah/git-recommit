@@ -264,9 +264,9 @@ class Edit:
     can be one the range doesn't change, or that isn't there at all. Content
     that's what the file already is in the commit changes nothing, so
     quitting an editor without saving is safe; but for a conflict without
-    conflict markers (a binary file or symlink, or content with a NUL in its
-    first 8000 bytes), it resolves the conflict, keeping the edits carried
-    in. A submodule can't be edited."""
+    conflict markers (see FileState.markers), it resolves the conflict,
+    keeping the edits carried in (deleting a file they deleted, too). A
+    submodule can't be edited."""
 
     commit: int
     path: str
@@ -290,13 +290,11 @@ class Edit:
             # that stores Unix ones (cleaned as the file is where the commit
             # has it).
             content = session.git.clean(state.path, content)
-        # Saving what the editor opened (see Session.edit_text) changes nothing;
-        # but for a conflict without conflict markers, it resolves it,
-        # keeping the edits carried in.
-        if content is None:
-            unchanged = state.version is None
-        else:
-            unchanged = (state.markers or not state.conflict) and content == session.edit_text(key, diff)
+        # Saving what the editor opened (see Session.edit_text), or deleting a
+        # file that isn't there, changes nothing; but for a conflict without
+        # conflict markers, it resolves it, keeping the edits carried in.
+        same = state.version is None if content is None else content == session.edit_text(key, diff)
+        unchanged = same and (state.markers or not state.conflict)
         if unchanged:
             return Result(f"{path} is unchanged in commit {self.commit}.", self.commit)
         session.set_edit(key, diff, content)

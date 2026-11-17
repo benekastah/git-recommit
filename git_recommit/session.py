@@ -285,9 +285,9 @@ class Session:
         return states
 
     def edit_text(self, key: int, diff: FileDiff) -> bytes:
-        """The file in the commit, as an edit starts from (if it conflicts,
-        with conflict markers, or where there are none (see
-        FileState.markers), as the edits carried in made it). If the commit doesn't have the file,
+        """The file in the commit, as an edit starts from: if it conflicts,
+        with conflict markers, or if it has none (see FileState.markers), as
+        the edits carried in made it. If the commit doesn't have the file,
         its end state (or if it ends up deleted, its start), to cut down to
         what the commit should have."""
         _check_editable(diff)
@@ -310,10 +310,10 @@ class Session:
         index = self.plan.index(key)
         state = self.states(diff, upto=index)[index]
         commit.edits.pop(diff.path, None)
-        if content is None:
-            if state.version is not None:
-                commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
         # Even an edit that changes nothing resolves a conflict.
+        if content is None:
+            if state.version is not None or state.conflict:
+                commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
         elif content != state.basis or state.conflict or state.version is None:
             commit.edits[diff.path] = Edit(state.basis, content, blob=diff.whole)
 

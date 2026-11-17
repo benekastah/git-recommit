@@ -82,11 +82,12 @@ These were the user's choices for v0; ask before changing them.
 - Keys are vim-like: `j`/`k` (or arrows) move, `h`/`l` scroll sideways, `V`
   selects lines. `f` assigns the whole file to the active commit.
 - An edit made by hand to a file in one new commit is carried forward into
-  later commits, merged with the changes they take (`git merge-file`; a
-  binary file or symlink can't be merged, so a change on both sides
-  conflicts), and can conflict with them; conflicts must be resolved before
-  writing. An edit is kept as (basis, content), so it's merged again when
-  what it was based on changes.
+  later commits, merged with the changes they take (`git merge-file`; a binary
+  file or symlink can't be merged, nor can content with a NUL in its first
+  8000 bytes, even where attributes have it diffed as text, so a change on
+  both sides conflicts), and can conflict with them; conflicts must be
+  resolved before writing. An edit is kept as (basis, content), so it's merged
+  again when what it was based on changes.
 - Changes left unassigned are allowed, with a warning; they end up as
   uncommitted changes in the working tree. recommit finishes by moving HEAD's
   branch and resetting the index, never touching the working tree.

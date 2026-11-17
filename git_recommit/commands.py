@@ -262,10 +262,12 @@ class Edit:
     """Make a file content in a commit, by hand, or with None, delete it
     (carried into later commits): for a symlink, where it points. The file
     can be one the range doesn't change, or that isn't there at all. Content
-    that's what the file already is in the commit changes nothing, so
-    quitting an editor without saving is safe; but for a binary file or
-    symlink that conflicts, it resolves the conflict, keeping the edits
-    carried in. A submodule can't be edited."""
+    that's what the file already is in the commit (in a commit without it,
+    its end state, which an editor opens with) changes nothing, so quitting
+    an editor without saving is safe; but for a conflict without conflict
+    markers (see FileState.markers), it resolves the conflict, keeping the
+    edits carried in (where they deleted the file, keeping it deleted). A
+    submodule can't be edited."""
 
     commit: int
     path: str
@@ -289,13 +291,15 @@ class Edit:
             # that stores Unix ones (cleaned as the file is where the commit
             # has it).
             content = session.git.clean(state.path, content)
-        # Saving what the editor opened (see Session.edit_text) changes nothing;
-        # but for a file that changes as a whole, which opens with no conflict
-        # markers, it resolves a conflict, keeping the edits carried in.
-        if content is None:
-            unchanged = state.version is None
-        else:
-            unchanged = not (diff.whole and state.conflict) and content == session.edit_text(key, diff)
+        # Saving what the editor opened (see Session.edit_text), or deleting a
+        # file that isn't there, changes nothing; but for a conflict without
+        # conflict markers, it resolves it, keeping the edits carried in.
+        same = state.version is None if content is None else content == session.edit_text(key, diff)
+        if same and content is not None and state.version is None:
+            # The file isn't there, and the editor opened its end state: keep
+            # it as it is, not there (which resolves a conflict).
+            content = None
+        unchanged = same and (state.markers or not state.conflict)
         if unchanged:
             return Result(f"{path} is unchanged in commit {self.commit}.", self.commit)
         session.set_edit(key, diff, content)

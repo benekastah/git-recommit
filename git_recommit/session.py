@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from git_client import EnvValue, encode
 
 from git_recommit import oldcommits
-from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, split_lines
+from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, looks_binary, split_lines
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit, NewCommit, Plan
@@ -285,9 +285,9 @@ class Session:
         return states
 
     def edit_text(self, key: int, diff: FileDiff) -> bytes:
-        """The file in the commit, as an edit starts from (a text file with
-        conflict markers if it conflicts; a file that changes as a whole, as
-        the edits carried in made it). If the commit doesn't have the file,
+        """The file in the commit, as an edit starts from: if it conflicts,
+        with conflict markers, or if it has none (see FileState.markers), as
+        the edits carried in made it. If the commit doesn't have the file,
         its end state (or if it ends up deleted, its start), to cut down to
         what the commit should have."""
         _check_editable(diff)
@@ -310,10 +310,10 @@ class Session:
         index = self.plan.index(key)
         state = self.states(diff, upto=index)[index]
         commit.edits.pop(diff.path, None)
-        if content is None:
-            if state.version is not None:
-                commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
         # Even an edit that changes nothing resolves a conflict.
+        if content is None:
+            if state.version is not None or state.conflict:
+                commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
         elif content != state.basis or state.conflict or state.version is None:
             commit.edits[diff.path] = Edit(state.basis, content, blob=diff.whole)
 
@@ -339,7 +339,7 @@ class Session:
             diff.old_blob = diff.new_blob = blob
             content = self.git.blob(blob)
             # As git tells a binary file (but for its attributes).
-            diff.binary = mode != SYMLINK_MODE and b"\0" in content[:8000]
+            diff.binary = mode != SYMLINK_MODE and looks_binary(content)
             if not diff.whole:
                 diff.old_lines = split_lines(content)
         self.files = sorted([*self.files, diff], key=lambda d: encode(d.path))

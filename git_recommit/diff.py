@@ -118,6 +118,13 @@ def numbered(hunk: Hunk) -> Iterator[tuple[Line, int | None, int | None]]:
         new += line.kind != "-"
 
 
+def looks_binary(content: bytes) -> bool:
+    """Whether git takes the content for binary, whatever the file's
+    attributes: whether it has a NUL in its first 8000 bytes, as git's
+    buffer_is_binary."""
+    return b"\0" in content[:8000]
+
+
 def split_lines(data: bytes) -> list[bytes]:
     """Split data into lines as git does, at each \\n, keeping it."""
     lines = data.split(b"\n")

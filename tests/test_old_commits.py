@@ -410,6 +410,20 @@ def test_binary_files_are_reproduced_too(repo: Repo) -> None:
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+def test_a_file_with_nuls_that_its_attributes_diff_as_text(repo: Repo) -> None:
+    # git diffs it line by line, but merges it as a binary file: so does
+    # git recommit, where an edit is carried into a commit that takes more.
+    lines = b"a\0\nb\nc\nd\ne\nf\ng\n"
+    repo.commit("base", data=lines, **{".gitattributes": "data diff\n"})
+    old = [
+        repo.commit("first", data=lines.replace(b"b\n", b"b\nfive\n")),
+        repo.commit("second", data=lines.replace(b"b\n", b"b\nFIVE\n").replace(b"f\n", b"f\nnew\n")),
+        repo.commit("third", data=lines.replace(b"f\n", b"f\nnew\n")),
+    ]
+    session = restored(repo, "HEAD~3")
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
 def test_a_binary_file_renamed_then_changed(repo: Repo) -> None:
     repo.commit("base", old=b"\0" + LINES.encode())
     old = [

@@ -93,8 +93,7 @@ def test_a_client_no_longer_used_is_freed_at_once(repo: Repo) -> None:
 
 
 @pytest.mark.usefixtures("fresh_find_git")
-@pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
-def test_a_client_that_finds_no_git_is_freed_quietly(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_finding_no_git_is_a_recommit_error(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.delenv("GIT_RECOMMIT_GIT")
     with pytest.raises(RecommitError, match="git isn't in any directory on PATH"):

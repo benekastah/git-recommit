@@ -8,6 +8,7 @@ import contextlib
 import os
 from collections.abc import Generator, Mapping
 
+import git_client
 from git_client import (
     CLIENT_TIMEOUT,
     CatFile,
@@ -17,11 +18,7 @@ from git_client import (
     Timeout,
     decode,
     encode,
-    git_paths,
-    hash_blob_at,
-    hash_blobs,
 )
-from git_client import merge_file as _merge_file
 from git_client.cat_file import ObjectType
 
 from git_recommit.errors import RecommitError
@@ -103,7 +100,7 @@ class GitClient(Git):
         not as text. Each is only asked of git once."""
         if new := [name for name in dict.fromkeys(names) if name not in self._git_paths]:
             with reported():
-                found = git_paths(self, *new)
+                found = git_client.git_paths(self, *new)
             self._git_paths.update(zip(new, map(os.fspath, found), strict=True))
         return [self._git_paths[name] for name in names]
 
@@ -178,7 +175,7 @@ class GitClient(Git):
         (e.g. CRLF to LF with core.autocrlf). path is from the top of the
         worktree."""
         with reported():
-            sha = hash_blob_at(self, self.cdup() + path, content, write=True)
+            sha = git_client.hash_blob_at(self, self.cdup() + path, content, write=True)
         return self.blob(sha)
 
     def hash_blob(self, content: bytes) -> str:
@@ -189,7 +186,7 @@ class GitClient(Git):
         """Write each content to the object database, as it is (no filters),
         with one git process, and return their ids."""
         with reported():
-            return hash_blobs(self, contents)
+            return git_client.hash_blobs(self, contents)
 
     def merge_file(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         """Merge the changes from basis to ours and from basis to theirs, as
@@ -197,7 +194,7 @@ class GitClient(Git):
         (in which case it has conflict markers). Nothing is written to the
         repository."""
         with reported():
-            merged, conflicts = _merge_file(
+            merged, conflicts = git_client.merge_file(
                 self, ours=ours, base=basis, theirs=theirs, labels=("edit", "before", "assigned")
             )
         return merged, conflicts > 0

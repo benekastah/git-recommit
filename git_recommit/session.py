@@ -21,7 +21,7 @@ from git_recommit.revisions import (
     worktree_commit,
     worktree_status,
 )
-from git_recommit.snapshot import FileState, Version, file_states, merge_whole, pure_version
+from git_recommit.snapshot import FileState, Version, file_states, pure_version
 
 
 @dataclass(frozen=True)
@@ -260,11 +260,7 @@ class Session:
     def merge(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         key = (basis, ours, theirs)
         if key not in self._merges:
-            # git merge-file refuses what looks binary, as git's own merges
-            # do, even where attributes have it diffed line by line: merge
-            # it as git does a binary file, then.
-            binary = any(looks_binary(content) for content in key)
-            self._merges[key] = (merge_whole if binary else self.git.merge_file)(basis, ours, theirs)
+            self._merges[key] = self.git.merge_file(basis, ours, theirs)
         return self._merges[key]
 
     def states(self, diff: FileDiff, upto: int | None = None) -> list[FileState]:
@@ -289,9 +285,9 @@ class Session:
         return states
 
     def edit_text(self, key: int, diff: FileDiff) -> bytes:
-        """The file in the commit, as an edit starts from (a text file with
-        conflict markers if it conflicts; a file that changes as a whole, as
-        the edits carried in made it). If the commit doesn't have the file,
+        """The file in the commit, as an edit starts from (if it conflicts,
+        with conflict markers, or where there are none (see
+        FileState.markers), as the edits carried in made it). If the commit doesn't have the file,
         its end state (or if it ends up deleted, its start), to cut down to
         what the commit should have."""
         _check_editable(diff)

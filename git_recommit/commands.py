@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from git_recommit.diff import SYMLINK_MODE, FileDiff, looks_binary, numbered
+from git_recommit.diff import SYMLINK_MODE, FileDiff, numbered
 from git_recommit.errors import RecommitError
 from git_recommit.plan import Author
 from git_recommit.session import Session
@@ -263,9 +263,10 @@ class Edit:
     (carried into later commits): for a symlink, where it points. The file
     can be one the range doesn't change, or that isn't there at all. Content
     that's what the file already is in the commit changes nothing, so
-    quitting an editor without saving is safe; but for a binary file or
-    symlink that conflicts, it resolves the conflict, keeping the edits
-    carried in. A submodule can't be edited."""
+    quitting an editor without saving is safe; but for a conflict without
+    conflict markers (a binary file or symlink, or content with a NUL in its
+    first 8000 bytes), it resolves the conflict, keeping the edits carried
+    in. A submodule can't be edited."""
 
     commit: int
     path: str
@@ -290,16 +291,12 @@ class Edit:
             # has it).
             content = session.git.clean(state.path, content)
         # Saving what the editor opened (see Session.edit_text) changes nothing;
-        # but where it opens with no conflict markers, it resolves a conflict,
-        # keeping the edits carried in: for a file that changes as a whole, or
-        # content git won't merge (see Session.merge), which a conflict leaves
-        # as the edit carried in.
+        # but for a conflict without conflict markers, it resolves it,
+        # keeping the edits carried in.
         if content is None:
             unchanged = state.version is None
         else:
-            opened = session.edit_text(key, diff)
-            markerless = diff.whole or looks_binary(opened)
-            unchanged = not (markerless and state.conflict) and content == opened
+            unchanged = (state.markers or not state.conflict) and content == session.edit_text(key, diff)
         if unchanged:
             return Result(f"{path} is unchanged in commit {self.commit}.", self.commit)
         session.set_edit(key, diff, content)

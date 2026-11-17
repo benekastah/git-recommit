@@ -97,7 +97,7 @@ into the later commits, merged with the changes they take, as a rebase would.
 Where a later commit's changes overlap the edit, that commit conflicts: it's
 marked in the sidebar, and you resolve it by editing the file in that commit,
 which opens with conflict markers (but for a binary file or symlink, or a
-file with NUL bytes, below).
+file git takes for binary, below).
 You can't write until every conflict is resolved.
 
 `e` opens the file as it is in the active commit; if the commit doesn't have
@@ -118,9 +118,10 @@ saving it unchanged (or giving the same file) keeps that, resolving the
 conflict; so to cancel, make the editor fail (`:cq`). Submodules can't be
 edited.
 
-A file with NUL bytes that its attributes diff as text (e.g. `diff`) opens in
-the editor, but git won't merge it, so it conflicts as a binary file does,
-and opens the same way.
+A file with a NUL in its first 8000 bytes is one git takes for binary. If its
+attributes have it diffed as text (e.g. `diff`), it opens in the editor, but
+git won't merge it, so it conflicts as a binary file does, and opens the same
+way.
 
 **Changing your mind** about the code itself: press `ctrl+z`, change files (or
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd

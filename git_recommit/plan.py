@@ -13,7 +13,7 @@ class Edit:
     merged into the new content, as a rebase would. For a file that changes as
     a whole (a binary file or a symlink), which can't be merged, they're its
     blob ids before and after instead, and blob is true (see
-    snapshot._merge_blobs).
+    snapshot.merge_whole).
     """
 
     basis: bytes

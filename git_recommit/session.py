@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from git_client import EnvValue, encode
 
 from git_recommit import oldcommits
-from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, split_lines
+from git_recommit.diff import SYMLINK_MODE, FileDiff, change_keys, load_diff, looks_binary, split_lines
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit, NewCommit, Plan
@@ -21,7 +21,7 @@ from git_recommit.revisions import (
     worktree_commit,
     worktree_status,
 )
-from git_recommit.snapshot import FileState, Version, file_states, pure_version
+from git_recommit.snapshot import FileState, Version, file_states, merge_whole, pure_version
 
 
 @dataclass(frozen=True)
@@ -260,7 +260,11 @@ class Session:
     def merge(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         key = (basis, ours, theirs)
         if key not in self._merges:
-            self._merges[key] = self.git.merge_file(basis, ours, theirs)
+            # git merge-file refuses what looks binary, as git's own merges
+            # do, even where attributes have it diffed line by line: merge
+            # it as git does a binary file, then.
+            binary = any(looks_binary(content) for content in key)
+            self._merges[key] = (merge_whole if binary else self.git.merge_file)(basis, ours, theirs)
         return self._merges[key]
 
     def states(self, diff: FileDiff, upto: int | None = None) -> list[FileState]:
@@ -339,7 +343,7 @@ class Session:
             diff.old_blob = diff.new_blob = blob
             content = self.git.blob(blob)
             # As git tells a binary file (but for its attributes).
-            diff.binary = mode != SYMLINK_MODE and b"\0" in content[:8000]
+            diff.binary = mode != SYMLINK_MODE and looks_binary(content)
             if not diff.whole:
                 diff.old_lines = split_lines(content)
         self.files = sorted([*self.files, diff], key=lambda d: encode(d.path))

@@ -83,9 +83,10 @@ def _blob_version(mode: str, sha: bytes) -> Version | None:
     return Version(mode, sha=sha.decode()) if sha else None
 
 
-def _merge_blobs(basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
-    """Merge what can't be merged line by line (blob ids): a change on one
-    side is taken, but changes on both conflict (keeping ours)."""
+def merge_whole(basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
+    """Merge what can't be merged line by line (blob ids, or content git
+    won't merge): a change on one side is taken, but changes on both
+    conflict (keeping ours)."""
     if ours in (basis, theirs):
         return theirs, False
     if theirs == basis:
@@ -104,10 +105,10 @@ def file_states(
     commits carried in (merged); and `result` is that with this commit's own
     edit, if any, which is the file in the commit. A file that changes as a
     whole (e.g. a binary file) is merged by its blob ids, with
-    _merge_blobs rather than merge.
+    merge_whole rather than merge.
     """
     content, version = (_blob, _blob_version) if diff.whole else (_content, _text_version)
-    merge = _merge_blobs if diff.whole else merge
+    merge = merge_whole if diff.whole else merge
 
     taken: dict[int | None, list[int]] = {}
     for i in diff.ids:

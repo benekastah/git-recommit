@@ -284,6 +284,22 @@ def test_a_binary_conflict_can_be_resolved_by_keeping_the_edit(repo: Repo) -> No
     assert repo.git("cat-file", "blob", f"{second}:data") == "\0stub"
 
 
+def test_a_file_with_nuls_diffed_as_text_conflicts_as_a_binary_file(repo: Repo) -> None:
+    # git won't merge it, so a change on both sides conflicts, and it opens
+    # with no conflict markers: as the edit carried in, which saving keeps.
+    repo.commit("base", data=b"a\0\nb\n", **{".gitattributes": "data diff\n"})
+    repo.commit("change", data=b"a\0\nb\nc\n")
+    s = repo.session("HEAD~")
+    AddCommit("Stub data").run(s)
+    AddCommit("Change data").run(s)
+    Assign((Target("data"),), 2).run(s)
+    Edit(1, "data", b"a\0\nstub\n").run(s)
+    assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
+    assert s.edit_text(s.plan.commits[1].key, s.files[0]) == b"a\0\nstub\n"
+    Edit(2, "data", b"a\0\nstub\n").run(s)
+    assert s.conflicts() == []
+
+
 def test_deleting_a_binary_file_conflicts_with_a_later_change_to_it(repo: Repo) -> None:
     s = binary_session(repo)
     AddCommit("Delete data").run(s)

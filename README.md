@@ -96,7 +96,8 @@ e.g. stubbing out a function that a later commit fills in. The edit is carried
 into the later commits, merged with the changes they take, as a rebase would.
 Where a later commit's changes overlap the edit, that commit conflicts: it's
 marked in the sidebar, and you resolve it by editing the file in that commit,
-which opens with conflict markers (but for a binary file or symlink, below).
+which opens with conflict markers (but for a binary file or symlink, or a
+file with NUL bytes, below).
 You can't write until every conflict is resolved.
 
 `e` opens the file as it is in the active commit; if the commit doesn't have
@@ -116,6 +117,10 @@ well. There, it opens as your edit made it (there's nothing to mark), and
 saving it unchanged (or giving the same file) keeps that, resolving the
 conflict; so to cancel, make the editor fail (`:cq`). Submodules can't be
 edited.
+
+A file with NUL bytes that its attributes diff as text (e.g. `diff`) opens in
+the editor, but git won't merge it, so it conflicts as a binary file does,
+and opens the same way.
 
 **Changing your mind** about the code itself: press `ctrl+z`, change files (or
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd

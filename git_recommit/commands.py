@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from git_recommit.diff import SYMLINK_MODE, FileDiff, numbered
+from git_recommit.diff import SYMLINK_MODE, FileDiff, looks_binary, numbered
 from git_recommit.errors import RecommitError
 from git_recommit.plan import Author
 from git_recommit.session import Session
@@ -290,12 +290,16 @@ class Edit:
             # has it).
             content = session.git.clean(state.path, content)
         # Saving what the editor opened (see Session.edit_text) changes nothing;
-        # but for a file that changes as a whole, which opens with no conflict
-        # markers, it resolves a conflict, keeping the edits carried in.
+        # but where it opens with no conflict markers, it resolves a conflict,
+        # keeping the edits carried in: for a file that changes as a whole, or
+        # content git won't merge (see Session.merge), which a conflict leaves
+        # as the edit carried in.
         if content is None:
             unchanged = state.version is None
         else:
-            unchanged = not (diff.whole and state.conflict) and content == session.edit_text(key, diff)
+            opened = session.edit_text(key, diff)
+            markerless = diff.whole or looks_binary(opened)
+            unchanged = not (markerless and state.conflict) and content == opened
         if unchanged:
             return Result(f"{path} is unchanged in commit {self.commit}.", self.commit)
         session.set_edit(key, diff, content)

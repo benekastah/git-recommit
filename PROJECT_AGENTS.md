@@ -106,7 +106,10 @@ These were the user's choices for v0; ask before changing them.
 ## Tests
 
 - Tests run git-recommit against real repositories (`tests/helpers.py`,
-  `tests/conftest.py`). `Repo.recommit` runs it in the test's process, so a
+  `tests/conftest.py`), under py-git-client's pytest plugin
+  (`git_client.testing`): each test's git has a config of its own, and runs
+  from a directory outside any repository. Only tests may import it (it
+  imports pytest). `Repo.recommit` runs it in the test's process, so a
   monkeypatch on git_recommit reaches it; with `env`, it runs it in its own.
   `tests/test_tui.py` drives the app headless with Textual's pilot and a
   fake `Terminal`. What the headless driver can't do (e.g. ctrl+z really
@@ -136,10 +139,16 @@ These were the user's choices for v0; ask before changing them.
 - `os.path` is fine for paths, as well as `pathlib`. Run git through
   `GitClient`, with arguments as a list, never through a shell. The editor
   and the validate command are the user's shell commands, so those do run
-  through one. `GitClient` starts git as `git.git_executable` names it, by
-  its full path, with `git.CLOSE_FDS`, which makes it faster on macOS; the
-  tests' own git calls (`Repo.git`) do the same, with the real git
-  (`helpers.GIT`).
+  through one. `GitClient` (`git_recommit/git.py`) is py-git-client's `Git`
+  (`git_client`), which starts git by its full path, the quickest way each
+  system allows; it adds the reads git recommit makes, its `run`,
+  `run_bytes` and those reads raise `RecommitError`s rather than
+  `GitError`s (its `ok` is False for any failure, though a timeout still
+  raises `GitTimeoutError`; `var` and `resolve`, as
+  `Git`'s, raise `GitError`s), and it keeps git in the user's
+  locale (`Git` gives LC_ALL=C to a git whose output it reads, which hooks
+  would inherit). The tests' own git calls (`Repo.git`) use `Git` too, with
+  the real git (`helpers.GIT`).
 - Read from git with as few processes as you can: names and objects through
   `GitClient`'s one `cat-file` process (`commit_sha`, `head`, `tree`,
   `read_object`), and one git command for many things (e.g. one

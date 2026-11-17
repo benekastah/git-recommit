@@ -197,6 +197,9 @@ pipx install git+https://github.com/benekastah/git-recommit
 git runs `git-recommit` on your `PATH` as `git recommit`. It runs the first
 `git` on your `PATH` in turn (as `git recommit`, that's the git that ran it:
 git puts its exec-path first), or the one `GIT_RECOMMIT_GIT` names, if set.
+Only directories on `PATH` given as absolute paths count. On Windows, it runs
+`git.exe`, never a batch file (`.bat`, `.cmd`, e.g. an npm shim), which would
+read `&`, `|` and `%` in git's arguments; `GIT_RECOMMIT_GIT` can't name one.
 
 ## Development
 

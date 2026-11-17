@@ -1,12 +1,12 @@
-import os
+import gc
 import pathlib
 import sys
-from collections.abc import Iterator
+import weakref
 
 import pytest
 
 from git_recommit.errors import RecommitError
-from git_recommit.git import git_executable
+from git_recommit.git import GitClient
 from tests.helpers import GIT, Repo
 
 
@@ -34,11 +34,29 @@ def test_commit_sha_is_none_for_what_isnt_a_commit(repo: Repo) -> None:
 def test_names_git_cant_resolve_are_none_quietly(repo: Repo, capfd: pytest.CaptureFixture[str]) -> None:
     git = repo.client
     tree = repo.git("rev-parse", "HEAD^{tree}")
-    # No upstream, past the end of the reflog, a tree, as a commit.
+    # No upstream, past the end of the reflog, a tree, as a commit. git
+    # cat-file exits at @{u}, so HEAD@{999} is the first name the next one
+    # gets: it exits there too, and the rev-parse that checks why fails.
     for rev in ("@{u}", "HEAD@{999}", tree):
         assert git.commit_sha(rev) is None, rev
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
     assert capfd.readouterr().err == ""
+
+
+def test_a_failing_git_command_is_a_recommit_error(repo: Repo) -> None:
+    git = repo.client
+    for run in (git.run, git.run_bytes):
+        with pytest.raises(RecommitError, match=r"^git rev-parse --verify nope failed:\nfatal: "):
+            run("rev-parse", "--verify", "nope")
+
+
+def test_ok_says_whether_git_succeeded(repo: Repo) -> None:
+    git = repo.client
+    assert git.ok("rev-parse", "--verify", "HEAD")
+    repo.write("README", "changed\n")
+    # Exit status 1, and 128.
+    assert not git.ok("diff", "--quiet")
+    assert not git.ok("rev-parse", "--verify", "nope")
 
 
 def test_resolve_commit_says_why_a_name_isnt_one(repo: Repo) -> None:
@@ -50,36 +68,6 @@ def test_resolve_commit_says_why_a_name_isnt_one(repo: Repo) -> None:
     assert str(missing.value) == "nope isn't a commit"
     with pytest.raises(RecommitError, match="(?s)^@{u} isn't a commit:\n.*upstream"):
         git.resolve_commit("@{u}")
-
-
-def test_reading_goes_on_after_a_name_stops_git(repo: Repo) -> None:
-    git = repo.client
-    # Which `git cat-file --batch-command` exits for, rather than saying it's missing.
-    with pytest.raises(RecommitError, match="@{u}"):
-        git.tree("@{u}")
-    assert git.tree("HEAD") == repo.git("rev-parse", "HEAD^{tree}")
-    assert git.blob(repo.git("rev-parse", "HEAD:README")) == b"readme\n"
-
-
-def test_reading_goes_on_after_git_stopped_between_commands(repo: Repo) -> None:
-    git = repo.client
-    head = git.head()
-    # Killed, say, while git recommit was suspended.
-    process = git._cat_file  # pyright: ignore[reportPrivateUsage]
-    assert process is not None
-    process.kill()
-    process.wait()
-    assert git.head() == head
-
-
-def test_commit_sha_sees_refs_that_moved_since_it_last_looked(repo: Repo) -> None:
-    git = repo.client
-    assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
-    moved = repo.commit("second", f="f\n")
-    assert git.commit_sha("HEAD") == moved
-    repo.git("pack-refs", "--all")
-    repo.git("branch", "other", "HEAD~")
-    assert git.commit_sha("other") == repo.git("rev-parse", "HEAD~")
 
 
 def test_tree_is_a_commits_tree(repo: Repo) -> None:
@@ -107,35 +95,38 @@ def test_reading_an_object_of_another_kind_is_refused(repo: Repo) -> None:
     assert git.read_object(commit, "commit").startswith(b"tree ")
 
 
-@pytest.fixture
-def found_again() -> Iterator[None]:
-    """git_executable finds git again, in the test and after it."""
-    git_executable.cache_clear()
-    yield
-    git_executable.cache_clear()
+def test_a_client_no_longer_used_is_freed_at_once(repo: Repo) -> None:
+    # By its reference count, as __del__ then stops its cat-file process,
+    # rather than whenever the cycle collector gets to it.
+    git = GitClient(repo.path)
+    git.head()
+    # CatFile's own, as nothing else says whether its process is running.
+    process = git.cat_file._process  # pyright: ignore[reportPrivateUsage]
+    assert process is not None
+    freed = weakref.ref(git)
+    gc.disable()
+    try:
+        del git
+        assert freed() is None
+        assert process.poll() is not None
+    finally:
+        gc.enable()
 
 
-@pytest.mark.usefixtures("found_again")
-def test_runs_the_git_on_path_by_its_full_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Whatever it is (e.g. a wrapper, like git-ai's), from a directory on
-    # PATH given relative to the current one; but on Windows, only a program
-    # (git.exe), as Windows runs "git", not a batch file (e.g. an npm shim).
-    (tmp_path / "shims").mkdir()
-    (tmp_path / "shims" / "git.cmd").write_bytes(b"")
-    (tmp_path / "bin").mkdir()
-    wrapper = tmp_path / "bin" / ("git.exe" if sys.platform == "win32" else "git")
-    wrapper.write_bytes(b"")
-    wrapper.chmod(0o755)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PATH", os.pathsep.join(["shims", "bin"]))
+@pytest.mark.usefixtures("fresh_find_git")
+@pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
+def test_a_client_that_finds_no_git_is_freed_quietly(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Its __del__ runs too, with no cat_file made.
+    monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.delenv("GIT_RECOMMIT_GIT")
-    assert os.path.normcase(git_executable()) == os.path.normcase(wrapper)
+    with pytest.raises(RecommitError, match="git isn't in any directory on PATH"):
+        GitClient()
 
 
-@pytest.mark.usefixtures("found_again")
+@pytest.mark.usefixtures("fresh_find_git")
 def test_runs_git_recommit_git_if_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_RECOMMIT_GIT", "/somewhere/git")
-    assert git_executable() == "/somewhere/git"
+    assert GitClient().program == "/somewhere/git"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the wrapper is a shell script")

@@ -33,22 +33,26 @@ class GitClient(Git):
     RecommitErrors, not GitErrors."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
-        # For reading every object and resolving every name, rather than a
-        # process each; started the first time it's needed. Before finding
-        # git, which can fail, so __del__ finds it.
-        self.cat_file = CatFile(self)
         try:
             super().__init__(directory, env_var="GIT_RECOMMIT_GIT")
         except (FileNotFoundError, ValueError) as e:
             # find_git's: no git on PATH, or on Windows, a batch file.
             raise RecommitError(str(e)) from e
+        # For reading every object and resolving every name, rather than a
+        # process each; started the first time it's needed. Through a Git of
+        # its own, not this client, which would make a reference cycle, so
+        # __del__ would only stop it when the cycle collector ran. (It runs
+        # nothing that inherits the C locale that Git gives it.)
+        self.cat_file = CatFile(Git(self.directory, program=self.program))
         # Where git keeps each file asked about (see git_paths), and the path
         # from the top of the worktree down to directory, which don't change.
         self._git_paths: dict[str, str] = {}
         self._prefix: str | None = None
 
     def __del__(self) -> None:
-        self.close()
+        # Not if __init__ failed before making it.
+        if hasattr(self, "cat_file"):
+            self.close()
 
     def close(self) -> None:
         """Stop the cat-file process, if one was started."""

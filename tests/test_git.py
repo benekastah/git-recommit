@@ -1,5 +1,7 @@
+import gc
 import pathlib
 import sys
+import weakref
 
 import pytest
 
@@ -82,6 +84,20 @@ def test_reading_an_object_of_another_kind_is_refused(repo: Repo) -> None:
     # And objects can still be read after.
     assert git.blob(repo.git("rev-parse", "HEAD:README")) == b"readme\n"
     assert git.read_object(commit, "commit").startswith(b"tree ")
+
+
+def test_a_client_no_longer_used_is_freed_at_once(repo: Repo) -> None:
+    # By its reference count, as __del__ then stops its cat-file process,
+    # rather than whenever the cycle collector gets to it.
+    git = GitClient(repo.path)
+    git.head()
+    freed = weakref.ref(git)
+    gc.disable()
+    try:
+        del git
+        assert freed() is None
+    finally:
+        gc.enable()
 
 
 @pytest.mark.usefixtures("fresh_find_git")

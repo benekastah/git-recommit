@@ -220,9 +220,11 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/), clone
 the repository, then run `python3 dev.py install` (on Windows,
 `py dev.py install`). It sets up the clone's `.venv` with git-recommit
 (editable) and the dev tools, from `uv.lock`, links `git-recommit` into
-`~/.local/bin`, and makes the clone use the hooks in `git_hooks/`: the
-pre-commit hook formats and lint-fixes staged Python files, and the pre-push
-hook runs the static checks before every push. CI runs the tests.
+`~/.local/bin` and its man page into `~/.local/share/man/man1` (not on
+Windows), and makes the clone use the hooks in `git_hooks/`: the pre-commit
+hook formats and lint-fixes staged Python files and makes the man page again,
+and the pre-push hook runs the static checks before every push. CI runs the
+tests.
 
 If `~/.local/bin` already has `git-recommit` from another clone (or installed
 another way), `dev.py install` stops and says so, changing nothing:
@@ -240,7 +242,23 @@ python3 dev.py static         # Ruff's formatter and linter, and basedpyright in
 python3 dev.py tests          # the tests, in parallel (arguments go to pytest)
 python3 dev.py coverage       # the tests under coverage.py, and the lines they don't run
 python3 dev.py types-windows  # basedpyright as if on Windows (dev_project.py)
+python3 dev.py man            # man/git-recommit.1, the man page, from this README
 ```
+
+The man page, `man/git-recommit.1`, is made from this README by `dev.py man`,
+with pandoc (from the `pypandoc_binary` dev dependency): its sections but
+Install and Development, with the SYNOPSIS in `dev_project.py`. The pre-commit
+hook makes it again when a commit changes the README, and adds it to the
+commit (or stops a `git commit PATH`, which it can't add the page to: run
+`dev.py man` and `git add` it, then commit). `dev.py static` (so the pre-push
+hook, and CI) fails if it's out of date. Once `dev.py install` has linked it
+(a `pipx install` doesn't install it), `man git-recommit` and
+`git recommit --help` open it; if `dev.py install` warns that `man` doesn't
+look in `~/.local/share/man`, add
+`export MANPATH="$HOME/.local/share/man:"` to your shell's startup file.
+Windows has no `man`: there, `git recommit --help` opens Git for Windows' HTML
+help, which has no page for it, so use `git-recommit --help` or
+`git recommit -h`.
 
 The tests run git itself (git-core's, from `git --exec-path`), not a wrapper
 on your `PATH`, and set `GIT_RECOMMIT_GIT` to it.

@@ -306,7 +306,7 @@ def diverge(repo: Repo) -> None:
 )
 def test_refuses_to_start_in_the_middle_of_another_operation(repo: Repo, start: list[str], error: str) -> None:
     diverge(repo)
-    repo.client.ok(*start)
+    repo.client.succeeds(*start)
     with pytest.raises(RecommitError, match=error):
         repo.session("HEAD~2")
 
@@ -318,7 +318,7 @@ def conflict_without_an_operation(repo: Repo) -> None:
     repo.git("stash", "--quiet")
     repo.write("f", "different\n")
     repo.git("commit", "--quiet", "-am", "different")
-    repo.client.ok("stash", "pop")
+    repo.client.succeeds("stash", "pop")
     assert repo.git("ls-files", "--unmerged")
 
 
@@ -349,7 +349,7 @@ def test_reloading_and_writing_refuse_once_another_operation_starts(repo: Repo) 
     session.restore_old_commits()
     shas = session.build()
     head = repo.git("rev-parse", "HEAD")
-    repo.client.ok("merge", "side")
+    repo.client.succeeds("merge", "side")
     with pytest.raises(RecommitError, match="a merge is in progress"):
         session.reload()
     with pytest.raises(RecommitError, match="a merge is in progress"):

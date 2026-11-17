@@ -36,7 +36,7 @@ def test_names_git_cant_resolve_are_none_quietly(repo: Repo, capfd: pytest.Captu
     tree = repo.git("rev-parse", "HEAD^{tree}")
     # No upstream, past the end of the reflog, a tree, as a commit. git
     # cat-file exits at @{u}, so HEAD@{999} is the first name the next one
-    # gets: it exits there too, and the rev-parse that checks why fails.
+    # gets: it exits there too.
     for rev in ("@{u}", "HEAD@{999}", tree):
         assert git.commit_sha(rev) is None, rev
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
@@ -48,15 +48,6 @@ def test_a_failing_git_command_is_a_recommit_error(repo: Repo) -> None:
     for run in (git.run, git.run_bytes):
         with pytest.raises(RecommitError, match=r"^git rev-parse --verify nope failed:\nfatal: "):
             run("rev-parse", "--verify", "nope")
-
-
-def test_ok_says_whether_git_succeeded(repo: Repo) -> None:
-    git = repo.client
-    assert git.ok("rev-parse", "--verify", "HEAD")
-    repo.write("README", "changed\n")
-    # Exit status 1, and 128.
-    assert not git.ok("diff", "--quiet")
-    assert not git.ok("rev-parse", "--verify", "nope")
 
 
 def test_resolve_commit_says_why_a_name_isnt_one(repo: Repo) -> None:
@@ -88,7 +79,7 @@ def test_git_paths_are_where_git_keeps_them(repo: Repo) -> None:
 def test_reading_an_object_of_another_kind_is_refused(repo: Repo) -> None:
     git = repo.client
     commit = repo.git("rev-parse", "HEAD")
-    with pytest.raises(RecommitError, match="isn't a blob"):
+    with pytest.raises(RecommitError, match="expected blob type"):
         git.blob(commit)
     # And objects can still be read after.
     assert git.blob(repo.git("rev-parse", "HEAD:README")) == b"readme\n"

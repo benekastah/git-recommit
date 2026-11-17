@@ -6,12 +6,22 @@ blobs, paths in the git directory, merges)."""
 
 import contextlib
 import os
-import subprocess
-import tempfile
 from collections.abc import Generator, Mapping
 
-from git_client import CLIENT_TIMEOUT, CatFile, EnvValue, Git, GitError, Timeout, UnknownRevisionError, decode, encode
-from git_client import hash_blobs as _hash_blobs
+from git_client import (
+    CLIENT_TIMEOUT,
+    CatFile,
+    EnvValue,
+    Git,
+    GitError,
+    Timeout,
+    decode,
+    encode,
+    git_paths,
+    hash_blobs,
+)
+from git_client import merge_file as _merge_file
+from git_client.cat_file import ObjectType
 
 from git_recommit.errors import RecommitError
 
@@ -33,8 +43,8 @@ class GitClient(Git):
     by its full path (a RecommitError if there's none).
 
     run, run_bytes and the reads it adds raise RecommitErrors, not
-    GitErrors; ok and passthrough say whether git succeeded (a timeout still
-    raises GitTimeoutError). What it has of Git's as it is (var, resolve, object_id_length) raises GitErrors."""
+    GitErrors. What it has of Git's as it is (e.g. var, resolve, succeeds,
+    passthrough) raises GitErrors."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         try:
@@ -90,9 +100,9 @@ class GitClient(Git):
         --git-path` says), as paths in the filesystem: so in its encoding,
         not as text. Each is only asked of git once."""
         if new := [name for name in dict.fromkeys(names) if name not in self._git_paths]:
-            args = [a for name in new for a in ("--git-path", name)]
-            out = self.run_bytes("rev-parse", "--path-format=absolute", *args)
-            self._git_paths.update(zip(new, map(os.fsdecode, out.splitlines()), strict=True))
+            with reported():
+                found = git_paths(self, *new)
+            self._git_paths.update(zip(new, map(os.fspath, found), strict=True))
         return [self._git_paths[name] for name in names]
 
     def prefix(self, *, timeout: Timeout = CLIENT_TIMEOUT) -> str:
@@ -120,14 +130,14 @@ class GitClient(Git):
     def resolve_commit(self, rev: str) -> str:
         """The commit rev names (e.g. one the user typed), or if it doesn't
         name one, an error that says why, as git does."""
-        if (sha := self.commit_sha(rev)) is not None:
-            return sha
-        # Only now, for the reason, which git cat-file doesn't give.
-        result = self.process("rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}", capture_output=True)
-        # But for what git says for any name that isn't a commit.
-        lines = result.stderr.decode(errors="replace").splitlines()
-        reason = "\n".join(line for line in lines if line != "fatal: Needed a single revision")
-        raise RecommitError(f"{rev} isn't a commit" + (f":\n{reason}" if reason else ""))
+        name = f"{rev}^{{commit}}"
+        try:
+            return self.cat_file.verify(name)
+        except GitError as e:
+            # git's reason, but for what cat-file says of any name that names
+            # nothing.
+            reason = "" if e.stderr == f"{name} missing" else e.stderr
+            raise RecommitError(f"{rev} isn't a commit" + (f":\n{reason}" if reason else "")) from e
 
     def head(self) -> str | None:
         """The commit HEAD is at, or None if there's none yet."""
@@ -142,37 +152,23 @@ class GitClient(Git):
             raise RecommitError(f"{sha} isn't a commit or tree")
         return tree
 
-    def ok(
-        self, *args: str | bytes, env: Mapping[str, EnvValue] | None = None, timeout: Timeout = CLIENT_TIMEOUT
-    ) -> bool:
-        """Whether git succeeded: False for any exit status but 0, not only
-        git's no (1), unlike Git's, which raises for the rest. A timeout
-        still raises GitTimeoutError."""
-        result = self.process(*args, capture_output=True, stdout=subprocess.DEVNULL, env=env, timeout=timeout)
-        return result.returncode == 0
-
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         """Whether ancestor is in descendant's history (or is descendant);
         False too if git can't say (e.g. one names nothing)."""
-        return self.ok("merge-base", "--is-ancestor", ancestor, descendant)
+        return self.succeeds("merge-base", "--is-ancestor", ancestor, descendant)
 
     def blob(self, sha: str) -> bytes:
         """A blob's content."""
         return self.read_object(sha, "blob")
 
-    def read_object(self, sha: str, kind: str) -> bytes:
+    def read_object(self, sha: str, kind: ObjectType) -> bytes:
         """An object's content (as `git cat-file <kind> <sha>`, e.g. a
         commit's, its headers and message, exactly as they are)."""
         with reported():
             try:
-                found, content = self.cat_file.read(sha)
+                return self.cat_file.read(sha, kind)[1]
             except ValueError as e:
                 raise RecommitError(f"{sha!r} isn't an object id") from e
-            except UnknownRevisionError as e:
-                raise RecommitError(f"{sha} isn't a {kind}") from e
-        if found != kind:
-            raise RecommitError(f"{sha} isn't a {kind}")
-        return content
 
     def clean(self, path: str, content: bytes) -> bytes:
         """content as `git add` would commit it at path: through the clean
@@ -188,23 +184,15 @@ class GitClient(Git):
         """Write each content to the object database, as it is (no filters),
         with one git process, and return their ids."""
         with reported():
-            return _hash_blobs(self, contents)
+            return hash_blobs(self, contents)
 
     def merge_file(self, basis: bytes, ours: bytes, theirs: bytes) -> tuple[bytes, bool]:
         """Merge the changes from basis to ours and from basis to theirs, as
         `git merge-file` does, and return the result and whether it conflicted
         (in which case it has conflict markers). Nothing is written to the
         repository."""
-        labels = ["-L", "edit", "-L", "before", "-L", "assigned"]
-        with tempfile.TemporaryDirectory() as scratch:
-            paths = [os.path.join(scratch, name) for name in ("ours", "basis", "theirs")]
-            for path, content in zip(paths, (ours, basis, theirs), strict=True):
-                with open(path, "wb") as f:
-                    f.write(content)
-            # Paths in the filesystem, so in its encoding.
-            result = self.process("merge-file", "-p", *labels, *map(os.fsencode, paths), capture_output=True)
-        # The exit status is the number of conflicts, or negative (shown as
-        # 128 or more) on an error.
-        if not 0 <= result.returncode < 128:
-            raise RecommitError(f"git merge-file failed:\n{result.stderr.decode(errors='replace').strip()}")
-        return result.stdout, result.returncode > 0
+        with reported():
+            merged, conflicts = _merge_file(
+                self, ours=ours, base=basis, theirs=theirs, labels=("edit", "before", "assigned")
+            )
+        return merged, conflicts > 0

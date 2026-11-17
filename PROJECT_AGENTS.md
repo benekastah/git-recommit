@@ -143,13 +143,12 @@ These were the user's choices for v0; ask before changing them.
   and the validate command are the user's shell commands, so those do run
   through one. `GitClient` (`git_recommit/git.py`) is py-git-client's `Git`
   (`git_client`), which starts git by its full path, the quickest way each
-  system allows; it adds the reads git recommit makes, its `run`,
+  system allows; it adds the reads git recommit makes, and its `run`,
   `run_bytes` and those reads raise `RecommitError`s rather than
-  `GitError`s (its `ok` is False for any failure, though a timeout still
-  raises `GitTimeoutError`; `var` and `resolve`, as
-  `Git`'s, raise `GitError`s). git's messages are in English, as
-  py-git-client has them. The tests' own git calls (`Repo.git`) use `Git` too, with
-  the real git (`helpers.GIT`).
+  `GitError`s (what it has of `Git`'s as it is, e.g. `succeeds`, `var` and
+  `resolve`, raises `GitError`s). git's messages are in English, as
+  py-git-client has them. The tests' own git calls (`Repo.git`) use `Git`
+  too, with the real git (`helpers.GIT`).
 - Read from git with as few processes as you can: names and objects through
   `GitClient`'s one `cat-file` process (`commit_sha`, `head`, `tree`,
   `read_object`), and one git command for many things (e.g. one

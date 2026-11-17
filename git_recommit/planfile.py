@@ -15,13 +15,15 @@ from git_recommit.diff import change_keys
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.plan import Author, Edit
+from git_recommit.revisions import GIT_PATHS
 from git_recommit.session import Session
 
 VERSION = 1
 
 
 def path(git: GitClient) -> str:
-    return git.git_paths("recommit/plan.json")[0]
+    # With the others, as each subcommand asks for this first.
+    return git.git_paths("recommit/plan.json", *GIT_PATHS)[0]
 
 
 def exists(git: GitClient) -> bool:

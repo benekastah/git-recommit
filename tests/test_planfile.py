@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from git_client.testing import GitCall
 
 from git_recommit import planfile
 from git_recommit.commands import AddCommit, Assign, Edit, Target
@@ -67,3 +68,11 @@ def test_a_replaced_binary_file_survives_garbage_collection(repo: Repo) -> None:
     first, second = loaded.build()
     assert repo.git("cat-file", "blob", f"{first}:data") == "\0stub"
     assert repo.git("cat-file", "blob", f"{second}:data") == "\0real"
+
+
+def test_a_subcommand_finds_every_git_path_with_one_git(repo: Repo, git_calls: list[GitCall]) -> None:
+    repo.commit("wip", a="a\n")
+    for args in (["start", "HEAD~"], ["show"], ["write"]):
+        git_calls.clear()
+        repo.recommit(*args)
+        assert sum("--git-path" in call for call in git_calls) == 1, args

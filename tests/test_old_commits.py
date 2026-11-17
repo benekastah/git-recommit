@@ -2,10 +2,13 @@
 
 import os
 import pathlib
+from collections.abc import Callable, Iterable, Iterator
+from typing import Self
 
 import pytest
 
 from git_recommit import oldcommits
+from git_recommit.diff import FileDiff
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 from git_recommit.session import Session
@@ -159,6 +162,34 @@ def test_overlapping_changes_are_reproduced_with_edits(repo: Repo) -> None:
     )
     assert set(second.edits) == {"f"}
     assert third.edits == {}
+
+
+class _LastFirst:
+    """A ThreadPoolExecutor whose tasks finish last first, as threads can."""
+
+    def __init__(self, max_workers: int) -> None:
+        pass
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        pass
+
+    def map(self, fn: Callable[[FileDiff], None], items: Iterable[FileDiff]) -> Iterator[None]:
+        return reversed([fn(item) for item in reversed(list(items))])
+
+
+def test_edits_are_in_the_diffs_order_whatever_order_files_finish_in(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo.commit("base", a=LINES, b=LINES)
+    five = LINES.replace("line 5\n", "line 5\nfive\n")
+    repo.commit("first", a=five, b=five)
+    repo.commit("second", a=LINES, b=LINES)
+    monkeypatch.setattr(oldcommits, "ThreadPoolExecutor", _LastFirst)
+    first, _ = restored(repo, "HEAD~2").plan.commits
+    assert list(first.edits) == ["a", "b"]
 
 
 def test_building_leaves_the_real_index_alone(repo: Repo) -> None:

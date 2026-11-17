@@ -308,8 +308,10 @@ class Session:
             content = self.git.hash_blob(content).encode()
         commit = self.plan.get(key)
         index = self.plan.index(key)
-        state = self.states(diff, upto=index)[index]
+        # The file as it'd be without the commit's own edit, which this one
+        # replaces: with it, the conflict it resolved wouldn't show.
         commit.edits.pop(diff.path, None)
+        state = self.states(diff, upto=index)[index]
         # Even an edit that changes nothing resolves a conflict.
         if content is None:
             if state.version is not None or state.conflict:

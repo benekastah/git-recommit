@@ -65,9 +65,6 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
 
 These were the user's choices for v0; ask before changing them.
 
-- **In rapid development**: bundle related changes into PRs worth a CI run (see AGENTS.md).
-  Remove this rule, under this name, once others depend on a release and most changes are
-  fixes.
 - Follow git's conventions wherever possible; it's a git extension. E.g.
   paths the user types are pathspecs (relative to the current directory,
   with wildcards and magic, matched by git itself), `-C` adds up as git's

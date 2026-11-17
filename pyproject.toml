@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Paul Harper", email = "benekastah@gmail.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.15"
 dependencies = [
     # v0.0.1, by its commit, which unlike the tag can't be moved.
     "py-git-client @ git+https://github.com/benekastah/py-git-client@fdd2a9f2d88c6e6f52ebff99c13212d67a056811",
@@ -49,7 +49,7 @@ addopts = ["--numprocesses", "auto"]
 line-length = 120
 # Even when a hook names it: dev.py is python-template's, formatted to its 100 columns.
 force-exclude = true
-target-version = "py311"
+target-version = "py315"
 # dev.py runs under an older Python too, to say it's too old: keep it to syntax that parses there.
 per-file-target-version = { "dev.py" = "py311" }
 
@@ -86,7 +86,7 @@ include = [
     "dev_project.py",
 ]
 typeCheckingMode = "strict"
-pythonVersion = "3.11"
+pythonVersion = "3.15"
 # Linux, so it says the same on every system; `dev.py types-windows` checks as if on Windows.
 pythonPlatform = "Linux"
 # A variable whose type is unknown is an error (e.g. a list made empty needs its

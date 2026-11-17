@@ -80,7 +80,7 @@ class Session:
         self._conflicts: tuple[tuple[object, ...], list[Conflict]] | None = None
 
     @classmethod
-    def load(cls, git: GitClient, spec: str | None, include_untracked: bool = False) -> "Session":
+    def load(cls, git: GitClient, spec: str | None, include_untracked: bool = False) -> Session:
         """The recommit of the commits spec names, or with None, every commit
         up to HEAD (as `git rebase --root`)."""
         status = worktree_status(git)

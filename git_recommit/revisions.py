@@ -70,7 +70,7 @@ IN_PROGRESS = {
 }
 
 
-def check_nothing_in_progress(git: GitClient, status: "WorktreeStatus | None" = None) -> None:
+def check_nothing_in_progress(git: GitClient, status: WorktreeStatus | None = None) -> None:
     """Refuse while another operation (a merge, cherry-pick, revert or rebase)
     is in progress, or the index has unresolved conflicts: taking the working
     tree as uncommitted changes would take the conflict markers, and writing

@@ -201,7 +201,7 @@ later commits, stopping for you to resolve any conflicts.
 
 ## Install
 
-Needs Python 3.11 or later and git 2.43 or later.
+Needs Python 3.15 or later and git 2.43 or later.
 
 ```sh
 pipx install git+https://github.com/benekastah/git-recommit

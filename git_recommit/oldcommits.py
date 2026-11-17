@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 BLAME_ENTRY = re.compile(rb"^([0-9a-f]{40,64}) \d+ (\d+)")
 
 
-def restore(session: "Session") -> None:
+def restore(session: Session) -> None:
     """Start from the commits being rebuilt: one new commit for each, with
     its message and author, taking the changes it made (by git blame).
 
@@ -125,7 +125,7 @@ def _touched_by(commits: list[_OldCommit]) -> dict[str, list[str]]:
     return touched
 
 
-def _old_commits(session: "Session") -> list[_OldCommit]:
+def _old_commits(session: Session) -> list[_OldCommit]:
     """The commits being rebuilt, oldest first, then the commit of the
     uncommitted changes, if any: with two git processes, not some for each."""
     span = session.tip if session.root else f"{session.base}..{session.tip}"
@@ -168,7 +168,7 @@ def _old_commits(session: "Session") -> list[_OldCommit]:
     return commits
 
 
-def _made_by(session: "Session", diff: FileDiff, removed_by: dict[str, str]) -> dict[int, str | None]:
+def _made_by(session: Session, diff: FileDiff, removed_by: dict[str, str]) -> dict[int, str | None]:
     """For each of a text file's changes that was made before HEAD, the
     old commit that made it, by git blame, or None where blame and the
     diff disagree about the line (e.g. a blank line that moved)."""
@@ -194,7 +194,7 @@ def _made_by(session: "Session", diff: FileDiff, removed_by: dict[str, str]) -> 
     return made_by
 
 
-def _blame(session: "Session", path: str, reverse: bool) -> dict[int | None, str]:
+def _blame(session: Session, path: str, reverse: bool) -> dict[int | None, str]:
     """For each line of the file (at tip, or with reverse, at base), the
     commit that last added it (or with reverse, the last that had it)."""
     # From the root, the whole history; reverse blame isn't needed then, as
@@ -211,7 +211,7 @@ def _blame(session: "Session", path: str, reverse: bool) -> dict[int | None, str
     return lines
 
 
-def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
+def _reproduce(session: Session, trees: list[dict[str, str]]) -> None:
     """Give each commit of the plan the edits it needs to have each file
     (but submodules) as the old commit with trees[i] does."""
     # As an id's length says: SHA-1's are 40 hex digits, SHA-256's 64.
@@ -248,7 +248,7 @@ def _reproduce(session: "Session", trees: list[dict[str, str]]) -> None:
         commit.edits = dict(sorted(commit.edits.items(), key=lambda item: order[item[0]]))
 
 
-def _trees(session: "Session", commits: list[_OldCommit]) -> list[dict[str, str]]:
+def _trees(session: Session, commits: list[_OldCommit]) -> list[dict[str, str]]:
     """Each file's blob in each commit: base's, as each commit changes them."""
     blobs: dict[str, str] = {}
     if not session.root:

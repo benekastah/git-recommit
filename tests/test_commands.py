@@ -284,15 +284,20 @@ def test_a_binary_conflict_can_be_resolved_by_keeping_the_edit(repo: Repo) -> No
     assert repo.git("cat-file", "blob", f"{second}:data") == "\0stub"
 
 
+def nul_session(repo: Repo) -> Session:
+    """data, with a NUL, diffed as text: c added."""
+    repo.commit("base", data=b"a\0\nb\n", **{".gitattributes": "data diff\n"})
+    repo.commit("change", data=b"a\0\nb\nc\n")
+    return repo.session("HEAD~")
+
+
 # An edit with a NUL, and one without: it's merged as binary either way,
 # since the other sides have a NUL.
 @pytest.mark.parametrize("stub", [b"a\0\nstub\n", b"stub\n"], ids=["nul", "no-nul"])
 def test_a_file_with_nuls_diffed_as_text_conflicts_as_a_binary_file(repo: Repo, stub: bytes) -> None:
     # git won't merge it, so a change on both sides conflicts, and it opens
     # with no conflict markers: as the edit carried in, which saving keeps.
-    repo.commit("base", data=b"a\0\nb\n", **{".gitattributes": "data diff\n"})
-    repo.commit("change", data=b"a\0\nb\nc\n")
-    s = repo.session("HEAD~")
+    s = nul_session(repo)
     AddCommit("Stub data").run(s)
     AddCommit("Change data").run(s)
     Assign((Target("data"),), 2).run(s)
@@ -325,22 +330,19 @@ def test_a_conflict_with_markers_isnt_resolved_by_saving_it_unchanged(repo: Repo
     assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
 
 
-def nul_session(repo: Repo) -> Session:
-    """data, with a NUL, diffed as text: c added."""
-    repo.commit("base", data=b"a\0\nb\n", **{".gitattributes": "data diff\n"})
-    repo.commit("change", data=b"a\0\nb\nc\n")
-    return repo.session("HEAD~")
-
-
 def test_an_edit_to_a_file_with_nuls_conflicts_with_more_changes_in_its_commit(repo: Repo) -> None:
     s = nul_session(repo)
     AddCommit("Edit data").run(s)
     Edit(1, "data", b"a\0\nstub\n").run(s)
     Assign((Target("data"),), 1).run(s)
     assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(0, "data")]
+    # With no markers: saving what it opens with keeps the edit.
+    Edit(1, "data", s.edit_text(s.plan.commits[0].key, s.files[0])).run(s)
+    assert s.conflicts() == []
 
 
-def test_deleting_a_file_with_nuls_conflicts_with_a_later_change_as_a_deletion(repo: Repo) -> None:
+@pytest.mark.parametrize("keep_by", ["deleting", "saving"])
+def test_deleting_a_file_with_nuls_conflicts_with_a_later_change_as_a_deletion(repo: Repo, keep_by: str) -> None:
     s = nul_session(repo)
     AddCommit("Delete data").run(s)
     AddCommit("Change data").run(s)
@@ -348,10 +350,15 @@ def test_deleting_a_file_with_nuls_conflicts_with_a_later_change_as_a_deletion(r
     Edit(1, "data", None).run(s)
     assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "data")]
     assert s.states(s.files[0])[1].version is None
-    Edit(2, "data", None).run(s)
+    second = s.plan.commits[1].key
+    if keep_by == "saving":
+        # It opens as the file's end state, as for any commit without it.
+        Edit(2, "data", s.edit_text(second, s.files[0])).run(s)
+    else:
+        Edit(2, "data", None).run(s)
     assert s.conflicts() == []
-    _, second = s.build()
-    assert repo.show(second, "data") is None
+    _, built = s.build()
+    assert repo.show(built, "data") is None
 
 
 @pytest.mark.parametrize("third_takes_the_nul", [True, False], ids=["merged-as-binary", "taking-nothing"])
@@ -372,6 +379,18 @@ def test_conflict_markers_are_carried_into_later_commits(repo: Repo, third_takes
     opened = s.edit_text(third, s.files[0])
     assert b"<<<<<<< edit" in opened
     assert Edit(3, "data", opened).run(s).message == "data is unchanged in commit 3."
+
+
+def test_deleting_a_text_file_conflicts_with_a_later_change_with_markers(repo: Repo) -> None:
+    s = session(repo)
+    AddCommit("Delete f").run(s)
+    AddCommit("Change f").run(s)
+    Assign((Target("f"),), 2).run(s)
+    Edit(1, "f", None).run(s)
+    assert [(s.plan.index(c.commit.key), c.path) for c in s.conflicts()] == [(1, "f")]
+    assert b"<<<<<<< edit" in s.edit_text(s.plan.commits[1].key, s.files[0])
+    Edit(2, "f", None).run(s)
+    assert s.conflicts() == []
 
 
 def test_deleting_a_binary_file_conflicts_with_a_later_change_to_it(repo: Repo) -> None:

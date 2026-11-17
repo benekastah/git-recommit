@@ -294,6 +294,10 @@ class Edit:
         # file that isn't there, changes nothing; but for a conflict without
         # conflict markers, it resolves it, keeping the edits carried in.
         same = state.version is None if content is None else content == session.edit_text(key, diff)
+        if same and content is not None and state.version is None:
+            # The file isn't there, and the editor opened its end state: keep
+            # it as it is, not there (which resolves a conflict).
+            content = None
         unchanged = same and (state.markers or not state.conflict)
         if unchanged:
             return Result(f"{path} is unchanged in commit {self.commit}.", self.commit)

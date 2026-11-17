@@ -100,13 +100,27 @@ def test_a_client_no_longer_used_is_freed_at_once(repo: Repo) -> None:
     # rather than whenever the cycle collector gets to it.
     git = GitClient(repo.path)
     git.head()
+    # CatFile's own, as nothing else says whether its process is running.
+    process = git.cat_file._process  # pyright: ignore[reportPrivateUsage]
+    assert process is not None
     freed = weakref.ref(git)
     gc.disable()
     try:
         del git
         assert freed() is None
+        assert process.poll() is not None
     finally:
         gc.enable()
+
+
+@pytest.mark.usefixtures("fresh_find_git")
+@pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
+def test_a_client_that_finds_no_git_is_freed_quietly(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Its __del__ runs too, with no cat_file made.
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.delenv("GIT_RECOMMIT_GIT")
+    with pytest.raises(RecommitError, match="git isn't in any directory on PATH"):
+        GitClient()
 
 
 @pytest.mark.usefixtures("fresh_find_git")

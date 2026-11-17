@@ -33,8 +33,8 @@ class GitClient(Git):
     by its full path (a RecommitError if there's none).
 
     run, run_bytes and the reads it adds raise RecommitErrors, not
-    GitErrors; ok and passthrough say whether git succeeded. What it has of
-    Git's as it is (var, resolve, object_id_length) raises GitErrors."""
+    GitErrors; ok and passthrough say whether git succeeded (a timeout still
+    raises GitTimeoutError). What it has of Git's as it is (var, resolve, object_id_length) raises GitErrors."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         try:
@@ -81,6 +81,8 @@ class GitClient(Git):
         """Run git and return its stdout, stripped; unless check is False,
         raise a RecommitError if it fails."""
         if check:
+            # Git.run calls run_bytes, whose reported() does this too; here
+            # as well, in case py-git-client's Git.run stops calling it.
             with reported():
                 return super().run(*args, input=input, env=env, timeout=timeout)
         encoded = None if input is None else encode(input)
@@ -159,8 +161,9 @@ class GitClient(Git):
     def ok(
         self, *args: str | bytes, env: Mapping[str, EnvValue] | None = None, timeout: Timeout = CLIENT_TIMEOUT
     ) -> bool:
-        """Whether git succeeded: False for any failure, not only git's no
-        (exit status 1), unlike Git's, which raises for the rest."""
+        """Whether git succeeded: False for any exit status but 0, not only
+        git's no (1), unlike Git's, which raises for the rest. A timeout
+        still raises GitTimeoutError."""
         result = self.process(*args, capture_output=True, stdout=subprocess.DEVNULL, env=env, timeout=timeout)
         return result.returncode == 0
 

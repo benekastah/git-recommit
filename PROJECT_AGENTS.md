@@ -143,7 +143,8 @@ These were the user's choices for v0; ask before changing them.
   (`git_client`), which starts git by its full path, the quickest way each
   system allows; it adds the reads git recommit makes, its `run`,
   `run_bytes` and those reads raise `RecommitError`s rather than
-  `GitError`s (its `ok` is False for any failure; `var` and `resolve`, as
+  `GitError`s (its `ok` is False for any failure, though a timeout still
+  raises `GitTimeoutError`; `var` and `resolve`, as
   `Git`'s, raise `GitError`s), and it keeps git in the user's
   locale (`Git` gives LC_ALL=C to a git whose output it reads, which hooks
   would inherit). The tests' own git calls (`Repo.git`) use `Git` too, with

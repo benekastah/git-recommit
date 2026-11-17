@@ -124,9 +124,10 @@ git won't merge it, so it conflicts as a binary file does, and opens the same
 way.
 
 Where the edit carried in deleted such a file (or a binary file or symlink),
-there's nothing to open. Keep the deletion, resolving the conflict, with
-`git recommit edit N path --delete`; or, if the file opens in the editor (as
-its end state), by saving it unchanged.
+the commit that conflicts doesn't have it, so `e` opens its end state (or, for
+a binary file, asks for a file). Saving that unchanged (or giving that same
+file) keeps the deletion, resolving the conflict, as does
+`git recommit edit N path --delete`.
 
 **Changing your mind** about the code itself: press `ctrl+z`, change files (or
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd

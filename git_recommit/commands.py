@@ -262,10 +262,11 @@ class Edit:
     """Make a file content in a commit, by hand, or with None, delete it
     (carried into later commits): for a symlink, where it points. The file
     can be one the range doesn't change, or that isn't there at all. Content
-    that's what the file already is in the commit changes nothing, so
-    quitting an editor without saving is safe; but for a conflict without
-    conflict markers (see FileState.markers), it resolves the conflict,
-    keeping the edits carried in (deleting a file they deleted, too). A
+    that's what the file already is in the commit (in a commit without it,
+    its end state, which an editor opens with) changes nothing, so quitting
+    an editor without saving is safe; but for a conflict without conflict
+    markers (see FileState.markers), it resolves the conflict, keeping the
+    edits carried in (where they deleted the file, keeping it deleted). A
     submodule can't be edited."""
 
     commit: int

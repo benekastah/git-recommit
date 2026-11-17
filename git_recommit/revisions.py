@@ -69,17 +69,20 @@ IN_PROGRESS = {
     "rebase-apply": "a rebase (or git am)",
 }
 
+# What check_nothing_in_progress, worktree_commit and Session.finish find in
+# the git directory, asked for together so one git process finds them all
+# (GitClient keeps them).
+GIT_PATHS = (*IN_PROGRESS, "index", "index.lock")
 
-def check_nothing_in_progress(git: GitClient, status: "WorktreeStatus | None" = None) -> None:
+
+def check_nothing_in_progress(git: GitClient, status: WorktreeStatus | None = None) -> None:
     """Refuse while another operation (a merge, cherry-pick, revert or rebase)
     is in progress, or the index has unresolved conflicts: taking the working
     tree as uncommitted changes would take the conflict markers, and writing
     (which resets the index) would end the operation. status, if given, is
     worktree_status's, which says if there are conflicts; without it, git
     ls-files finds them."""
-    # With the paths worktree_commit and Session.finish need, so one git
-    # process finds them all (GitClient keeps them).
-    paths = git.git_paths(*IN_PROGRESS, "index", "index.lock")[: len(IN_PROGRESS)]
+    paths = git.git_paths(*GIT_PATHS)[: len(IN_PROGRESS)]
     for path, what in zip(paths, IN_PROGRESS.values(), strict=True):
         if os.path.exists(path):
             raise RecommitError(f"{what} is in progress; finish it or abort it first")

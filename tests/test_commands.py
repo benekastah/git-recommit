@@ -20,6 +20,7 @@ from git_recommit.commands import (
     targets_for,
 )
 from git_recommit.errors import RecommitError
+from git_recommit.git import GitClient
 from git_recommit.session import Session
 from tests.helpers import Repo
 
@@ -147,6 +148,16 @@ def test_edits_are_normalized_as_git_add_would(repo: Repo) -> None:
     # An editor that saves Windows line endings.
     Edit(1, "g", b"stub\r\n").run(s)
     assert s.plan.commits[0].edits["g"].content == b"stub\n"
+
+
+def test_edits_are_normalized_at_their_path_from_a_subdirectory(repo: Repo) -> None:
+    # Only src/f is text, so cleaned as src/src/f, the edit would keep its CRLF.
+    repo.commit("base", **{".gitattributes": "src/f text\n", "src/f": LINES})
+    repo.commit("change", **{"src/f": LINES + "21\n"})
+    s = Session.load(GitClient(repo.path / "src"), "HEAD~")
+    AddCommit("one").run(s)
+    Edit(1, "src/f", b"stub\r\n").run(s)
+    assert s.plan.commits[0].edits["src/f"].content == b"stub\n"
 
 
 def test_editing_a_renamed_file_by_its_old_path(repo: Repo) -> None:

@@ -37,7 +37,7 @@ class Target:
     last: int | None = None
 
     @classmethod
-    def parse(cls, spec: str) -> "Target":
+    def parse(cls, spec: str) -> Target:
         match = TARGET.match(spec)
         if match is None:
             return cls(spec)

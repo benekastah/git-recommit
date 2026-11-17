@@ -145,9 +145,10 @@ These were the user's choices for v0; ask before changing them.
   (`git_client`), which starts git by its full path, the quickest way each
   system allows; it adds the reads git recommit makes, and its `run`,
   `run_bytes` and those reads raise `RecommitError`s rather than
-  `GitError`s (what it has of `Git`'s as it is, e.g. `succeeds`, `var` and
-  `resolve`, raises `GitError`s). git's messages are in English, as
-  py-git-client has them. The tests' own git calls (`Repo.git`) use `Git`
+  `GitError`s (what it has of `Git`'s as it is, e.g. `var` and `resolve`,
+  raises `GitError`s; `succeeds` and `passthrough` say whether git
+  succeeded). git's messages that it captures are in English, as
+  py-git-client has them; passthrough's are in the user's language. The tests' own git calls (`Repo.git`) use `Git`
   too, with the real git (`helpers.GIT`).
 - Read from git with as few processes as you can: names and objects through
   `GitClient`'s one `cat-file` process (`commit_sha`, `head`, `tree`,

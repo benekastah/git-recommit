@@ -44,8 +44,9 @@ class GitClient(Git):
     by its full path (a RecommitError if there's none).
 
     run, run_bytes and the reads it adds raise RecommitErrors, not
-    GitErrors. What it has of Git's as it is (e.g. var, resolve, succeeds,
-    passthrough) raises GitErrors."""
+    GitErrors. What it has of Git's as it is raises GitErrors (e.g. var,
+    resolve); succeeds and passthrough say whether git succeeded (a timeout
+    still raises GitTimeoutError)."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         try:

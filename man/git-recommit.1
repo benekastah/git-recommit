@@ -351,3 +351,11 @@ and stops at that commit.
 Change it and \f[CR]git commit \-\-amend\f[R], then
 \f[CR]git rebase \-\-continue\f[R] replays the later commits, stopping
 for you to resolve any conflicts.
+.SS Agent skills
+A skill for coding agents,
+\f[CR]git_recommit/skills/git\-recommit/SKILL.md\f[R], tells an agent
+how to rebuild commits with the command line above, never the TUI.
+It ships in the package: link or copy its directory into the folder your
+agent reads skills from (e.g.
+\f[CR]\(ti/.claude/skills\f[R]).
+It\(aqs only used when you ask.

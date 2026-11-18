@@ -199,6 +199,13 @@ commit the command fails on, changing nothing.
 Change it and `git commit --amend`, then `git rebase --continue` replays the
 later commits, stopping for you to resolve any conflicts.
 
+### Agent skills
+
+A skill for coding agents, `git_recommit/skills/git-recommit/SKILL.md`, tells
+an agent how to rebuild commits with the command line above, never the TUI. It
+ships in the package: link or copy its directory into the folder your agent
+reads skills from (e.g. `~/.claude/skills`). It's only used when you ask.
+
 ## Install
 
 Needs Python 3.15 or later and git 2.43 or later.

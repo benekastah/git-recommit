@@ -54,9 +54,7 @@ line-length = 120
 force-exclude = true
 target-version = "py315"
 # dev.py runs under an older Python too, to say it's too old: keep it to syntax that parses there.
-# So does what dev_project.py imports (it's loaded before .venv exists): the package's init, and
-# the modules skills.py needs.
-per-file-target-version = { "dev.py" = "py311", "dev_project.py" = "py311", "git_recommit/__init__.py" = "py311", "git_recommit/errors.py" = "py311", "git_recommit/skills.py" = "py311" }
+per-file-target-version = { "dev.py" = "py311" }
 
 [tool.ruff.format]
 exclude = ["dev.py"]

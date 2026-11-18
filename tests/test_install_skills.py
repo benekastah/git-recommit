@@ -39,11 +39,20 @@ def test_a_named_agent_is_installed_even_if_not_found(home: pathlib.Path) -> Non
     assert not (home / ".claude").exists()
 
 
-def test_it_stops_when_it_finds_no_agent(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["install-skills"]) == 1
+def test_it_says_when_it_finds_no_agent_and_creates_nothing(
+    home: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Not a failure: dev.py install runs it, on machines with no agent.
+    assert main(["install-skills"]) == 0
 
-    assert "--claude" in capsys.readouterr().err
+    assert capsys.readouterr().out == "found no coding agent to install skills for; name one with --claude or --codex\n"
     assert not any(home.iterdir())
+
+
+def test_json_lists_nothing_when_it_finds_no_agent(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["install-skills", "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"installed": []}
 
 
 def test_claude_config_dir_says_where_claude_keeps_its_skills(

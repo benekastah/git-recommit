@@ -4,10 +4,6 @@
 .TH "GIT\-RECOMMIT" "1" "" "git\-recommit" "Git Recommit Manual"
 .SH NAME
 git\-recommit \- rebuild a run of commits into reviewable ones, in a TUI
-.SH SYNOPSIS
-\f[B]git recommit\f[R] [\f[B]\-C\f[R] \f[I]directory\f[R]]
-[\f[B]\-\-root\f[R]] [\f[B]\-\-validate\f[R] \f[I]command\f[R]]
-[\f[B]\-u\f[R]] [\f[B]\-\-edit\f[R] \f[I]commit\f[R]] [\f[I]range\f[R]]
 .SH DESCRIPTION
 Rebuild a run of commits into new ones that make sense to review,
 choosing in a TUI which changes go in each.
@@ -371,10 +367,17 @@ isn\(aqt found; \f[CR]\-\-json\f[R] says what it did): Claude\(aqs is
 Codex\(aqs is \f[CR]\(ti/.agents/skills\f[R].
 The links point into the installed package, so upgrading git\-recommit
 updates them.
-A link already right is left alone.
+.IP \(bu 2
+A link already right is left alone, and so is one of two agents\(aq that
+share a skills directory.
+.IP \(bu 2
 A link to another directory (another clone\(aqs, or a skill of your own)
 is left too, with nothing linked anywhere, and it stops saying so;
 \f[CR]\-\-replace\f[R] takes it over.
 A link whose target is gone is replaced.
 A real directory or file is never touched: move it away.
+.IP \(bu 2
+If it finds no agent and none is named, it says so and does nothing,
+which isn\(aqt a failure.
+.IP \(bu 2
 On Windows, where a symlink needs a privilege, it makes a junction.

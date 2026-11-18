@@ -68,9 +68,11 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
   `git_recommit/skills.py` links them into each agent's skills directory
   (`install-skills`); `AGENTS` there is the list of agents it knows, and
   supporting another is one entry.
-  `dev.py install` links them too, to the clone's (`install_links()` in
-  `dev_project.py`), so a developer's agents use the code being changed (not on
-  Windows, where `install-skills` makes a junction instead).
+  `dev.py install` links them too, to the clone's, by running the clone's
+  `install-skills` (`after_install()` in `dev_project.py`), so a developer's
+  agents use the code being changed and there's one implementation of the
+  logic (a refused link stops the install; the junction on Windows comes
+  with it, which `install_links()`' symlinks wouldn't).
 
 ## Decisions to keep
 

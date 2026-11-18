@@ -1,8 +1,8 @@
 """git-recommit's additions to dev.py (see its docstring): `python dev.py types-windows`
 type-checks as if on Windows, which CI runs too (project.yml), the man page's SYNOPSIS, and
-the agent skills `install` links."""
+the agent skills `install` links (by running `git recommit install-skills`)."""
 
-from pathlib import Path
+import sys
 
 import dev
 
@@ -17,21 +17,14 @@ def types_windows(args: list[str]) -> None:
 COMMANDS = {"types-windows": types_windows}
 
 
-def install_links() -> list[tuple[Path, Path]]:
-    """The agent skills, linked into each agent found in use to this clone's, as `git recommit
-    install-skills` does to the installed package's. None on Windows, where a symlink needs a
-    privilege: there, that command makes a junction instead."""
-    if dev.WINDOWS:
-        return []
-    # Not at the top: this file is loaded before .venv exists, under any Python from 3.11, and
-    # git_recommit/skills.py is written to import there (see pyproject.toml).
-    from git_recommit import skills
-
-    return [(agent.skills_dir() / source.name, source) for agent in skills.found() for source in skills.packaged()]
-
-
-# As `git recommit --help` has it. `\-\-`: pandoc would make `--` a dash.
-MAN_SYNOPSIS = {
-    "git-recommit": "**git recommit** [**-C** *directory*] [**\\-\\-root**]"
-    " [**\\-\\-validate** *command*] [**-u**] [**\\-\\-edit** *commit*] [*range*]"
-}
+def after_install(replace: bool = False) -> None:
+    """Link this clone's agent skills into each coding agent's skills directory, by running
+    the clone's `git recommit install-skills`, which makes the links (a junction on Windows,
+    where `install_links()`' symlinks wouldn't work) and stops at a link to another clone's
+    skill unless `replace`. Having found no agent isn't a failure."""
+    command = [dev.tool("git-recommit"), "install-skills", *(["--replace"] if replace else [])]
+    if dev.run_code(*command) != 0:
+        sys.exit(
+            "install: couldn't link the agent skills (see above); `git recommit install-skills"
+            " --replace` takes over a link to another clone's"
+        )

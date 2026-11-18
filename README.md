@@ -215,12 +215,16 @@ links it into the skills directory of each agent it finds you use (`--claude`
 and `--codex` name one, even if it isn't found; `--json` says what it did): Claude's
 is `~/.claude/skills`, or `$CLAUDE_CONFIG_DIR/skills`; Codex's is
 `~/.agents/skills`. The links point into the installed package, so upgrading
-git-recommit updates them. A link already right is left alone. A link to
-another directory (another clone's, or a skill of your own) is left too, with
-nothing linked anywhere, and it stops saying so; `--replace` takes it over. A
-link whose target is gone is replaced. A real directory or file is never
-touched: move it away. On Windows, where a symlink needs a privilege, it makes
-a junction.
+git-recommit updates them.
+- A link already right is left alone, and so is one of two agents' that share a
+  skills directory.
+- A link to another directory (another clone's, or a skill of your own) is
+  left too, with nothing linked anywhere, and it stops saying so; `--replace`
+  takes it over. A link whose target is gone is replaced. A real directory or
+  file is never touched: move it away.
+- If it finds no agent and none is named, it says so and does nothing, which
+  isn't a failure.
+- On Windows, where a symlink needs a privilege, it makes a junction.
 
 ## Install
 
@@ -245,8 +249,8 @@ the repository, then run `python3 dev.py install` (on Windows,
 (editable) and the dev tools, from `uv.lock`, links `git-recommit` into
 `~/.local/bin` and its man page into `~/.local/share/man/man1` (not on
 Windows), links the clone's agent skill into the skills directory of each agent
-you use (see [Agent skills](#agent-skills); on Windows, run `git recommit
-install-skills` for that), and makes the clone use the hooks in `git_hooks/`: the pre-commit
+you use, by running the clone's `git recommit install-skills` (see [Agent
+skills](#agent-skills)), and makes the clone use the hooks in `git_hooks/`: the pre-commit
 hook formats and lint-fixes staged Python files and makes the man page again,
 and the pre-push hook runs the static checks before every push. CI runs the
 tests.

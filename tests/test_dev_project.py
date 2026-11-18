@@ -26,33 +26,31 @@ def test_types_windows_runs_basedpyright_as_if_on_windows(monkeypatch: pytest.Mo
     assert ran == [("venv",), (dev.tool("basedpyright"), "--pythonplatform", "Windows", "git_recommit/git.py")]
 
 
-def test_install_links_the_skills_to_this_clones_for_each_agent_found(
-    monkeypatch: pytest.MonkeyPatch, home: Path
-) -> None:
-    dev = load_dev(monkeypatch, [])
-    monkeypatch.setattr(dev, "WINDOWS", False)
-    (home / ".claude").mkdir()
-    (home / ".codex").mkdir()
-    skills = ROOT / "git_recommit" / "skills" / "git-recommit"
-
-    assert dev._project().install_links() == [
-        (home / ".claude" / "skills" / "git-recommit", skills),
-        (home / ".agents" / "skills" / "git-recommit", skills),
-    ]
+def run_code_with(monkeypatch: pytest.MonkeyPatch, code: int) -> tuple[types.ModuleType, list[tuple[str, ...]]]:
+    ran: list[tuple[str, ...]] = []
+    dev = load_dev(monkeypatch, ran)
+    monkeypatch.setattr(dev, "run_code", lambda *args: ran.append(args) or code)
+    return dev, ran
 
 
-def test_install_links_no_skills_where_it_finds_no_agent(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
-    dev = load_dev(monkeypatch, [])
-    monkeypatch.setattr(dev, "WINDOWS", False)
+def test_install_links_the_agent_skills_by_running_the_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    dev, ran = run_code_with(monkeypatch, 0)
 
-    assert dev._project().install_links() == []
+    dev._project().after_install()
+
+    assert ran == [(dev.tool("git-recommit"), "install-skills")]
 
 
-def test_install_links_no_skills_on_windows_where_a_symlink_needs_a_privilege(
-    monkeypatch: pytest.MonkeyPatch, home: Path
-) -> None:
-    dev = load_dev(monkeypatch, [])
-    (home / ".claude").mkdir()
-    monkeypatch.setattr(dev, "WINDOWS", True)
+def test_install_replace_takes_over_links_to_another_clones_skill(monkeypatch: pytest.MonkeyPatch) -> None:
+    dev, ran = run_code_with(monkeypatch, 0)
 
-    assert dev._project().install_links() == []
+    dev._project().after_install(replace=True)
+
+    assert ran == [(dev.tool("git-recommit"), "install-skills", "--replace")]
+
+
+def test_install_fails_when_the_skills_cant_be_linked(monkeypatch: pytest.MonkeyPatch) -> None:
+    dev, _ = run_code_with(monkeypatch, 1)
+
+    with pytest.raises(SystemExit, match=r"install-skills --replace"):
+        dev._project().after_install()

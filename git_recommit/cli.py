@@ -222,6 +222,8 @@ def install_skills(args: argparse.Namespace) -> int:
         items = [{**dataclasses.asdict(i), "action": i.action.value} for i in installed]
         print(json.dumps({"installed": items}, indent=1))
         return 0
+    if not installed:
+        print(skills.no_agent_message())
     for i in installed:
         verb = "already linked" if i.action is skills.InstallAction.UNCHANGED else i.action.value
         print(f"{i.agent}: {verb} {i.path}")

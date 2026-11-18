@@ -2,11 +2,6 @@
 
 To support another agent, add an `Agent` to AGENTS: `install-skills` gets its
 `--<name>` option from it.
-
-dev_project.py imports this (for `dev.py install`) under any Python from 3.11, before .venv
-exists, so it, `errors.py` and the package's `__init__.py` keep to syntax that runs there, and
-import nothing else of the package. It only calls `found` and `packaged`: `is_link` uses
-`os.path.isjunction`, new in 3.12.
 """
 
 import enum
@@ -105,6 +100,11 @@ def plan_skill(agent: Agent, source: pathlib.Path, replace: bool) -> tuple[pathl
     return link, InstallAction.LINKED
 
 
+def no_agent_message() -> str:
+    options = " or ".join(f"--{a.name}" for a in AGENTS)
+    return f"found no coding agent to install skills for; name one with {options}"
+
+
 def found() -> list[Agent]:
     """The agents in use here: those with a mark that exists."""
     return [a for a in AGENTS if any(p.exists() for p in a.marks())]
@@ -118,20 +118,23 @@ def packaged() -> list[pathlib.Path]:
 def install(names: Sequence[str], replace: bool = False) -> list[Installed]:
     """Link every packaged skill into the skills directory of each agent in
     names, or, if there are none, of each agent found in use. Changes nothing if
-    a link can't be made (see plan_skill); replace takes over links to other directories."""
+    a link can't be made (see plan_skill); replace takes over links to other directories.
+    Nothing, if there are no agents named or found."""
     agents = [a for a in AGENTS if a.name in names] or found()
-    if not agents:
-        options = " or ".join(f"--{a.name}" for a in AGENTS)
-        raise RecommitError(f"found no agent to install skills for; name one with {options}")
-    plans = [(agent, source, *plan_skill(agent, source, replace)) for agent in agents for source in packaged()]
+    plans: list[tuple[Agent, pathlib.Path, pathlib.Path, InstallAction | str]] = []
+    planned: set[pathlib.Path] = set()
+    for agent in agents:
+        for source in packaged():
+            link, what = plan_skill(agent, source, replace)
+            # Agents can share a skills directory (one's a link to the other's): once is enough.
+            where = link.parent.resolve() / link.name
+            plans.append((agent, source, link, InstallAction.UNCHANGED if where in planned else what))
+            planned.add(where)
     if refusals := [what for *_, what in plans if isinstance(what, str)]:
         raise RecommitError("\n".join(refusals))
     installed: list[Installed] = []
     for agent, source, link, action in plans:
         assert isinstance(action, InstallAction)
-        if action is not InstallAction.UNCHANGED and is_link(link) and link.resolve() == source.resolve():
-            # Made since planning, through another agent's: they share a skills directory.
-            action = InstallAction.UNCHANGED
         if action is not InstallAction.UNCHANGED:
             try:
                 if action is InstallAction.REPLACED:

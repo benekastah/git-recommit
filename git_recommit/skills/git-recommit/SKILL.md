@@ -20,9 +20,9 @@ Its options change, so read them first: `git recommit -h`, then
    uncommitted changes alone. The old commits are replaced, so make sure
    nobody else has built on them.
 2. `git recommit start <range>` begins from the commits as they are, kept as a
-   plan in the git directory until `write` or `abort`. `git recommit show
-   --json` shows the plan: the commits by number (from 1), and the changes
-   with the numbers that name them.
+   plan in the git directory until `write` or `abort`.
+   `git recommit show --json` shows the plan: the commits by number (from 1),
+   and the changes with the numbers that name them.
 3. Shape the plan:
 
    ```sh

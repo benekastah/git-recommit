@@ -15,7 +15,7 @@ SKILL_FILES = sorted(SKILLS.glob("*/SKILL.md"))
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 OPTIONAL = re.compile(r"\[[^\]]*\]")
 PLACEHOLDER = re.compile(r"<[^>]*>")
-ALTERNATIVES = re.compile(r"(\w+(?:\|\w+)+)")
+ALTERNATIVES = re.compile(r"([\w-]+(?:\|[\w-]+)+)")
 SHELL_JOINERS = re.compile(r"\s(?:&&|\|\||;|\|)\s")
 # What `edit` reads from, `git recommit edit 3 FILE < stub`.
 REDIRECT = re.compile(r"\s<\s\S+")
@@ -62,7 +62,7 @@ def recommit_commands(text: str) -> list[str]:
 
 def frontmatter(text: str) -> dict[str, str]:
     """The `key: value` lines between the --- lines, each on one line (not
-    all of YAML: a value that goes over more lines would be read wrong)."""
+    all of YAML: a value over more lines fails)."""
     match = FRONTMATTER.match(text)
     assert match, "no frontmatter"
     fields: dict[str, str] = {}
@@ -109,7 +109,7 @@ def test_every_git_recommit_command_in_a_skill_parses(path: pathlib.Path) -> Non
 @pytest.mark.parametrize("path", SKILL_FILES, ids=lambda p: p.parent.name)
 def test_a_skill_shows_every_subcommand_but_the_tui(path: pathlib.Path) -> None:
     shown = {command.split()[0] for command in recommit_commands(path.read_text(encoding="utf-8"))}
-    assert set(SUBCOMMANDS) - {"tui", "install-skills"} <= shown
+    assert set(SUBCOMMANDS) - {"tui"} <= shown
 
 
 @pytest.mark.parametrize("command", ["tuii", "abortt", "assignn 3 a", "assign", "commit remove x"])
@@ -120,6 +120,14 @@ def test_a_command_that_isnt_one_doesnt_parse(command: str) -> None:
 @pytest.mark.parametrize("command", ["start 1", "1 --validate 'pytest'", "-h", "commit remove 2", "tui -h"])
 def test_a_command_that_is_one_parses(command: str) -> None:
     assert parses(command)
+
+
+def test_alternatives_may_have_hyphens() -> None:
+    assert expand("git recommit drop-edit|clear|restore") == [
+        "git recommit drop-edit",
+        "git recommit clear",
+        "git recommit restore",
+    ]
 
 
 def test_commands_are_taken_from_code_spans_and_fenced_blocks() -> None:

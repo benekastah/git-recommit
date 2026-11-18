@@ -104,7 +104,7 @@ def test_it_refuses_to_replace_a_file_of_your_own(home: pathlib.Path, capsys: py
 
     assert main(["install-skills", "--claude"]) == 1
 
-    assert "git-recommit" in capsys.readouterr().err
+    assert "isn't a link" in capsys.readouterr().err
     assert mine.read_text(encoding="utf-8") == "mine"
 
 
@@ -124,7 +124,7 @@ def test_it_refuses_to_replace_a_directory_of_your_own(home: pathlib.Path, capsy
 
     assert main(["install-skills", "--claude"]) == 1
 
-    assert "git-recommit" in capsys.readouterr().err
+    assert "isn't a link" in capsys.readouterr().err
     assert (mine / "SKILL.md").read_text(encoding="utf-8") == "mine"
 
 
@@ -151,22 +151,6 @@ def test_json_lists_what_was_installed(home: pathlib.Path, capsys: pytest.Captur
     ]
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
-def test_on_windows_it_falls_back_to_a_junction_when_symlinks_arent_allowed(
-    home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def refuse(*args: object, **kwargs: object) -> None:
-        raise OSError("a required privilege is not held by the client")
-
-    monkeypatch.setattr("os.symlink", refuse)
-
-    assert main(["install-skills", "--claude"]) == 0
-
-    link = home / ".claude" / "skills" / "git-recommit"
-    assert link.resolve() == (SKILLS / "git-recommit").resolve()
-    assert (link / "SKILL.md").is_file()
-
-
 @pytest.fixture
 def junctions(monkeypatch: pytest.MonkeyPatch) -> None:
     """Windows without the right to make symlinks."""
@@ -175,6 +159,17 @@ def junctions(monkeypatch: pytest.MonkeyPatch) -> None:
         raise OSError("a required privilege is not held by the client")
 
     monkeypatch.setattr("os.symlink", refuse)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
+def test_on_windows_it_falls_back_to_a_junction_when_symlinks_arent_allowed(
+    home: pathlib.Path, junctions: None
+) -> None:
+    assert main(["install-skills", "--claude"]) == 0
+
+    link = home / ".claude" / "skills" / "git-recommit"
+    assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert (link / "SKILL.md").is_file()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")

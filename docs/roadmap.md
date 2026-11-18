@@ -154,3 +154,21 @@ checked against its documentation before relying on them.)
 The hunk's lines in the file as the commit has it can be approximate (by a
 line diff from what the changes alone make it), since zooming in is only a
 view: the rest of the file is still there.
+
+## Sharing the agent skills' code
+
+`git_recommit/skills.py` (the agents `install-skills` links into, and how) and
+`tests/test_skills.py` are the same as git-stack's, copied. Options:
+
+1. **Keep a copy in each project.** Costs nothing now; they drift, and each
+   fix is made once per project.
+2. **python-template.** The test, and the rule that a skill states only what
+   the CLI documents, are generic. The code is runtime code that ships in the
+   package, which `copier update` handles poorly (the template's `cli.py` is
+   left alone for that reason).
+3. **A small shared library**, like py-git-client, holding the registry and
+   the linking; the template holds the test. One more dependency to keep.
+
+Also, Codex takes "only when asked" from `agents/openai.yaml`
+(`allow_implicit_invocation: false`), not from the SKILL.md's
+`disable-model-invocation`, so the skill may be used on its own there.

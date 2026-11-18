@@ -6,7 +6,7 @@ import os
 import sys
 from collections.abc import Callable
 
-from git_recommit import commands, planfile, show, validate, writing
+from git_recommit import commands, planfile, show, skills, validate, writing
 from git_recommit.commands import Command, Target
 from git_recommit.edit_commit import edit_commit
 from git_recommit.errors import RecommitError
@@ -26,6 +26,7 @@ SUBCOMMANDS = (
     "write",
     "abort",
     "tui",
+    "install-skills",
 )
 
 
@@ -119,6 +120,21 @@ def subcommand_parser() -> argparse.ArgumentParser:
     sub.add_parser("abort", help="stop, without changing any commits")
     tui = sub.add_parser("tui", help="carry on in the TUI (quitting it keeps the plan)")
     tui.add_argument("--validate", metavar="COMMAND", help="as for writing")
+    install = sub.add_parser(
+        "install-skills",
+        help="link git-recommit's agent skills into the directories your coding agents read them from",
+    )
+    for agent in skills.AGENTS:
+        install.add_argument(
+            f"--{agent.name}",
+            dest="agents",
+            action="append_const",
+            const=agent.name,
+            default=[],
+            help=f"install for {agent.name} (even if it isn't found); without any such option, "
+            "install for each agent found",
+        )
+    install.add_argument("--json", action="store_true", help="as JSON")
     return p
 
 
@@ -135,6 +151,8 @@ def main(argv: list[str] | None = None) -> int:
         directory, rest = os.path.join(directory, rest[1]), rest[2:]
     if rest and rest[0] in SUBCOMMANDS:
         args = subcommand_parser().parse_args(rest)
+        if args.command == "install-skills":
+            return _report(lambda: install_skills(args))
         return _report(lambda: run_subcommand(GitClient(directory), args))
     p = parser()
     args = p.parse_args(argv)
@@ -191,6 +209,18 @@ def run_subcommand(git: GitClient, args: argparse.Namespace) -> int:
     result = command(args, session).run(session)
     planfile.save(session)
     print(result.message)
+    return 0
+
+
+def install_skills(args: argparse.Namespace) -> int:
+    installed = skills.install(args.agents)
+    if args.json:
+        items = [{**dataclasses.asdict(i), "action": i.action.value} for i in installed]
+        print(json.dumps({"installed": items}, indent=1))
+        return 0
+    for i in installed:
+        verb = "already linked" if i.action is skills.InstallAction.UNCHANGED else i.action.value
+        print(f"{i.agent}: {verb} {i.path}")
     return 0
 
 

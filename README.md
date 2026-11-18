@@ -189,7 +189,8 @@ git recommit tui                        # or carry on in the TUI (quitting keeps
 git recommit abort                      # or drop it
 ```
 
-The other subcommands are `drop-edit`, `clear` and `restore`; `git recommit
+The other subcommands are `drop-edit`, `clear`, `restore` and `install-skills`
+(see below); `git recommit
 <subcommand> -h` says more. With `--validate`, `write` stops at the first
 commit the command fails on, changing nothing.
 
@@ -203,9 +204,20 @@ later commits, stopping for you to resolve any conflicts.
 
 A skill for coding agents, `git_recommit/skills/git-recommit/SKILL.md`, tells
 an agent how to rebuild commits with the command line above, never the TUI. It
-ships in the package: link or copy its directory into the folder your agent
-reads skills from (e.g. `~/.claude/skills`). It asks not to be used unless you
-ask, which Claude Code honours and other agents may not.
+asks not to be used unless you ask, which Claude Code honours and other agents
+may not. It ships in the package, and
+
+```sh
+git recommit install-skills
+```
+
+links it into the skills directory of each agent it finds you use (`--claude`
+and `--codex` name one, even if it isn't found; `--json` says what it did): Claude's
+is `~/.claude/skills`, or `$CLAUDE_CONFIG_DIR/skills`; Codex's is
+`~/.agents/skills`. The links point into the installed package, so upgrading
+git-recommit updates them. It replaces a link that goes elsewhere, but not a
+skill of your own that's there: move that away first. On Windows, where a
+symlink needs a privilege, it makes a junction.
 
 ## Install
 

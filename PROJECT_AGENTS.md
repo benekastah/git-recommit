@@ -65,6 +65,9 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
   command line and README document, none of one user's workflow;
   `tests/test_skills.py` checks that its name is its directory's and that every
   `git recommit ...` command it shows parses with `cli.py`'s parsers.
+  `git_recommit/skills.py` links them into each agent's skills directory
+  (`install-skills`); `AGENTS` there is the list of agents it knows, and
+  supporting another is one entry.
 
 ## Decisions to keep
 

@@ -341,8 +341,9 @@ git recommit tui                        \f[I]# or carry on in the TUI (quitting 
 git recommit abort                      \f[I]# or drop it\f[R]
 .EE
 .PP
-The other subcommands are \f[CR]drop\-edit\f[R], \f[CR]clear\f[R] and
-\f[CR]restore\f[R]; \f[CR]git recommit <subcommand> \-h\f[R] says more.
+The other subcommands are \f[CR]drop\-edit\f[R], \f[CR]clear\f[R],
+\f[CR]restore\f[R] and \f[CR]install\-skills\f[R] (see below);
+\f[CR]git recommit <subcommand> \-h\f[R] says more.
 With \f[CR]\-\-validate\f[R], \f[CR]write\f[R] stops at the first commit
 the command fails on, changing nothing.
 .SS \-\-edit
@@ -355,8 +356,21 @@ for you to resolve any conflicts.
 A skill for coding agents,
 \f[CR]git_recommit/skills/git\-recommit/SKILL.md\f[R], tells an agent
 how to rebuild commits with the command line above, never the TUI.
-It ships in the package: link or copy its directory into the folder your
-agent reads skills from (e.g.
-\f[CR]\(ti/.claude/skills\f[R]).
 It asks not to be used unless you ask, which Claude Code honours and
 other agents may not.
+It ships in the package, and
+.IP
+.EX
+git recommit install\-skills
+.EE
+.PP
+links it into the skills directory of each agent it finds you use
+(\f[CR]\-\-claude\f[R] and \f[CR]\-\-codex\f[R] name one, even if it
+isn\(aqt found; \f[CR]\-\-json\f[R] says what it did): Claude\(aqs is
+\f[CR]\(ti/.claude/skills\f[R], or \f[CR]$CLAUDE_CONFIG_DIR/skills\f[R];
+Codex\(aqs is \f[CR]\(ti/.agents/skills\f[R].
+The links point into the installed package, so upgrading git\-recommit
+updates them.
+It replaces a link that goes elsewhere, but not a skill of your own
+that\(aqs there: move that away first.
+On Windows, where a symlink needs a privilege, it makes a junction.

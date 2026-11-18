@@ -305,6 +305,18 @@ or reword (not on old commits\(aq messages you kept), as with
 The old commits are replaced, and the command prints how to get them
 back (\f[CR]git reset <old HEAD>\f[R], which leaves your working tree as
 it is); they\(aqre also in the reflog.
+.PP
+Only the branch at \f[CR]HEAD\f[R] moves.
+Another branch built on the old commits still has them: rebase it onto
+the new ones with
+\f[CR]git rebase \-\-onto <new tip> <old tip> <branch>\f[R], which
+replays only its own commits, or, if a stacking tool (e.g.
+\c
+.UR https://github.com/benekastah/git-stack
+git\-stack
+.UE \c
+) tracks your branches, with that tool, since it records what each
+branch was built on.
 .SS From the command line
 Everything the TUI does can be done a step at a time from the command
 line, e.g.

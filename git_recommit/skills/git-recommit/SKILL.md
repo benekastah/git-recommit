@@ -18,7 +18,8 @@ Its options change, so read them first: `git recommit -h`, then
    HEAD. Tracked uncommitted changes are part of the diff, as if committed
    after HEAD; `-u` adds untracked files. `HEAD` as the range splits the
    uncommitted changes alone. The old commits are replaced, so make sure
-   nobody else has built on them.
+   nobody else has built on them, and note which other branches of the
+   user's are built on them (step 6).
 2. `git recommit start <range>` begins from the commits as they are, kept as a
    plan in the git directory until `write` or `abort`.
    `git recommit show --json` shows the plan: the commits by number (from 1),
@@ -50,8 +51,17 @@ Its options change, so read them first: `git recommit -h`, then
    `git recommit show --json` again after each change: the numbers move.
 4. `git recommit write --validate '<test command>'` makes the new commits and
    moves the branch to them. It runs the command on each new commit first, and
-   stops at the first failure without changing anything. Unassigned changes
+   stops at the first failure without changing anything. Each new commit
+   should be correct on its own, not only the last: pick a command that
+   shows it (the build and the tests the changes touch). Unassigned changes
    stay uncommitted in the working tree. `git recommit abort` drops the plan and
    changes nothing.
 5. `write` prints how to get the old commits back (`git reset <old HEAD>`; they
    are in the reflog too).
+6. Only the branch at HEAD moves. Another branch built on the old commits
+   still has them, and needs rebasing onto the new ones. If git-stack tracks
+   the branches (`git stack info` shows them), do it with git-stack, following
+   its skill if one is installed, never with a plain `git rebase`: git-stack
+   records the commit each branch was built on, and a plain rebase leaves that
+   record wrong. Otherwise, `git rebase --onto <new tip> <old tip> <branch>`
+   replays only that branch's own commits.

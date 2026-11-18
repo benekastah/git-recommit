@@ -157,6 +157,12 @@ The old commits are replaced, and the command prints how to get them back
 (`git reset <old HEAD>`, which leaves your working tree as it is); they're
 also in the reflog.
 
+Only the branch at `HEAD` moves. Another branch built on the old commits still
+has them: rebase it onto the new ones with `git rebase --onto <new tip> <old
+tip> <branch>`, which replays only its own commits, or, if a stacking tool
+(e.g. [git-stack](https://github.com/benekastah/git-stack)) tracks your
+branches, with that tool, since it records what each branch was built on.
+
 ### From the command line
 
 Everything the TUI does can be done a step at a time from the command line,

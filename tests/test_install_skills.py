@@ -249,7 +249,7 @@ def test_on_windows_a_second_run_leaves_a_junction_alone(
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
-def test_on_windows_it_replaces_a_junction_to_somewhere_else(
+def test_on_windows_it_leaves_a_junction_to_somewhere_else_unless_told_to_replace_it(
     home: pathlib.Path, tmp_path: pathlib.Path, junctions: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import _winapi  # pyright: ignore[reportMissingImports]
@@ -260,7 +260,12 @@ def test_on_windows_it_replaces_a_junction_to_somewhere_else(
     link.parent.mkdir(parents=True)
     _winapi.CreateJunction(str(old), str(link))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
 
-    assert main(["install-skills", "--claude", "--json"]) == 0
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert link.resolve() == old.resolve()
+    capsys.readouterr()
+
+    assert main(["install-skills", "--claude", "--replace", "--json"]) == 0
 
     assert link.resolve() == (SKILLS / "git-recommit").resolve()
     assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]

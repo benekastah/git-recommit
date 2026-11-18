@@ -90,14 +90,18 @@ def install_skill(agent: Agent, source: pathlib.Path) -> Installed:
     if is_link(link):
         if link.resolve() == source.resolve():
             return Installed(agent.name, source.name, str(link), InstallAction.UNCHANGED)
-        link.unlink() if link.is_symlink() else link.rmdir()
         action = InstallAction.REPLACED
     elif link.exists():
         raise RecommitError(
             f"{link} exists and isn't a link; move it away to install git-recommit's {source.name} skill"
         )
-    link.parent.mkdir(parents=True, exist_ok=True)
-    make_link(link, source)
+    try:
+        if action is InstallAction.REPLACED:
+            link.unlink() if link.is_symlink() else link.rmdir()
+        link.parent.mkdir(parents=True, exist_ok=True)
+        make_link(link, source)
+    except OSError as e:
+        raise RecommitError(f"can't link git-recommit's {source.name} skill at {link}: {e}") from e
     return Installed(agent.name, source.name, str(link), action)
 
 

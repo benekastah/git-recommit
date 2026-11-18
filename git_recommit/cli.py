@@ -123,6 +123,8 @@ def subcommand_parser() -> argparse.ArgumentParser:
     install = sub.add_parser(
         "install-skills",
         help="link git-recommit's agent skills into the directories your coding agents read them from",
+        description="Link git-recommit's agent skills into the skills directory of each agent named, or, if "
+        "none is, of each agent found in use.",
     )
     for agent in skills.AGENTS:
         install.add_argument(
@@ -131,8 +133,7 @@ def subcommand_parser() -> argparse.ArgumentParser:
             action="append_const",
             const=agent.name,
             default=[],
-            help=f"install for {agent.name} (even if it isn't found); without any such option, "
-            "install for each agent found",
+            help=f"install for {agent.name}, even if it isn't found",
         )
     install.add_argument("--json", action="store_true", help="as JSON")
     return p

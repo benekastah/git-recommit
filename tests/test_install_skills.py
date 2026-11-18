@@ -80,16 +80,41 @@ def test_a_second_run_changes_nothing(home: pathlib.Path, capsys: pytest.Capture
     assert {i["action"] for i in result["installed"]} == {"unchanged"}
 
 
-def test_it_replaces_a_link_to_somewhere_else(home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("where", ["elsewhere", "nowhere"])
+def test_it_replaces_a_link_to_somewhere_else_or_nowhere(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], where: str
+) -> None:
     old = tmp_path / "old"
-    old.mkdir()
+    if where == "elsewhere":
+        old.mkdir()
     link = home / ".claude" / "skills" / "git-recommit"
     link.parent.mkdir(parents=True)
     link.symlink_to(old, target_is_directory=True)
 
-    assert main(["install-skills", "--claude"]) == 0
+    assert main(["install-skills", "--claude", "--json"]) == 0
 
     assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
+
+
+def test_it_refuses_to_replace_a_file_of_your_own(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    mine = home / ".claude" / "skills" / "git-recommit"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("mine", encoding="utf-8")
+
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert "git-recommit" in capsys.readouterr().err
+    assert mine.read_text(encoding="utf-8") == "mine"
+
+
+def test_it_says_when_it_cant_make_the_skills_directory(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (home / ".claude").mkdir()
+    (home / ".claude" / "skills").write_text("a file, where the directory goes", encoding="utf-8")
+
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert str(home / ".claude" / "skills") in capsys.readouterr().err
 
 
 def test_it_refuses_to_replace_a_directory_of_your_own(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -140,3 +165,44 @@ def test_on_windows_it_falls_back_to_a_junction_when_symlinks_arent_allowed(
     link = home / ".claude" / "skills" / "git-recommit"
     assert link.resolve() == (SKILLS / "git-recommit").resolve()
     assert (link / "SKILL.md").is_file()
+
+
+@pytest.fixture
+def junctions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows without the right to make symlinks."""
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise OSError("a required privilege is not held by the client")
+
+    monkeypatch.setattr("os.symlink", refuse)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
+def test_on_windows_a_second_run_leaves_a_junction_alone(
+    home: pathlib.Path, junctions: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["install-skills", "--claude"])
+    capsys.readouterr()
+
+    assert main(["install-skills", "--claude", "--json"]) == 0
+
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["unchanged"]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
+def test_on_windows_it_replaces_a_junction_to_somewhere_else(
+    home: pathlib.Path, tmp_path: pathlib.Path, junctions: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import _winapi  # pyright: ignore[reportMissingImports]
+
+    old = tmp_path / "old"
+    old.mkdir()
+    link = home / ".claude" / "skills" / "git-recommit"
+    link.parent.mkdir(parents=True)
+    _winapi.CreateJunction(str(old), str(link))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+    assert main(["install-skills", "--claude", "--json"]) == 0
+
+    assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
+    assert old.is_dir()

@@ -107,9 +107,10 @@ def test_every_git_recommit_command_in_a_skill_parses(path: pathlib.Path) -> Non
 
 
 @pytest.mark.parametrize("path", SKILL_FILES, ids=lambda p: p.parent.name)
-def test_a_skill_shows_every_subcommand_but_the_tui(path: pathlib.Path) -> None:
+def test_a_skill_shows_every_subcommand_an_agent_uses(path: pathlib.Path) -> None:
     shown = {command.split()[0] for command in recommit_commands(path.read_text(encoding="utf-8"))}
-    assert set(SUBCOMMANDS) - {"tui"} <= shown
+    # The tui needs a person, and install-skills is for the person installing.
+    assert set(SUBCOMMANDS) - {"tui", "install-skills"} <= shown
 
 
 @pytest.mark.parametrize("command", ["tuii", "abortt", "assignn 3 a", "assign", "commit remove x"])

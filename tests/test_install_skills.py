@@ -1,0 +1,272 @@
+"""`git recommit install-skills` links the packaged agent skills into each agent's skills directory."""
+
+import json
+import pathlib
+import sys
+
+import pytest
+
+from git_recommit.cli import main
+from tests.test_skills import SKILLS
+
+SKILL_NAMES = sorted(p.name for p in SKILLS.iterdir() if p.is_dir())
+
+
+def test_it_links_every_skill_for_each_agent_it_finds(home: pathlib.Path) -> None:
+    (home / ".claude").mkdir()
+    (home / ".codex").mkdir()
+
+    assert main(["install-skills"]) == 0
+
+    for skills in (home / ".claude" / "skills", home / ".agents" / "skills"):
+        for name in SKILL_NAMES:
+            assert (skills / name).resolve() == (SKILLS / name).resolve()
+            assert (skills / name / "SKILL.md").is_file()
+
+
+def test_it_leaves_an_agent_it_doesnt_find_alone(home: pathlib.Path) -> None:
+    (home / ".claude").mkdir()
+
+    main(["install-skills"])
+
+    assert not (home / ".agents").exists()
+
+
+def test_a_named_agent_is_installed_even_if_not_found(home: pathlib.Path) -> None:
+    assert main(["install-skills", "--codex"]) == 0
+
+    assert (home / ".agents" / "skills" / "git-recommit").is_symlink()
+    assert not (home / ".claude").exists()
+
+
+def test_it_says_when_it_finds_no_agent_and_creates_nothing(
+    home: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Not a failure: dev.py install runs it, on machines with no agent.
+    assert main(["install-skills"]) == 0
+
+    assert capsys.readouterr().out == "found no coding agent to install skills for; name one with --claude or --codex\n"
+    assert not any(home.iterdir())
+
+
+def test_json_lists_nothing_when_it_finds_no_agent(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["install-skills", "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {"installed": []}
+
+
+def test_claude_config_dir_says_where_claude_keeps_its_skills(
+    home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "claude-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+
+    assert main(["install-skills", "--claude"]) == 0
+
+    assert (config / "skills" / "git-recommit").is_symlink()
+    assert not (home / ".claude").exists()
+
+
+def test_a_second_run_changes_nothing(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    main(["install-skills", "--claude"])
+    capsys.readouterr()
+
+    assert main(["install-skills", "--claude", "--json"]) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert {i["action"] for i in result["installed"]} == {"unchanged"}
+
+
+def link_to(home: pathlib.Path, target: pathlib.Path) -> pathlib.Path:
+    link = home / ".claude" / "skills" / "git-recommit"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target, target_is_directory=True)
+    return link
+
+
+def test_it_leaves_a_live_link_to_somewhere_else_unless_told_to_replace_it(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    link = link_to(home, mine)
+
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert "--replace" in capsys.readouterr().err
+    assert link.resolve() == mine.resolve()
+
+    assert main(["install-skills", "--claude", "--replace", "--json"]) == 0
+
+    assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
+    assert mine.is_dir()
+
+
+def test_it_replaces_a_link_to_nowhere(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    link = link_to(home, tmp_path / "deleted")
+
+    assert main(["install-skills", "--claude", "--json"]) == 0
+
+    assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
+
+
+def test_it_links_nothing_if_it_must_refuse_one(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Codex's, the second agent: Claude's, which comes first, mustn't be linked either.
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    link = home / ".agents" / "skills" / "git-recommit"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(mine, target_is_directory=True)
+
+    assert main(["install-skills", "--claude", "--codex"]) == 1
+
+    assert link.resolve() == mine.resolve()
+    assert not (home / ".claude").exists()
+    assert capsys.readouterr().err.count("--replace") == 1
+
+
+def test_it_says_why_for_every_link_it_refuses(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    for skills in (home / ".claude" / "skills", home / ".agents" / "skills"):
+        skills.mkdir(parents=True)
+        (skills / "git-recommit").symlink_to(mine, target_is_directory=True)
+
+    assert main(["install-skills", "--claude", "--codex"]) == 1
+
+    err = capsys.readouterr().err
+    assert str(home / ".claude" / "skills" / "git-recommit") in err
+    assert str(home / ".agents" / "skills" / "git-recommit") in err
+
+
+def test_two_agents_that_share_a_skills_directory_are_linked_once(
+    home: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (home / ".agents" / "skills").mkdir(parents=True)
+    (home / ".claude").mkdir()
+    (home / ".claude" / "skills").symlink_to(home / ".agents" / "skills", target_is_directory=True)
+
+    assert main(["install-skills", "--claude", "--codex", "--json"]) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert [i["action"] for i in result["installed"]] == ["linked", "unchanged"]
+    assert (home / ".agents" / "skills" / "git-recommit").resolve() == (SKILLS / "git-recommit").resolve()
+
+
+def test_it_refuses_to_replace_a_file_of_your_own(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    mine = home / ".claude" / "skills" / "git-recommit"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("mine", encoding="utf-8")
+
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert "isn't a link" in capsys.readouterr().err
+    assert mine.read_text(encoding="utf-8") == "mine"
+
+
+def test_it_says_when_it_cant_make_the_skills_directory(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (home / ".claude").mkdir()
+    (home / ".claude" / "skills").write_text("a file, where the directory goes", encoding="utf-8")
+
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert str(home / ".claude" / "skills") in capsys.readouterr().err
+
+
+def test_it_refuses_to_replace_a_directory_of_your_own(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    mine = home / ".claude" / "skills" / "git-recommit"
+    mine.mkdir(parents=True)
+    (mine / "SKILL.md").write_text("mine", encoding="utf-8")
+
+    assert main(["install-skills", "--claude", "--replace"]) == 1
+
+    assert "isn't a link" in capsys.readouterr().err
+    assert (mine / "SKILL.md").read_text(encoding="utf-8") == "mine"
+
+
+def test_it_says_what_it_linked(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["install-skills", "--claude"]) == 0
+
+    assert capsys.readouterr().out == "".join(
+        f"claude: linked {home / '.claude' / 'skills' / name}\n" for name in SKILL_NAMES
+    )
+
+
+def test_json_lists_what_was_installed(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["install-skills", "--codex", "--json"]) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["installed"] == [
+        {
+            "agent": "codex",
+            "skill": name,
+            "path": str(home / ".agents" / "skills" / name),
+            "action": "linked",
+        }
+        for name in SKILL_NAMES
+    ]
+
+
+@pytest.fixture
+def junctions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows without the right to make symlinks."""
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise OSError("a required privilege is not held by the client")
+
+    monkeypatch.setattr("os.symlink", refuse)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
+def test_on_windows_it_falls_back_to_a_junction_when_symlinks_arent_allowed(
+    home: pathlib.Path, junctions: None
+) -> None:
+    assert main(["install-skills", "--claude"]) == 0
+
+    link = home / ".claude" / "skills" / "git-recommit"
+    assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert (link / "SKILL.md").is_file()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
+def test_on_windows_a_second_run_leaves_a_junction_alone(
+    home: pathlib.Path, junctions: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(["install-skills", "--claude"])
+    capsys.readouterr()
+
+    assert main(["install-skills", "--claude", "--json"]) == 0
+
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["unchanged"]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a junction is how Windows links without symlink rights")
+def test_on_windows_it_leaves_a_junction_to_somewhere_else_unless_told_to_replace_it(
+    home: pathlib.Path, tmp_path: pathlib.Path, junctions: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import _winapi  # pyright: ignore[reportMissingImports]
+
+    old = tmp_path / "old"
+    old.mkdir()
+    link = home / ".claude" / "skills" / "git-recommit"
+    link.parent.mkdir(parents=True)
+    _winapi.CreateJunction(str(old), str(link))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert link.resolve() == old.resolve()
+    capsys.readouterr()
+
+    assert main(["install-skills", "--claude", "--replace", "--json"]) == 0
+
+    assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
+    assert old.is_dir()

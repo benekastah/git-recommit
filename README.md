@@ -189,7 +189,8 @@ git recommit tui                        # or carry on in the TUI (quitting keeps
 git recommit abort                      # or drop it
 ```
 
-The other subcommands are `drop-edit`, `clear` and `restore`; `git recommit
+The other subcommands are `drop-edit`, `clear`, `restore` and `install-skills`
+(see below); `git recommit
 <subcommand> -h` says more. With `--validate`, `write` stops at the first
 commit the command fails on, changing nothing.
 
@@ -198,6 +199,32 @@ commit the command fails on, changing nothing.
 `git recommit --edit <commit>` runs `git rebase -i` and stops at that commit.
 Change it and `git commit --amend`, then `git rebase --continue` replays the
 later commits, stopping for you to resolve any conflicts.
+
+### Agent skills
+
+A skill for coding agents, `git_recommit/skills/git-recommit/SKILL.md`, tells
+an agent how to rebuild commits with the command line above, never the TUI. It
+asks not to be used unless you ask, which Claude Code honours and other agents
+may not. It ships in the package, and
+
+```sh
+git recommit install-skills
+```
+
+links it into the skills directory of each agent it finds you use (`--claude`
+and `--codex` name one, even if it isn't found; `--json` says what it did): Claude's
+is `~/.claude/skills`, or `$CLAUDE_CONFIG_DIR/skills`; Codex's is
+`~/.agents/skills`. The links point into the installed package, so upgrading
+git-recommit updates them.
+- A link already right is left alone, and so is one of two agents' that share a
+  skills directory.
+- A link to another directory (another clone's, or a skill of your own) is
+  left too, with nothing linked anywhere, and it stops saying so; `--replace`
+  takes it over. A link whose target is gone is replaced. A real directory or
+  file is never touched: move it away.
+- If it finds no agent and none is named, it says so and does nothing, which
+  isn't a failure.
+- On Windows, where a symlink needs a privilege, it makes a junction.
 
 ## Install
 
@@ -221,13 +248,16 @@ the repository, then run `python3 dev.py install` (on Windows,
 `py dev.py install`). It sets up the clone's `.venv` with git-recommit
 (editable) and the dev tools, from `uv.lock`, links `git-recommit` into
 `~/.local/bin` and its man page into `~/.local/share/man/man1` (not on
-Windows), and makes the clone use the hooks in `git_hooks/`: the pre-commit
+Windows), links the clone's agent skill into the skills directory of each agent
+you use, by running the clone's `git recommit install-skills` (see [Agent
+skills](#agent-skills)), and makes the clone use the hooks in `git_hooks/`: the pre-commit
 hook formats and lint-fixes staged Python files and makes the man page again,
 and the pre-push hook runs the static checks before every push. CI runs the
 tests.
 
-If `~/.local/bin` already has `git-recommit` from another clone (or installed
-another way), `dev.py install` stops and says so, changing nothing:
+If `~/.local/bin` already has `git-recommit`, or an agent's skills directory
+a `git-recommit` skill, from another clone (or installed another way),
+`dev.py install` stops and says so, changing nothing:
 `dev.py install --replace` takes it over (except, on Windows, another
 install's `git-recommit.exe`, which you uninstall). A link to a clone that's
 since been deleted it just replaces. It won't install a clone in a temporary

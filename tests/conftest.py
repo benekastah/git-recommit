@@ -43,3 +43,15 @@ def repo(tmp_path: pathlib.Path, capfd: pytest.CaptureFixture[str], repo_templat
     git processes, which are slow to start on macOS and Windows."""
     repo_templates.build("repo", _make_template)
     return Repo(repo_templates.copy("repo", tmp_path / "repo"), capfd)
+
+
+@pytest.fixture
+def home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """A home directory with no agent in it, and no agent's variables set."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    return home

@@ -60,6 +60,19 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
   how clicks find it, so sidebar lines must never wrap.
 - `git_recommit/validate.py` runs the validate command; `edit_commit.py` and
   `sequence_editor.py` are `--edit`.
+- `git_recommit/skills/<name>/SKILL.md` are the agent skills the package ships
+  (in the package, so an installed copy has them). A skill states only what the
+  command line and README document, none of one user's workflow;
+  `tests/test_skills.py` checks that its name is its directory's and that every
+  `git recommit ...` command it shows parses with `cli.py`'s parsers.
+  `git_recommit/skills.py` links them into each agent's skills directory
+  (`install-skills`); `AGENTS` there is the list of agents it knows, and
+  supporting another is one entry.
+  `dev.py install` links them too, to the clone's, by running the clone's
+  `install-skills` (`after_install()` in `dev_project.py`), so a developer's
+  agents use the code being changed and there's one implementation of the
+  logic (a refused link stops the install; the junction on Windows comes
+  with it, which `install_links()`' symlinks wouldn't).
 
 ## Decisions to keep
 

@@ -238,7 +238,7 @@ Windows, `.venv\Scripts\git-recommit.exe`).
 
 ```sh
 python3 dev.py check          # every check: static, then tests
-python3 dev.py static         # Ruff's formatter and linter, and basedpyright in strict mode
+python3 dev.py static         # Ruff's formatter and linter, basedpyright (strict), the man page
 python3 dev.py tests          # the tests, in parallel (arguments go to pytest)
 python3 dev.py coverage       # the tests under coverage.py, and the lines they don't run
 python3 dev.py types-windows  # basedpyright as if on Windows (dev_project.py)

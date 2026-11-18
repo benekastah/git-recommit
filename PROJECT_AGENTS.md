@@ -69,7 +69,8 @@ are part of the diff, as if committed after HEAD (`session.worktree_commit`).
   (`install-skills`); `AGENTS` there is the list of agents it knows, and
   supporting another is one entry.
   `dev.py install` links them too, to the clone's (`install_links()` in
-  `dev_project.py`), so a developer's agents use the code being changed.
+  `dev_project.py`), so a developer's agents use the code being changed (not on
+  Windows, where `install-skills` makes a junction instead).
 
 ## Decisions to keep
 

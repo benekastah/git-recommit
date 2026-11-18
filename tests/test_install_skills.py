@@ -68,21 +68,53 @@ def test_a_second_run_changes_nothing(home: pathlib.Path, capsys: pytest.Capture
     assert {i["action"] for i in result["installed"]} == {"unchanged"}
 
 
-@pytest.mark.parametrize("where", ["elsewhere", "nowhere"])
-def test_it_replaces_a_link_to_somewhere_else_or_nowhere(
-    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], where: str
-) -> None:
-    old = tmp_path / "old"
-    if where == "elsewhere":
-        old.mkdir()
+def link_to(home: pathlib.Path, target: pathlib.Path) -> pathlib.Path:
     link = home / ".claude" / "skills" / "git-recommit"
     link.parent.mkdir(parents=True)
-    link.symlink_to(old, target_is_directory=True)
+    link.symlink_to(target, target_is_directory=True)
+    return link
+
+
+def test_it_leaves_a_live_link_to_somewhere_else_unless_told_to_replace_it(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    link = link_to(home, mine)
+
+    assert main(["install-skills", "--claude"]) == 1
+
+    assert "--replace" in capsys.readouterr().err
+    assert link.resolve() == mine.resolve()
+
+    assert main(["install-skills", "--claude", "--replace", "--json"]) == 0
+
+    assert link.resolve() == (SKILLS / "git-recommit").resolve()
+    assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
+    assert mine.is_dir()
+
+
+def test_it_replaces_a_link_to_nowhere(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    link = link_to(home, tmp_path / "deleted")
 
     assert main(["install-skills", "--claude", "--json"]) == 0
 
     assert link.resolve() == (SKILLS / "git-recommit").resolve()
     assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
+
+
+def test_it_links_nothing_if_it_must_refuse_one(home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    (home / ".codex").mkdir()
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    link = link_to(home, mine)
+
+    assert main(["install-skills", "--claude", "--codex"]) == 1
+
+    assert link.resolve() == mine.resolve()
+    assert not (home / ".agents" / "skills").exists()
 
 
 def test_it_refuses_to_replace_a_file_of_your_own(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -110,7 +142,7 @@ def test_it_refuses_to_replace_a_directory_of_your_own(home: pathlib.Path, capsy
     mine.mkdir(parents=True)
     (mine / "SKILL.md").write_text("mine", encoding="utf-8")
 
-    assert main(["install-skills", "--claude"]) == 1
+    assert main(["install-skills", "--claude", "--replace"]) == 1
 
     assert "isn't a link" in capsys.readouterr().err
     assert (mine / "SKILL.md").read_text(encoding="utf-8") == "mine"

@@ -135,6 +135,9 @@ def subcommand_parser() -> argparse.ArgumentParser:
             default=[],
             help=f"install for {agent.name}, even if it isn't found",
         )
+    install.add_argument(
+        "--replace", action="store_true", help="take over a link to another directory (never a file or directory)"
+    )
     install.add_argument("--json", action="store_true", help="as JSON")
     return p
 
@@ -214,7 +217,7 @@ def run_subcommand(git: GitClient, args: argparse.Namespace) -> int:
 
 
 def install_skills(args: argparse.Namespace) -> int:
-    installed = skills.install(args.agents)
+    installed = skills.install(args.agents, args.replace)
     if args.json:
         items = [{**dataclasses.asdict(i), "action": i.action.value} for i in installed]
         print(json.dumps({"installed": items}, indent=1))

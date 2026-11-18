@@ -215,9 +215,12 @@ links it into the skills directory of each agent it finds you use (`--claude`
 and `--codex` name one, even if it isn't found; `--json` says what it did): Claude's
 is `~/.claude/skills`, or `$CLAUDE_CONFIG_DIR/skills`; Codex's is
 `~/.agents/skills`. The links point into the installed package, so upgrading
-git-recommit updates them. It replaces a link that goes elsewhere, but not a
-skill of your own that's there: move that away first. On Windows, where a
-symlink needs a privilege, it makes a junction.
+git-recommit updates them. A link already right is left alone. A link to
+another directory (another clone's, or a skill of your own) is left too, with
+nothing linked anywhere, and it stops saying so; `--replace` takes it over. A
+link whose target is gone is replaced. A real directory or file is never
+touched: move it away. On Windows, where a symlink needs a privilege, it makes
+a junction.
 
 ## Install
 

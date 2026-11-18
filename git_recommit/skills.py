@@ -2,6 +2,10 @@
 
 To support another agent, add an `Agent` to AGENTS: `install-skills` gets its
 `--<name>` option from it.
+
+dev_project.py imports this (for `dev.py install`) under any Python from 3.11, before .venv
+exists, so it, `errors.py` and the package's `__init__.py` keep to what that runs, and import
+nothing else of the package.
 """
 
 import enum
@@ -83,26 +87,21 @@ def make_link(link: pathlib.Path, target: pathlib.Path) -> None:
         _winapi.CreateJunction(str(target), str(link))  # pyright: ignore[reportUnknownMemberType]
 
 
-def install_skill(agent: Agent, source: pathlib.Path) -> Installed:
-    """Link the skill directory source into agent's skills directory."""
+def plan_skill(agent: Agent, source: pathlib.Path, replace: bool) -> tuple[pathlib.Path, InstallAction | str]:
+    """Where the skill directory source goes in agent's skills directory, and what
+    installing it does there, or why it can't: a link to another directory (that still
+    exists) is left alone unless replace, and a file or directory that isn't a link
+    never is."""
     link = agent.skills_dir() / source.name
-    action = InstallAction.LINKED
     if is_link(link):
         if link.resolve() == source.resolve():
-            return Installed(agent.name, source.name, str(link), InstallAction.UNCHANGED)
-        action = InstallAction.REPLACED
-    elif link.exists():
-        raise RecommitError(
-            f"{link} exists and isn't a link; move it away to install git-recommit's {source.name} skill"
-        )
-    try:
-        if action is InstallAction.REPLACED:
-            link.unlink() if link.is_symlink() else link.rmdir()
-        link.parent.mkdir(parents=True, exist_ok=True)
-        make_link(link, source)
-    except OSError as e:
-        raise RecommitError(f"can't link git-recommit's {source.name} skill at {link}: {e}") from e
-    return Installed(agent.name, source.name, str(link), action)
+            return link, InstallAction.UNCHANGED
+        if replace or not link.exists():
+            return link, InstallAction.REPLACED
+        return link, f"{link} is a link to {link.resolve()}, not git-recommit's; rerun with --replace to replace it"
+    if link.exists():
+        return link, f"{link} exists and isn't a link; move it away to install git-recommit's {source.name} skill"
+    return link, InstallAction.LINKED
 
 
 def found() -> list[Agent]:
@@ -115,11 +114,27 @@ def packaged() -> list[pathlib.Path]:
     return sorted(p for p in PACKAGED_SKILLS.iterdir() if p.is_dir())
 
 
-def install(names: Sequence[str]) -> list[Installed]:
+def install(names: Sequence[str], replace: bool = False) -> list[Installed]:
     """Link every packaged skill into the skills directory of each agent in
-    names, or, if there are none, of each agent found in use."""
+    names, or, if there are none, of each agent found in use. Changes nothing if
+    a link can't be made (see plan_skill); replace takes over links to other directories."""
     agents = [a for a in AGENTS if a.name in names] or found()
     if not agents:
         options = " or ".join(f"--{a.name}" for a in AGENTS)
         raise RecommitError(f"found no agent to install skills for; name one with {options}")
-    return [install_skill(agent, source) for agent in agents for source in packaged()]
+    plans = [(agent, source, *plan_skill(agent, source, replace)) for agent in agents for source in packaged()]
+    if refusals := [what for *_, what in plans if isinstance(what, str)]:
+        raise RecommitError("\n".join(refusals))
+    installed: list[Installed] = []
+    for agent, source, link, action in plans:
+        assert isinstance(action, InstallAction)
+        if action is not InstallAction.UNCHANGED:
+            try:
+                if action is InstallAction.REPLACED:
+                    link.unlink() if link.is_symlink() else link.rmdir()
+                link.parent.mkdir(parents=True, exist_ok=True)
+                make_link(link, source)
+            except OSError as e:
+                raise RecommitError(f"can't link git-recommit's {source.name} skill at {link}: {e}") from e
+        installed.append(Installed(agent.name, source.name, str(link), action))
+    return installed

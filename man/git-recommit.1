@@ -371,6 +371,10 @@ isn\(aqt found; \f[CR]\-\-json\f[R] says what it did): Claude\(aqs is
 Codex\(aqs is \f[CR]\(ti/.agents/skills\f[R].
 The links point into the installed package, so upgrading git\-recommit
 updates them.
-It replaces a link that goes elsewhere, but not a skill of your own
-that\(aqs there: move that away first.
+A link already right is left alone.
+A link to another directory (another clone\(aqs, or a skill of your own)
+is left too, with nothing linked anywhere, and it stops saying so;
+\f[CR]\-\-replace\f[R] takes it over.
+A link whose target is gone is replaced.
+A real directory or file is never touched: move it away.
 On Windows, where a symlink needs a privilege, it makes a junction.

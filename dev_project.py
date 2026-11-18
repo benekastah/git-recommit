@@ -5,7 +5,6 @@ the agent skills `install` links."""
 from pathlib import Path
 
 import dev
-from git_recommit import skills
 
 
 def types_windows(args: list[str]) -> None:
@@ -24,6 +23,10 @@ def install_links() -> list[tuple[Path, Path]]:
     privilege: there, that command makes a junction instead."""
     if dev.WINDOWS:
         return []
+    # Not at the top: this file is loaded before .venv exists, under any Python from 3.11, and
+    # git_recommit/skills.py is written to import there (see pyproject.toml).
+    from git_recommit import skills
+
     return [(agent.skills_dir() / source.name, source) for agent in skills.found() for source in skills.packaged()]
 
 

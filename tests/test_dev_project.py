@@ -30,6 +30,7 @@ def test_install_links_the_skills_to_this_clones_for_each_agent_found(
     monkeypatch: pytest.MonkeyPatch, home: Path
 ) -> None:
     dev = load_dev(monkeypatch, [])
+    monkeypatch.setattr(dev, "WINDOWS", False)
     (home / ".claude").mkdir()
     (home / ".codex").mkdir()
     skills = ROOT / "git_recommit" / "skills" / "git-recommit"
@@ -42,6 +43,7 @@ def test_install_links_the_skills_to_this_clones_for_each_agent_found(
 
 def test_install_links_no_skills_where_it_finds_no_agent(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
     dev = load_dev(monkeypatch, [])
+    monkeypatch.setattr(dev, "WINDOWS", False)
 
     assert dev._project().install_links() == []
 

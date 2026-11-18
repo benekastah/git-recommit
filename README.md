@@ -159,9 +159,9 @@ also in the reflog.
 
 Only the branch at `HEAD` moves. Another branch built on the old commits still
 has them: rebase it onto the new ones with `git rebase --onto <new tip> <old
-tip> <branch>`, which replays only its own commits, or, if a stacking tool
-(e.g. [git-stack](https://github.com/benekastah/git-stack)) tracks your
-branches, with that tool, since it records what each branch was built on.
+tip> <branch>`, which replays only its own commits. If a stacking tool (e.g.
+[git-stack](https://github.com/benekastah/git-stack)) tracks your branches,
+use that tool, since it may need to record what each branch was built on.
 
 ### From the command line
 

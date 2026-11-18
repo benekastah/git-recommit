@@ -310,13 +310,14 @@ Only the branch at \f[CR]HEAD\f[R] moves.
 Another branch built on the old commits still has them: rebase it onto
 the new ones with
 \f[CR]git rebase \-\-onto <new tip> <old tip> <branch>\f[R], which
-replays only its own commits, or, if a stacking tool (e.g.
+replays only its own commits.
+If a stacking tool (e.g.
 \c
 .UR https://github.com/benekastah/git-stack
 git\-stack
 .UE \c
-) tracks your branches, with that tool, since it records what each
-branch was built on.
+) tracks your branches, use that tool, since it may need to record what
+each branch was built on.
 .SS From the command line
 Everything the TUI does can be done a step at a time from the command
 line, e.g.

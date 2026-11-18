@@ -58,10 +58,11 @@ Its options change, so read them first: `git recommit -h`, then
    changes nothing.
 5. `write` prints how to get the old commits back (`git reset <old HEAD>`; they
    are in the reflog too).
-6. Only the branch at HEAD moves. Another branch built on the old commits
-   still has them, and needs rebasing onto the new ones. If git-stack tracks
-   the branches (`git stack info` shows them), do it with git-stack, following
-   its skill if one is installed, never with a plain `git rebase`: git-stack
-   records the commit each branch was built on, and a plain rebase leaves that
-   record wrong. Otherwise, `git rebase --onto <new tip> <old tip> <branch>`
-   replays only that branch's own commits.
+6. Only the branch at HEAD moves. Another branch built on the old commits still
+   has them, and needs rebasing onto the new ones. If a stacking tool (e.g.
+   [git-stack](https://github.com/benekastah/git-stack)) tracks your branches
+   (`git stack info` shows them), do it with that tool, following its skill if
+   one is installed, not with a plain `git rebase`: git-stack records the
+   commit each branch was built on, and a plain rebase leaves that record
+   wrong. Otherwise, `git rebase --onto <new tip> <old tip> <branch>` replays
+   only that branch's own commits.

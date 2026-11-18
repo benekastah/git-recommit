@@ -204,7 +204,8 @@ later commits, stopping for you to resolve any conflicts.
 A skill for coding agents, `git_recommit/skills/git-recommit/SKILL.md`, tells
 an agent how to rebuild commits with the command line above, never the TUI. It
 ships in the package: link or copy its directory into the folder your agent
-reads skills from (e.g. `~/.claude/skills`). It's only used when you ask.
+reads skills from (e.g. `~/.claude/skills`). It asks not to be used unless you
+ask, which Claude Code honours and other agents may not.
 
 ## Install
 

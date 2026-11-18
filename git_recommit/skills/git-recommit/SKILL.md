@@ -20,10 +20,10 @@ Its options change, so read them first: `git recommit -h`, then
    uncommitted changes alone. The old commits are replaced, so make sure
    nobody else has built on them.
 2. `git recommit start <range>` begins from the commits as they are, kept as a
-   plan in the git directory until `write` or `abort`. `git recommit show --json` shows the plan: the commits by number (from 1), and the changes
+   plan in the git directory until `write` or `abort`. `git recommit show
+   --json` shows the plan: the commits by number (from 1), and the changes
    with the numbers that name them.
-3. Shape the plan with `commit add|remove|move|reword|author`, `assign`,
-   `unassign` and `edit`:
+3. Shape the plan:
 
    ```sh
    git recommit commit add "Add the API" --after 2
@@ -31,6 +31,13 @@ Its options change, so read them first: `git recommit -h`, then
    git recommit unassign src/main.py:-3
    git recommit edit 3 src/api.py < stub.py    # the file in commit 3, by hand
    git recommit edit 2 scratch.txt --delete
+   git recommit drop-edit 3 src/api.py         # undo an edit
+   git recommit commit remove 2                # its changes become unassigned
+   git recommit commit move 3 1
+   git recommit commit reword 2 "Better message"
+   git recommit commit author 2 "Ana <ana@example.com>"
+   git recommit clear                          # every commit, to start from scratch
+   git recommit restore                        # back to the commits as they were
    ```
 
    A target is `PATH` (the whole file), `PATH:@N` (its Nth hunk; `@0` is the
@@ -47,5 +54,4 @@ Its options change, so read them first: `git recommit -h`, then
    stay uncommitted in the working tree. `git recommit abort` drops the plan and
    changes nothing.
 5. `write` prints how to get the old commits back (`git reset <old HEAD>`; they
-   are in the reflog too). Make sure each resulting commit is independently
-   correct, and run the checks that suit the change.
+   are in the reflog too).

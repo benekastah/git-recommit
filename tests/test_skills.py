@@ -15,18 +15,31 @@ SKILL_FILES = sorted(SKILLS.glob("*/SKILL.md"))
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 OPTIONAL = re.compile(r"\[[^\]]*\]")
 PLACEHOLDER = re.compile(r"<[^>]*>")
-ALTERNATIVES = re.compile(r"(\w+)(?:\|\w+)+")
+ALTERNATIVES = re.compile(r"(\w+(?:\|\w+)+)")
 SHELL_JOINERS = re.compile(r"\s(?:&&|\|\||;|\|)\s")
 # What `edit` reads from, `git recommit edit 3 FILE < stub`.
 REDIRECT = re.compile(r"\s<\s\S+")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 
 
+def expand(command: str) -> list[str]:
+    """command with each a|b|c as every one of them: a command for each."""
+    match = ALTERNATIVES.search(command)
+    if match is None:
+        return [command]
+    return [
+        rest
+        for choice in match[1].split("|")
+        for rest in expand(command[: match.start()] + choice + command[match.end() :])
+    ]
+
+
 def recommit_commands(text: str) -> list[str]:
     """The `git recommit ...` command lines in text's code spans and fenced
     blocks, each as the arguments git recommit would get: placeholders filled
-    in, optional parts dropped, the first of a|b|c taken, a redirection or
-    trailing comment cut."""
+    in (with 1, which is a number, a message and a range), optional parts
+    dropped, a|b|c as a command for each, a redirection or trailing comment
+    cut."""
     lines = [m.group(1) for m in CODE_SPAN.finditer(text)]
     fenced = False
     for line in text.splitlines():
@@ -41,16 +54,37 @@ def recommit_commands(text: str) -> list[str]:
             if not part.startswith("git recommit"):
                 continue
             part = REDIRECT.sub("", OPTIONAL.sub("", part))
-            part = ALTERNATIVES.sub(r"\1", PLACEHOLDER.sub("x", part).replace("...", ""))
-            if command := " ".join(part.removeprefix("git recommit").split()):
-                commands.append(command)
+            part = PLACEHOLDER.sub("1", part).replace("...", "")
+            words = (" ".join(each.removeprefix("git recommit").split()) for each in expand(part))
+            commands.extend(command for command in words if command)
     return commands
 
 
 def frontmatter(text: str) -> dict[str, str]:
+    """The `key: value` lines between the --- lines, each on one line (not
+    all of YAML: a value that goes over more lines would be read wrong)."""
     match = FRONTMATTER.match(text)
     assert match, "no frontmatter"
-    return dict(line.split(": ", 1) for line in match[1].splitlines())
+    fields: dict[str, str] = {}
+    for line in match[1].splitlines():
+        key, colon, value = line.partition(": ")
+        assert colon and key.replace("-", "_").isidentifier(), f"not `key: value`: {line!r}"
+        fields[key] = value
+    return fields
+
+
+def parses(command: str) -> bool:
+    """Whether git recommit takes command's arguments: a subcommand's, or
+    (the range, the only argument that isn't a subcommand's) an option's."""
+    args = shlex.split(command)
+    first = args[0] if args else "-h"
+    if first not in SUBCOMMANDS and first != "1" and not first.startswith("-"):
+        return False  # taken for a range, though it's a misspelled subcommand
+    try:
+        (subcommand_parser() if first in SUBCOMMANDS else parser()).parse_args(args)
+    except SystemExit as e:
+        return e.code == 0  # -h is how the skill says to learn a command's options
+    return True
 
 
 def test_the_skill_exists() -> None:
@@ -69,18 +103,28 @@ def test_every_git_recommit_command_in_a_skill_parses(path: pathlib.Path) -> Non
     commands = recommit_commands(path.read_text(encoding="utf-8"))
     assert commands
     for command in commands:
-        args = shlex.split(command)
-        p = subcommand_parser() if args and args[0] in SUBCOMMANDS else parser()
-        try:
-            p.parse_args(args)
-        except SystemExit as e:
-            # -h is how the skill says to learn a command's options.
-            assert e.code == 0, f"`git recommit {command}` doesn't parse"
+        assert parses(command), f"`git recommit {command}` doesn't parse"
+
+
+@pytest.mark.parametrize("path", SKILL_FILES, ids=lambda p: p.parent.name)
+def test_a_skill_shows_every_subcommand_but_the_tui(path: pathlib.Path) -> None:
+    shown = {command.split()[0] for command in recommit_commands(path.read_text(encoding="utf-8"))}
+    assert set(SUBCOMMANDS) - {"tui", "install-skills"} <= shown
+
+
+@pytest.mark.parametrize("command", ["tuii", "abortt", "assignn 3 a", "assign", "commit remove x"])
+def test_a_command_that_isnt_one_doesnt_parse(command: str) -> None:
+    assert not parses(command)
+
+
+@pytest.mark.parametrize("command", ["start 1", "1 --validate 'pytest'", "-h", "commit remove 2", "tui -h"])
+def test_a_command_that_is_one_parses(command: str) -> None:
+    assert parses(command)
 
 
 def test_commands_are_taken_from_code_spans_and_fenced_blocks() -> None:
     text = (
-        "Use `git recommit start <range>` or `git recommit commit add|remove [N] x`.\n"
+        "Use `git recommit start <range>` or `git recommit commit add|remove|move|reword|author [N]`.\n"
         "```sh\n"
         "git recommit edit 3 src/api.py < stub.py    # by hand\n"
         "git recommit write --validate 'pytest' && git push\n"
@@ -92,8 +136,12 @@ def test_commands_are_taken_from_code_spans_and_fenced_blocks() -> None:
         "   ```\n"
     )
     assert recommit_commands(text) == [
-        "start x",
-        "commit add x",
+        "start 1",
+        "commit add",
+        "commit remove",
+        "commit move",
+        "commit reword",
+        "commit author",
         "edit 3 src/api.py",
         "write --validate 'pytest'",
         "assign 3 src/api.py",

@@ -12,18 +12,6 @@ from tests.test_skills import SKILLS
 SKILL_NAMES = sorted(p.name for p in SKILLS.iterdir() if p.is_dir())
 
 
-@pytest.fixture
-def home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """A home directory with no agent in it, and no agent's variables set."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME"):
-        monkeypatch.delenv(name, raising=False)
-    return home
-
-
 def test_it_links_every_skill_for_each_agent_it_finds(home: pathlib.Path) -> None:
     (home / ".claude").mkdir()
     (home / ".codex").mkdir()

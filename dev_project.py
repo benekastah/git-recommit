@@ -1,7 +1,11 @@
 """git-recommit's additions to dev.py (see its docstring): `python dev.py types-windows`
-type-checks as if on Windows, which CI runs too (project.yml), and the man page's SYNOPSIS."""
+type-checks as if on Windows, which CI runs too (project.yml), the man page's SYNOPSIS, and
+the agent skills `install` links."""
+
+from pathlib import Path
 
 import dev
+from git_recommit import skills
 
 
 def types_windows(args: list[str]) -> None:
@@ -12,6 +16,16 @@ def types_windows(args: list[str]) -> None:
 
 
 COMMANDS = {"types-windows": types_windows}
+
+
+def install_links() -> list[tuple[Path, Path]]:
+    """The agent skills, linked into each agent found in use to this clone's, as `git recommit
+    install-skills` does to the installed package's. None on Windows, where a symlink needs a
+    privilege: there, that command makes a junction instead."""
+    if dev.WINDOWS:
+        return []
+    return [(agent.skills_dir() / source.name, source) for agent in skills.found() for source in skills.packaged()]
+
 
 # As `git recommit --help` has it. `\-\-`: pandoc would make `--` a dash.
 MAN_SYNOPSIS = {

@@ -241,13 +241,16 @@ the repository, then run `python3 dev.py install` (on Windows,
 `py dev.py install`). It sets up the clone's `.venv` with git-recommit
 (editable) and the dev tools, from `uv.lock`, links `git-recommit` into
 `~/.local/bin` and its man page into `~/.local/share/man/man1` (not on
-Windows), and makes the clone use the hooks in `git_hooks/`: the pre-commit
+Windows), links the clone's agent skill into the skills directory of each agent
+you use (see [Agent skills](#agent-skills); on Windows, run `git recommit
+install-skills` for that), and makes the clone use the hooks in `git_hooks/`: the pre-commit
 hook formats and lint-fixes staged Python files and makes the man page again,
 and the pre-push hook runs the static checks before every push. CI runs the
 tests.
 
-If `~/.local/bin` already has `git-recommit` from another clone (or installed
-another way), `dev.py install` stops and says so, changing nothing:
+If `~/.local/bin` already has `git-recommit`, or an agent's skills directory
+a `git-recommit` skill, from another clone (or installed another way),
+`dev.py install` stops and says so, changing nothing:
 `dev.py install --replace` takes it over (except, on Windows, another
 install's `git-recommit.exe`, which you uninstall). A link to a clone that's
 since been deleted it just replaces. It won't install a clone in a temporary

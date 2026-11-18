@@ -105,12 +105,21 @@ def install_skill(agent: Agent, source: pathlib.Path) -> Installed:
     return Installed(agent.name, source.name, str(link), action)
 
 
+def found() -> list[Agent]:
+    """The agents in use here: those with a mark that exists."""
+    return [a for a in AGENTS if any(p.exists() for p in a.marks())]
+
+
+def packaged() -> list[pathlib.Path]:
+    """The skill directories in the package."""
+    return sorted(p for p in PACKAGED_SKILLS.iterdir() if p.is_dir())
+
+
 def install(names: Sequence[str]) -> list[Installed]:
     """Link every packaged skill into the skills directory of each agent in
     names, or, if there are none, of each agent found in use."""
-    agents = [a for a in AGENTS if a.name in names] or [a for a in AGENTS if any(p.exists() for p in a.marks())]
+    agents = [a for a in AGENTS if a.name in names] or found()
     if not agents:
         options = " or ".join(f"--{a.name}" for a in AGENTS)
         raise RecommitError(f"found no agent to install skills for; name one with {options}")
-    sources = sorted(p for p in PACKAGED_SKILLS.iterdir() if p.is_dir())
-    return [install_skill(agent, source) for agent in agents for source in sources]
+    return [install_skill(agent, source) for agent in agents for source in packaged()]

@@ -4,8 +4,9 @@ To support another agent, add an `Agent` to AGENTS: `install-skills` gets its
 `--<name>` option from it.
 
 dev_project.py imports this (for `dev.py install`) under any Python from 3.11, before .venv
-exists, so it, `errors.py` and the package's `__init__.py` keep to what that runs, and import
-nothing else of the package.
+exists, so it, `errors.py` and the package's `__init__.py` keep to syntax that runs there, and
+import nothing else of the package. It only calls `found` and `packaged`: `is_link` uses
+`os.path.isjunction`, new in 3.12.
 """
 
 import enum
@@ -128,6 +129,9 @@ def install(names: Sequence[str], replace: bool = False) -> list[Installed]:
     installed: list[Installed] = []
     for agent, source, link, action in plans:
         assert isinstance(action, InstallAction)
+        if action is not InstallAction.UNCHANGED and is_link(link) and link.resolve() == source.resolve():
+            # Made since planning, through another agent's: they share a skills directory.
+            action = InstallAction.UNCHANGED
         if action is not InstallAction.UNCHANGED:
             try:
                 if action is InstallAction.REPLACED:

@@ -105,16 +105,51 @@ def test_it_replaces_a_link_to_nowhere(
     assert [i["action"] for i in json.loads(capsys.readouterr().out)["installed"]] == ["replaced"]
 
 
-def test_it_links_nothing_if_it_must_refuse_one(home: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    (home / ".codex").mkdir()
+def test_it_links_nothing_if_it_must_refuse_one(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Codex's, the second agent: Claude's, which comes first, mustn't be linked either.
     mine = tmp_path / "mine"
     mine.mkdir()
-    link = link_to(home, mine)
+    link = home / ".agents" / "skills" / "git-recommit"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(mine, target_is_directory=True)
 
     assert main(["install-skills", "--claude", "--codex"]) == 1
 
     assert link.resolve() == mine.resolve()
-    assert not (home / ".agents" / "skills").exists()
+    assert not (home / ".claude").exists()
+    assert capsys.readouterr().err.count("--replace") == 1
+
+
+def test_it_says_why_for_every_link_it_refuses(
+    home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    for skills in (home / ".claude" / "skills", home / ".agents" / "skills"):
+        skills.mkdir(parents=True)
+        (skills / "git-recommit").symlink_to(mine, target_is_directory=True)
+
+    assert main(["install-skills", "--claude", "--codex"]) == 1
+
+    err = capsys.readouterr().err
+    assert str(home / ".claude" / "skills" / "git-recommit") in err
+    assert str(home / ".agents" / "skills" / "git-recommit") in err
+
+
+def test_two_agents_that_share_a_skills_directory_are_linked_once(
+    home: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (home / ".agents" / "skills").mkdir(parents=True)
+    (home / ".claude").mkdir()
+    (home / ".claude" / "skills").symlink_to(home / ".agents" / "skills", target_is_directory=True)
+
+    assert main(["install-skills", "--claude", "--codex", "--json"]) == 0
+
+    result = json.loads(capsys.readouterr().out)
+    assert [i["action"] for i in result["installed"]] == ["linked", "unchanged"]
+    assert (home / ".agents" / "skills" / "git-recommit").resolve() == (SKILLS / "git-recommit").resolve()
 
 
 def test_it_refuses_to_replace_a_file_of_your_own(home: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

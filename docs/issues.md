@@ -9,7 +9,7 @@ still needs checking.
 
 ## A newer system pandoc fails the pre-push hook
 
-Confirmed. `dev.py man --check` (run by `dev.py static`, so by the pre-push hook) fails with
+`dev.py man --check` (run by `dev.py static`, so by the pre-push hook) fails with
 "man: man/git-recommit.1 is out of date with README.md" when the committed page is right. It
 makes the page with pypandoc, which uses the highest-versioned pandoc among the one on PATH and
 the one `pypandoc_binary` bundles (PATH wins a tie), unless `PYPANDOC_PANDOC` is set, which
@@ -22,7 +22,8 @@ Workaround, never skipping the hook: set `PYPANDOC_PANDOC` to the bundled binary
 The fix belongs in python-template's `dev.py` (it has no issues file of its own, only
 `template/docs/issues.md`, the copy projects get), and this repo shouldn't patch it locally:
 make `dev.py man` use pypandoc's bundled pandoc, or fail with a message naming both versions, so
-a newer system pandoc can't change the page, and every project gets the fix through `copier update`.
+a newer system pandoc can't change the page, and every project gets the fix through
+`copier update`.
 
 ## Starting from heavily overlapping commits takes seconds
 

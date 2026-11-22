@@ -7,6 +7,22 @@ fixes one, remove it in the same change; when a change leaves something wrong, a
 "Confirmed" means it was reproduced; "suspected" means it was found by reading the code and
 still needs checking.
 
+## A newer system pandoc fails the pre-push hook
+
+Confirmed. `dev.py man --check` (run by `dev.py static`, so by the pre-push hook) fails with
+"man: man/git-recommit.1 is out of date with README.md" when the committed page is right. It
+makes the page with pypandoc, which uses the highest-versioned pandoc it finds: one on PATH (or
+`PYPANDOC_PANDOC`, which overrides the search) before the one `pypandoc_binary` bundles.
+Here the system pandoc is 3.11 and the pinned binary bundles 3.9, so the page comes out
+different.
+
+Workaround, never skipping the hook: set `PYPANDOC_PANDOC` to the bundled binary, as in
+`PYPANDOC_PANDOC=<repo>/.venv/lib/python3.15/site-packages/pypandoc/files/pandoc git push`.
+
+The fix belongs in python-template's `dev.py` (python-template has no issues file), not in
+each project: make `man` point pypandoc at its own bundled pandoc, or fail naming both
+versions, so a newer system pandoc can't change the page.
+
 ## Starting from heavily overlapping commits takes seconds
 
 With 60 files of 1,500 lines, each rewritten by all of 15 commits (so every

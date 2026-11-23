@@ -8,8 +8,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "Paul Harper", email = "benekastah@gmail.com" }]
 requires-python = ">=3.15"
 dependencies = [
-    # v0.0.2, by its commit, which unlike the tag can't be moved.
-    "py-git-client @ git+https://github.com/benekastah/py-git-client@a1b4b0f15ae740c17db2d5fca4684aeaae6a8d54",
+    # 0.0.3 as main has it, not yet released: by its commit, until there's a tag.
+    "py-git-client @ git+https://github.com/benekastah/py-git-client@85cfd8a1f918c7e9b07007465292c1cce9f1bb2a",
     "textual>=8.2.8",
 ]
 

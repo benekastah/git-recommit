@@ -160,7 +160,9 @@ These were the user's choices for v0; ask before changing them.
   `run_bytes` and those reads raise `RecommitError`s rather than
   `GitError`s (what it has of `Git`'s as it is, e.g. `var` and `resolve`,
   raises `GitError`s; `succeeds` and `passthrough` say whether git
-  succeeded, though a timeout still raises `GitTimeoutError`). git's
+  succeeded, though a timeout still raises `GitTimeoutError`). It has a
+  `GitCache`, so where things are (the prefix, paths in the git directory)
+  is asked of git once. git's
   messages that it captures are in English, as py-git-client has them;
   passthrough's are in the user's language. The tests' own git calls
   (`Repo.git`) use `Git` too, with the real git (`helpers.GIT`).

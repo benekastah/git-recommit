@@ -14,8 +14,10 @@ from git_client import (
     CatFile,
     EnvValue,
     Git,
+    GitCache,
     GitError,
     Timeout,
+    UnknownRevisionError,
     decode,
     encode,
 )
@@ -47,7 +49,9 @@ class GitClient(Git):
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         try:
-            super().__init__(directory, env_var="GIT_RECOMMIT_GIT")
+            # The cache keeps what git says of where things are (prefix, the
+            # paths in the git directory), which don't change as it runs.
+            super().__init__(directory, env_var="GIT_RECOMMIT_GIT", cache=GitCache())
         except (FileNotFoundError, ValueError) as e:
             # find_git's: no git on PATH, or on Windows, a batch file.
             raise RecommitError(str(e)) from e
@@ -56,10 +60,6 @@ class GitClient(Git):
         # it stops as soon as this client is no longer used, not when the
         # cycle collector runs.
         self.cat_file = CatFile(self, weak=True)
-        # Where git keeps each file asked about (see git_paths), and the path
-        # from the top of the worktree down to directory, which don't change.
-        self._git_paths: dict[str, str] = {}
-        self._prefix: str | None = None
 
     def run(
         self,
@@ -98,25 +98,20 @@ class GitClient(Git):
         """Where each of names is in the git directory (as `git rev-parse
         --git-path` says), as paths in the filesystem: so in its encoding,
         not as text. Each is only asked of git once."""
-        if new := [name for name in dict.fromkeys(names) if name not in self._git_paths]:
-            with reported():
-                found = git_client.git_paths(self, *new)
-            self._git_paths.update(zip(new, map(os.fspath, found), strict=True))
-        return [self._git_paths[name] for name in names]
+        with reported():
+            return [os.fspath(path) for path in git_client.git_paths(self, *names)]
 
     def prefix(self, *, timeout: Timeout = CLIENT_TIMEOUT) -> str:
         """As Git's (the path from the top of the worktree down to directory,
         to put before a path from directory), but only asked of git once."""
-        if self._prefix is None:
-            with reported():
-                self._prefix = super().prefix(timeout=timeout)
-        return self._prefix
+        with reported():
+            return super().prefix(timeout=timeout)
 
-    def cdup(self) -> str:
+    def cdup(self, *, timeout: Timeout = CLIENT_TIMEOUT) -> str:
         """The path from directory up to the top of the worktree (as prefix,
         the other way), to put before a path from the top."""
-        # Not --show-cdup, which outside the worktree gives its path.
-        return "../" * self.prefix().count("/")
+        # Not Git's, which is --show-cdup: outside the worktree, that gives its path.
+        return "../" * self.prefix(timeout=timeout).count("/")
 
     def commit_sha(self, rev: str) -> str | None:
         """The commit rev names, or None if it doesn't name one (or git can't
@@ -133,9 +128,9 @@ class GitClient(Git):
         try:
             return self.cat_file.verify(name)
         except GitError as e:
-            # git's reason, but for what cat-file says of any name that names
-            # nothing.
-            reason = "" if e.stderr == f"{name} missing" else e.stderr
+            # git's reason, where it gave one: for most names that name
+            # nothing, it gives none.
+            reason = e.reason if isinstance(e, UnknownRevisionError) else e.stderr
             raise RecommitError(f"{rev} isn't a commit" + (f":\n{reason}" if reason else "")) from e
 
     def head(self) -> str | None:

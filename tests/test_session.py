@@ -153,6 +153,21 @@ def test_reload_keeps_assignments(repo: Repo) -> None:
     assert repo.git("status", "--porcelain") == ""
 
 
+def test_reload_refreshes_the_cached_index_path(
+    repo: Repo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo.commit("change", f="a\n")
+    session = repo.session("HEAD~")
+    (index,) = session.git.git_paths("index")
+    other_index = tmp_path / "other-index"
+    other_index.write_bytes(pathlib.Path(index).read_bytes())
+    monkeypatch.setenv("GIT_INDEX_FILE", str(other_index))
+
+    assert not session.reload()
+    (reloaded_index,) = session.git.git_paths("index")
+    assert pathlib.Path(reloaded_index) == other_index
+
+
 def test_reload_refuses_when_nothing_is_left(repo: Repo) -> None:
     repo.commit("change", README="changed\n")
     session = repo.session("HEAD~")

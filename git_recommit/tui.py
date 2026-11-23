@@ -392,12 +392,14 @@ class BoardScreen(Screen[None]):
         # After ctrl+z (or the editor), the user may have changed files.
         self.app.app_resume_signal.subscribe(self, lambda _: self.call_later(self.action_reload, True))
 
-    def action_reload(self, quiet: bool = False) -> None:
+    def action_reload(self, quiet: bool = False, *, changed_message: str | None = None) -> None:
         rows = self.board.rows
         self.board.reload(quiet)
         if self.board.rows is not rows:
             self.query_one(DiffView).rebuild()
-        self._do()
+            self._do(changed_message)
+        else:
+            self._do()
 
     def update(self) -> None:
         self.query_one(DiffView).update_rows()
@@ -706,15 +708,15 @@ class BoardScreen(Screen[None]):
         self.app.push_screen(ConfirmScreen("\n".join(lines)), confirmed)
 
     def _build(self) -> None:
-        if self.session.head_moved():
-            self.action_reload()
-            self._do("HEAD moved since the changes were loaded, so they're reloaded: check them, then write again.")
-            return
-
         def run_validation(commits: list[tuple[str, str]]) -> validate.Outcome:
             return self.terminal.validate(self.app, commits)
 
         try:
+            if self.session.head_moved():
+                self.action_reload(
+                    changed_message="HEAD moved since the changes were loaded, so they're reloaded: check them, then write again."
+                )
+                return
             shas, outcome = writing.build(
                 self.session, run_validation if self.terminal.validate_command is not None else None
             )

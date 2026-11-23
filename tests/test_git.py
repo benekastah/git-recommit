@@ -31,6 +31,16 @@ def test_commit_sha_is_none_for_what_isnt_a_commit(repo: Repo) -> None:
     assert git.commit_sha("HEAD") == repo.git("rev-parse", "HEAD")
 
 
+def test_head_reports_a_corrupt_commit(repo: Repo) -> None:
+    sha = repo.commit("loose commit", f="f\n")
+    objects = pathlib.Path(repo.git("rev-parse", "--path-format=absolute", "--git-path", "objects"))
+    loose = objects / sha[:2] / sha[2:]
+    loose.chmod(0o644)  # Git creates loose objects read-only.
+    loose.write_bytes(b"corrupt")
+    with pytest.raises(RecommitError, match="corrupt|unable to unpack"):
+        repo.client.head()
+
+
 def test_a_failing_git_command_is_a_recommit_error(repo: Repo) -> None:
     git = repo.client
     for run in (git.run, git.run_bytes):

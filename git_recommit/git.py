@@ -16,24 +16,27 @@ from git_client import (
     Git,
     GitCache,
     GitError,
+    NoAnswerError,
+    ObjectType,
     Timeout,
     UnknownRevisionError,
+    WrongTypeError,
     decode,
     encode,
 )
-from git_client.cat_file import ObjectType
 
 from git_recommit.errors import RecommitError
 
 
 @contextlib.contextmanager
 def reported() -> Generator[None]:
-    """Turn a GitError in the block into a RecommitError saying what git
-    said, to report to the user without a traceback."""
+    """Translate a Git failure for display without a traceback."""
     try:
         yield
     except GitError as e:
         raise RecommitError(f"git {' '.join(e.command)} failed:\n{e.stderr.strip()}") from e
+    except NoAnswerError as e:
+        raise RecommitError(str(e).rstrip()) from e
 
 
 class GitClient(Git):
@@ -42,15 +45,11 @@ class GitClient(Git):
     recommit` runs it, is the git that did: git puts its exec-path first),
     by its full path (a RecommitError if there's none).
 
-    run, run_bytes and the reads it adds raise RecommitErrors, not
-    GitErrors. What it has of Git's as it is raises GitErrors (e.g. var,
-    resolve); succeeds and passthrough say whether git succeeded (a timeout
-    still raises GitTimeoutError)."""
+    run, run_bytes and the reads it adds report failures as RecommitErrors.
+    Inherited methods can raise GitError or NoAnswerError."""
 
     def __init__(self, directory: str | os.PathLike[str] = ".") -> None:
         try:
-            # The cache keeps what git says of where things are (prefix, the
-            # paths in the git directory), which don't change as it runs.
             super().__init__(directory, env_var="GIT_RECOMMIT_GIT", cache=GitCache())
         except (FileNotFoundError, ValueError) as e:
             # find_git's: no git on PATH, or on Windows, a batch file.
@@ -72,13 +71,11 @@ class GitClient(Git):
     ) -> str:
         """Run git and return its stdout, stripped unless strip is False;
         unless check is False, raise a RecommitError if it fails."""
-        if check:
-            # Git.run calls run_bytes, whose reported() does this too; here
-            # as well, in case py-git-client's Git.run stops calling it.
-            with reported():
+        with reported():
+            if check:
                 return super().run(*args, input=input, env=env, timeout=timeout, strip=strip)
-        encoded = None if input is None else encode(input)
-        result = self.process(*args, capture_output=True, input=encoded, env=env, timeout=timeout)
+            encoded = None if input is None else encode(input)
+            result = self.process(*args, capture_output=True, input=encoded, env=env, timeout=timeout)
         output = decode(result.stdout)
         return output.strip() if strip else output
 
@@ -95,43 +92,35 @@ class GitClient(Git):
             return super().run_bytes(*args, input=input, env=env, timeout=timeout)
 
     def git_paths(self, *names: str) -> list[str]:
-        """Where each of names is in the git directory (as `git rev-parse
-        --git-path` says), as paths in the filesystem: so in its encoding,
-        not as text. Each is only asked of git once."""
+        """Where git keeps names in its directory, as filesystem paths."""
         with reported():
             return [os.fspath(path) for path in git_client.git_paths(self, *names)]
 
     def prefix(self, *, timeout: Timeout = CLIENT_TIMEOUT) -> str:
-        """As Git's (the path from the top of the worktree down to directory,
-        to put before a path from directory), but only asked of git once."""
+        """The path from the top of the worktree to this directory."""
         with reported():
             return super().prefix(timeout=timeout)
 
     def cdup(self, *, timeout: Timeout = CLIENT_TIMEOUT) -> str:
         """The path from directory up to the top of the worktree (as prefix,
         the other way), to put before a path from the top."""
-        # Not Git's, which is --show-cdup: outside the worktree, that gives its path.
+        # Not --show-cdup, which outside the worktree gives its path.
         return "../" * self.prefix(timeout=timeout).count("/")
 
     def commit_sha(self, rev: str) -> str | None:
-        """The commit rev names, or None if it doesn't name one (or git can't
-        say: resolve_commit says why)."""
-        try:
+        """The commit rev names, or None if it doesn't name a commit."""
+        with reported():
             return self.cat_file.resolve(f"{rev}^{{commit}}")
-        except GitError:
-            return None
 
     def resolve_commit(self, rev: str) -> str:
         """The commit rev names (e.g. one the user typed), or if it doesn't
         name one, an error that says why, as git does."""
-        name = f"{rev}^{{commit}}"
-        try:
-            return self.cat_file.verify(name)
-        except GitError as e:
-            # git's reason, where it gave one: for most names that name
-            # nothing, it gives none.
-            reason = e.reason if isinstance(e, UnknownRevisionError) else e.stderr
-            raise RecommitError(f"{rev} isn't a commit" + (f":\n{reason}" if reason else "")) from e
+        with reported():
+            try:
+                return self.cat_file.verify(f"{rev}^{{commit}}")
+            except (UnknownRevisionError, WrongTypeError) as e:
+                reason = e.reason if isinstance(e, UnknownRevisionError) else e.stderr
+                raise RecommitError(f"{rev} isn't a commit" + (f":\n{reason}" if reason else "")) from e
 
     def head(self) -> str | None:
         """The commit HEAD is at, or None if there's none yet."""

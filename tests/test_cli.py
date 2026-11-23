@@ -2,7 +2,9 @@ import json
 import pathlib
 
 import pytest
+from git_client import GitTimeoutError
 
+from git_recommit.git import GitClient
 from tests.helpers import Repo
 
 
@@ -15,6 +17,16 @@ def test_reports_errors_without_a_traceback(repo: Repo) -> None:
     result = repo.recommit("nope", expect_success=False)
     assert result.returncode == 1
     assert result.stderr == "git-recommit: nope isn't a commit\n"
+
+
+def test_reports_unanswered_commit_lookup(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
+    def timed_out(*args: object, **kwargs: object) -> None:
+        raise GitTimeoutError(["cat-file", "--batch-command"], None, "")
+
+    monkeypatch.setattr(GitClient, "popen", timed_out)
+    result = repo.recommit("--root", expect_success=False)
+    assert result.returncode == 1
+    assert result.stderr.startswith("git-recommit: git cat-file --batch-command failed (timed out)")
 
 
 @pytest.mark.usefixtures("fresh_find_git")

@@ -10,7 +10,7 @@ from git_recommit import commands, planfile, show, skills, validate, writing
 from git_recommit.commands import Command, Target
 from git_recommit.edit_commit import edit_commit
 from git_recommit.errors import RecommitError
-from git_recommit.git import GitClient
+from git_recommit.git import GitClient, reported
 from git_recommit.session import Session
 
 SUBCOMMANDS = (
@@ -175,7 +175,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def _report(run: Callable[[], int]) -> int:
     try:
-        return run()
+        with reported():
+            return run()
     except RecommitError as e:
         print(f"git-recommit: {e}", file=sys.stderr)
         return 1

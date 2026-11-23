@@ -1,4 +1,5 @@
 import asyncio
+import pathlib
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -207,6 +208,41 @@ def test_writing_after_head_moved_reloads_first(repo: Repo) -> None:
         assert "HEAD moved" in status
         # The new commit's change is there now, to assign before writing.
         assert [d.path for d in session.files] == ["a", "b", "c"]
+        await pilot.press("q", "y")
+
+    assert run(session, FakeTerminal(repo), script) is None
+
+
+def test_writing_reports_a_failed_reload_after_head_moved(repo: Repo) -> None:
+    repo.commit("in range", a="a\n")
+    repo.commit("after range", b="b\n")
+    session = repo.session("HEAD~2..HEAD~")
+    session.restore_old_commits()
+
+    async def script(pilot: Pilot[Any]) -> None:
+        repo.git("update-ref", "HEAD", "HEAD~2")
+        await pilot.press("w", "y")
+        status = str(pilot.app.screen.query_one("#status").render())
+        assert "HEAD isn't after the commits being rebuilt any more" in status
+        await pilot.press("q", "y")
+
+    assert run(session, FakeTerminal(repo), script) is None
+
+
+def test_writing_reports_a_corrupt_head(repo: Repo) -> None:
+    session = two_files(repo)
+    session.restore_old_commits()
+    sha = repo.commit("meanwhile", c="c\n")
+    objects = pathlib.Path(repo.git("rev-parse", "--path-format=absolute", "--git-path", "objects"))
+    loose = objects / sha[:2] / sha[2:]
+
+    async def script(pilot: Pilot[Any]) -> None:
+        loose.chmod(0o644)  # Git creates loose objects read-only.
+        loose.write_bytes(b"corrupt")
+        await pilot.press("w", "y")
+        status = str(pilot.app.screen.query_one("#status").render())
+        assert "cat-file" in status
+        assert "corrupt" in status or "unable to unpack" in status
         await pilot.press("q", "y")
 
     assert run(session, FakeTerminal(repo), script) is None

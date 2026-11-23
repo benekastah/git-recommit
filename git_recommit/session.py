@@ -122,6 +122,7 @@ class Session:
         """Load the diff again, to pick up changes the user made to the
         working tree or HEAD's branch since, and keep the assignments of the
         changes that are still there. Return whether anything changed."""
+        self.git.forget()
         try:
             status = worktree_status(self.git)
             check_nothing_in_progress(self.git, status)

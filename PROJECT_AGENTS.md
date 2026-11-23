@@ -157,12 +157,10 @@ These were the user's choices for v0; ask before changing them.
   through one. `GitClient` (`git_recommit/git.py`) is py-git-client's `Git`
   (`git_client`), which starts git by its full path, the quickest way each
   system allows; it adds the reads git recommit makes, and its `run`,
-  `run_bytes` and those reads raise `RecommitError`s rather than
-  `GitError`s (what it has of `Git`'s as it is, e.g. `var` and `resolve`,
-  raises `GitError`s; `succeeds` and `passthrough` say whether git
-  succeeded, though a timeout still raises `GitTimeoutError`). It has a
-  `GitCache`, so where things are (the prefix, paths in the git directory)
-  is asked of git once. git's
+  `run_bytes` and those reads report Git failures as `RecommitError`s.
+  The CLI also reports `GitError` and `NoAnswerError` from inherited methods.
+  Each client keeps a `GitCache` for metadata used during a command or TUI
+  session, and a TUI reload clears it before reading the repository again. Git's
   messages that it captures are in English, as py-git-client has them;
   passthrough's are in the user's language. The tests' own git calls
   (`Repo.git`) use `Git` too, with the real git (`helpers.GIT`).

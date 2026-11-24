@@ -397,9 +397,9 @@ class BoardScreen(Screen[None]):
         self.board.reload(quiet)
         if self.board.rows is not rows:
             self.query_one(DiffView).rebuild()
-            self._do(changed_message)
-        else:
-            self._do()
+            if changed_message is not None:
+                self.board.message = f"{self.board.message} {changed_message}"
+        self._do()
 
     def update(self) -> None:
         self.query_one(DiffView).update_rows()
@@ -713,9 +713,7 @@ class BoardScreen(Screen[None]):
 
         try:
             if self.session.head_moved():
-                self.action_reload(
-                    changed_message="HEAD moved since the changes were loaded, so they're reloaded: check them, then write again."
-                )
+                self.action_reload(changed_message="HEAD moved. Check the reloaded changes, then write again.")
                 return
             shas, outcome = writing.build(
                 self.session, run_validation if self.terminal.validate_command is not None else None

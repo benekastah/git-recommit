@@ -8,6 +8,7 @@ from textual.app import App
 from textual.pilot import Pilot
 
 from git_recommit import validate
+from git_recommit.commands import Edit
 from git_recommit.errors import RecommitError
 from git_recommit.session import Session
 from git_recommit.tui import DiffView, RecommitApp, Sidebar, Terminal
@@ -208,6 +209,23 @@ def test_writing_after_head_moved_reloads_first(repo: Repo) -> None:
         assert "HEAD moved" in status
         # The new commit's change is there now, to assign before writing.
         assert [d.path for d in session.files] == ["a", "b", "c"]
+        await pilot.press("q", "y")
+
+    assert run(session, FakeTerminal(repo), script) is None
+
+
+def test_writing_after_head_moved_reports_dropped_edits(repo: Repo) -> None:
+    session = two_files(repo)
+    session.restore_old_commits()
+    Edit(1, "a", b"hand edit\n").run(session)
+
+    async def script(pilot: Pilot[Any]) -> None:
+        (repo.path / "a").unlink()
+        repo.git("commit", "-am", "remove a")
+        await pilot.press("w", "y")
+        status = str(pilot.app.screen.query_one("#status").render())
+        assert "dropped commit 1's edit of a" in status
+        assert "write again" in status
         await pilot.press("q", "y")
 
     assert run(session, FakeTerminal(repo), script) is None

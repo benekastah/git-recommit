@@ -134,6 +134,10 @@ instead, edit it to anything, then back.
 even commit), then `fg`. git-recommit reloads the diff, and changes you'd
 assigned keep their commits; new ones are unassigned.
 
+If HEAD moved before you write, git-recommit reloads the changes and asks you
+to check them before writing again. It lists discarded edits in a scrollable
+dialog if the reload removed any.
+
 **Writing** (`w`) asks first, and warns about anything that isn't assigned to
 a commit. Changes you leave unassigned aren't lost: they're left as
 uncommitted changes in your working tree, which is never touched (though

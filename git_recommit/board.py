@@ -192,12 +192,13 @@ class Board:
         self.goto_file(self.session.files.index(diff))
         return diff
 
-    def reload(self, quiet: bool = False) -> None:
+    def reload(self, quiet: bool = False) -> list[str]:
         """Reload the session's diff (see Session.reload), keeping the cursor
-        in the same file, and as near the same place in it as there is. If
+        in the same file, and as near the same place in it as there is. Return the
+        notices for any edits discarded during the reload. If
         quiet, say nothing when nothing has changed."""
         if not self.rows:
-            return
+            return []
         path = self.current_file().path
         start = next(i for i in range(self.cursor, -1, -1) if self.rows[i].kind == "file")
         offset = self.cursor - start
@@ -205,11 +206,11 @@ class Board:
             changed = self.session.reload()
         except RecommitError as e:
             self.message = str(e)
-            return
+            return []
         if not changed:
             if not quiet:
                 self.message = "Nothing has changed."
-            return
+            return []
         dropped = self.session.drop_stale_edits()
         self.rows = build_rows(self.session.files)
         self.anchor = None
@@ -219,6 +220,7 @@ class Board:
         self.message = (
             "; ".join(["Reloaded the changes; assignments of changes that are still there are kept", *dropped]) + "."
         )
+        return dropped
 
     # Changing the plan.
 

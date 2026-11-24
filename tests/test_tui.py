@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from textual.app import App
+from textual.containers import VerticalScroll
 from textual.pilot import Pilot
 
 from git_recommit import validate
@@ -205,8 +206,7 @@ def test_writing_after_head_moved_reloads_first(repo: Repo) -> None:
         repo.commit("meanwhile", c="c\n")
         await pilot.press("w", "y")
         assert pilot.app.return_value is None
-        status = str(pilot.app.screen.query_one("#status").render())
-        assert "HEAD moved" in status
+        assert "HEAD moved" in str(pilot.app.screen.query_one("#status").render())
         # The new commit's change is there now, to assign before writing.
         assert [d.path for d in session.files] == ["a", "b", "c"]
         await pilot.press("q", "y")
@@ -215,18 +215,28 @@ def test_writing_after_head_moved_reloads_first(repo: Repo) -> None:
 
 
 def test_writing_after_head_moved_reports_dropped_edits(repo: Repo) -> None:
-    session = two_files(repo)
+    removed = [f"file-{i:02}.txt" for i in range(30)]
+    repo.commit("add files", keep="keep\n", **dict.fromkeys(removed, "original\n"))
+    session = repo.session("HEAD~")
     session.restore_old_commits()
-    Edit(1, "a", b"hand edit\n").run(session)
+    for name in removed:
+        Edit(1, name, b"hand edit\n").run(session)
 
     async def script(pilot: Pilot[Any]) -> None:
-        (repo.path / "a").unlink()
-        repo.git("commit", "-am", "remove a")
+        for name in removed:
+            (repo.path / name).unlink()
+        repo.git("commit", "-am", "remove files")
         await pilot.press("w", "y")
-        status = str(pilot.app.screen.query_one("#status").render())
-        assert "dropped commit 1's edit of a" in status
-        assert "write again" in status
-        await pilot.press("q", "y")
+        message = pilot.app.screen.query_one("#reload-message")
+        report = str(message.render())
+        assert all(f"dropped commit 1's edit of {name}" in report for name in removed)
+        assert "write again" in report
+        scroll = pilot.app.screen.query_one(VerticalScroll)
+        assert scroll.max_scroll_y > 0
+        await pilot.press("end")
+        await pilot.pause()
+        assert scroll.scroll_y == scroll.max_scroll_y
+        await pilot.press("enter", "q", "y")
 
     assert run(session, FakeTerminal(repo), script) is None
 

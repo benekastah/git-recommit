@@ -278,6 +278,11 @@ back.
 git\-recommit reloads the diff, and changes you\(aqd assigned keep their
 commits; new ones are unassigned.
 .PP
+If HEAD moved before you write, git\-recommit reloads the changes and
+asks you to check them before writing again.
+It lists discarded edits in a scrollable dialog if the reload removed
+any.
+.PP
 \f[B]Writing\f[R] (\f[CR]w\f[R]) asks first, and warns about anything
 that isn\(aqt assigned to a commit.
 Changes you leave unassigned aren\(aqt lost: they\(aqre left as

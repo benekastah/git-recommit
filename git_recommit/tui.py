@@ -270,6 +270,22 @@ class ConfirmScreen(ModalScreen[bool]):
         self.dismiss(yes)
 
 
+class ReloadScreen(ModalScreen[None]):
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("enter,escape", "close", "Continue")]
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self.text = text
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(classes="dialog"):
+            yield Static(self.text, id="reload-message", markup=False)
+            yield Static("[b]Enter[/b] to continue.")
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class HelpScreen(ModalScreen[None]):
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape,q,question_mark", "close", "Close")]
 
@@ -394,11 +410,13 @@ class BoardScreen(Screen[None]):
 
     def action_reload(self, quiet: bool = False, *, changed_message: str | None = None) -> None:
         rows = self.board.rows
-        self.board.reload(quiet)
+        dropped = self.board.reload(quiet)
         if self.board.rows is not rows:
             self.query_one(DiffView).rebuild()
             if changed_message is not None:
-                self.board.message = f"{self.board.message} {changed_message}"
+                if dropped:
+                    self.app.push_screen(ReloadScreen("\n\n".join([changed_message, "\n".join(dropped)])))
+                self.board.message = changed_message
         self._do()
 
     def update(self) -> None:
@@ -764,7 +782,7 @@ class RecommitApp(App[list[str] | None]):
         width: 80%; max-width: 100; height: auto; max-height: 90%;
         padding: 1 2; border: thick $accent; background: $surface;
     }
-    InputScreen, ConfirmScreen, HelpScreen { align: center middle; }
+    InputScreen, ConfirmScreen, HelpScreen, ReloadScreen { align: center middle; }
     """
 
     def __init__(self, session: Session, terminal: Terminal) -> None:

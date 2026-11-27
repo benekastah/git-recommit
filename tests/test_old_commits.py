@@ -423,6 +423,8 @@ def test_uncommitted_changes_that_undo_an_old_commits_mode_change_leave_its_rena
     (new,) = session.files
     assert new.status == "R" and new.old_mode == new.new_mode
     assert session.unassigned() == []
+    names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
+    assert "new" in names and "old" not in names
 
 
 def test_uncommitted_changes_that_undo_an_old_commits_mode_leave_its_new_file_its_own(repo: Repo) -> None:
@@ -435,12 +437,12 @@ def test_uncommitted_changes_that_undo_an_old_commits_mode_leave_its_new_file_it
     (empty,) = session.files
     assert empty.status == "A"
     assert session.unassigned() == []
+    assert "empty" in repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
 
 
-def test_an_uncommitted_mode_change_to_a_renamed_file_leaves_the_rename_uncommitted_too(repo: Repo) -> None:
+def test_an_uncommitted_mode_change_to_a_file_an_old_commit_renamed_stays_with_the_rename(repo: Repo) -> None:
     # The rename and the mode are one change to the file itself, which can't be
-    # split: it stays uncommitted, as a file that changes as a whole does,
-    # rather than committing the mode (see docs/issues.md).
+    # split, and the commit must still make the rename (see docs/issues.md).
     repo.commit("base", old=LINES)
     repo.git("mv", "old", "new")
     repo.commit("rename")
@@ -448,7 +450,9 @@ def test_an_uncommitted_mode_change_to_a_renamed_file_leaves_the_rename_uncommit
     session = restored(repo, "HEAD~")
     (new,) = session.files
     assert new.status == "R" and new.old_mode != new.new_mode
-    assert session.unassigned() == [new.meta_id]
+    assert session.unassigned() == []
+    names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
+    assert "new" in names and "old" not in names
 
 
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:

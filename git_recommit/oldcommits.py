@@ -103,10 +103,12 @@ def _meta_by(
     uncommitted. A file that changes as a whole and has uncommitted changes
     has them in that one change, which so stays uncommitted; so does one whose
     mode the uncommitted changes changed (if they changed it back, there's no
-    mode change in the diff, and what's in it was committed). A rename that
-    changes the mode too is one change, so it's left uncommitted with it."""
+    mode change in the diff, and what's in it was committed). But not a
+    renamed file, whose rename and mode are one change that can't be split:
+    it must stay with the commit that renames the file, with the mode (see
+    docs/issues.md)."""
     mode_changed = None not in (diff.old_mode, diff.new_mode) and diff.old_mode != diff.new_mode
-    if (diff.whole and uncommitted) or (mode_uncommitted and mode_changed):
+    if (diff.whole and uncommitted) or (mode_uncommitted and mode_changed and diff.old_path is None):
         return None
     if diff.old_path is None or diff.submodule:
         # (A submodule can't be edited, so its rename, which is all of its

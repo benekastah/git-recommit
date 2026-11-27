@@ -31,11 +31,14 @@ def restore(session: Session) -> None:
     later commit rewrites), the changes alone can't make the commit as it
     was, so it gets edits that do. Building the plan unchanged makes the
     same trees, but where a submodule changes, or a file's mode changes and
-    changes back, which edits can't do (see docs/issues.md).
+    changes back, or a file's rename is spread over several commits, which edits
+    can't do (see docs/issues.md).
     """
     old = _old_commits(session)
     # The commit of the uncommitted changes, after them, isn't one of them.
-    uncommitted: set[str] = set(old.pop().changed) if session.uncommitted else set()
+    worktree = old.pop() if session.uncommitted else None
+    uncommitted: set[str] = set(worktree.changed) if worktree else set()
+    uncommitted_modes: set[str] = worktree.mode_changed if worktree else set()
     shas = [commit.sha for commit in old]
     session.plan = plan = Plan()
     keys: dict[str, int] = {}
@@ -66,7 +69,11 @@ def restore(session: Session) -> None:
         last = keys.get(touched[-1]) if touched else None
         if diff.meta_id is not None:
             meta_by = _meta_by(
-                diff, touched[-1] if touched else None, bool(paths & uncommitted), zip(shas, trees, strict=True)
+                diff,
+                touched[-1] if touched else None,
+                bool(paths & uncommitted),
+                bool(paths & uncommitted_modes),
+                zip(shas, trees, strict=True),
             )
             plan.assign([diff.meta_id], None if meta_by is None else keys[meta_by])
         if diff.whole:
@@ -85,22 +92,33 @@ def restore(session: Session) -> None:
 
 
 def _meta_by(
-    diff: FileDiff, last: str | None, uncommitted: bool, trees: Iterable[tuple[str, dict[str, str]]]
+    diff: FileDiff,
+    last: str | None,
+    uncommitted: bool,
+    mode_uncommitted: bool,
+    trees: Iterable[tuple[str, dict[str, str]]],
 ) -> str | None:
     """Which old commit (of the (sha, tree)s) made the file's change to
     itself, given the last to change it, if any: that one, but for a rename,
-    which the first commit to have the new path made, or if none does, it's
-    uncommitted. A file that changes as a whole and has uncommitted changes
-    has them in that one change, which so stays uncommitted."""
-    if diff.whole and uncommitted:
+    which the first commit to have the new path and not the old made (one that
+    only adds the new path isn't the rename), or if none does, it's
+    uncommitted. (A rename and a change of mode are one change that can't be
+    split, so the commit that renames the file keeps it whatever the
+    uncommitted changes do to the file, mode included: see docs/issues.md.)
+    Otherwise a file that changes as a whole and has uncommitted changes has
+    them in that one change, which so stays uncommitted; so does one whose mode
+    the uncommitted changes changed (if they changed it back, there's no mode
+    change in the diff, and what's in it was committed)."""
+    if diff.old_path is not None and not diff.submodule:
+        # For a file that changes as a whole, the rename is all of its change;
+        # edits make the commits before the last as they were.
+        return next((sha for sha, blobs in trees if diff.path in blobs and diff.old_path not in blobs), None)
+    mode_changed = None not in (diff.old_mode, diff.new_mode) and diff.old_mode != diff.new_mode
+    if (diff.whole and uncommitted) or (mode_uncommitted and mode_changed):
         return None
-    if diff.old_path is None or diff.submodule:
-        # (A submodule can't be edited, so its rename, which is all of its
-        # change, stays with the last commit.)
-        return last
-    # For a file that changes as a whole, the rename is all of its change;
-    # edits make the commits before the last as they were.
-    return next((sha for sha, blobs in trees if diff.path in blobs), None)
+    # (A submodule can't be edited, so its rename, which is all of its
+    # change, stays with the last commit.)
+    return last
 
 
 @dataclass
@@ -110,6 +128,9 @@ class _OldCommit:
     # Each path it changes (from its parent, without finding renames), and
     # the blob it then has there, or None for none (or a submodule).
     changes: list[tuple[str, str | None]] = field(default_factory=list)
+    # The paths among them whose mode it changes (but not by adding or
+    # deleting them).
+    mode_changed: set[str] = field(default_factory=set)
 
     @property
     def changed(self) -> list[str]:
@@ -158,10 +179,12 @@ def _old_commits(session: Session) -> list[_OldCommit]:
     for entry in fields:
         entry = entry.lstrip(b"\n")
         if entry.startswith(b":"):
-            _, new_mode, _, blob, status = entry.decode().split(" ")
+            old_mode, new_mode, _, blob, status = entry.decode().removeprefix(":").split(" ")
             path = next(fields).decode(errors="surrogateescape")
             gone = status == "D" or new_mode == SUBMODULE_MODE
             commits[-1].changes.append((path, None if gone else blob))
+            if status not in "AD" and old_mode != new_mode:
+                commits[-1].mode_changed.add(path)
         elif entry:
             name, email, date = (next(fields).decode(errors="surrogateescape") for _ in range(3))
             commits.append(_OldCommit(entry.decode(), Author(name, email, date)))

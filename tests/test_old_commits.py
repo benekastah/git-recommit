@@ -390,6 +390,123 @@ def test_an_uncommitted_rename_starts_unassigned(repo: Repo) -> None:
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+def test_an_uncommitted_mode_change_starts_unassigned(repo: Repo) -> None:
+    repo.commit("base", script=LINES)
+    old = [repo.commit("change", script=LINES.replace("line 3\n", "three\n"))]
+    repo.executable("script")
+    session = restored(repo, "HEAD~")
+    (script,) = session.files
+    # Only the mode, which wasn't committed: what the old commit changed is its own.
+    assert session.unassigned() == [script.meta_id]
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_a_mode_change_in_an_old_commit_is_its_own_even_with_uncommitted_changes(repo: Repo) -> None:
+    repo.commit("base", script=LINES)
+    repo.executable("script")
+    old = [repo.commit("make it executable")]
+    repo.write("script", LINES.replace("line 3\n", "three\n"))
+    session = restored(repo, "HEAD~")
+    (script,) = session.files
+    assert script.meta_id not in session.unassigned()
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_uncommitted_changes_that_undo_an_old_commits_mode_change_leave_its_rename_its_own(repo: Repo) -> None:
+    # The range's diff has no mode change then, only the rename.
+    repo.commit("base", old=LINES)
+    repo.git("mv", "old", "new")
+    repo.executable("new")
+    repo.commit("rename and make executable")
+    repo.executable("new", executable=False)
+    session = restored(repo, "HEAD~")
+    (new,) = session.files
+    assert new.status == "R" and new.old_mode == new.new_mode
+    assert session.unassigned() == []
+    names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
+    assert "new" in names and "old" not in names
+
+
+def test_uncommitted_changes_that_undo_an_old_commits_mode_leave_its_new_file_its_own(repo: Repo) -> None:
+    repo.commit("base", f=LINES)
+    repo.write("empty", "")
+    repo.executable("empty")
+    repo.commit("add an executable file")
+    repo.executable("empty", executable=False)
+    session = restored(repo, "HEAD~")
+    (empty,) = session.files
+    assert empty.status == "A"
+    assert session.unassigned() == []
+    assert "empty" in repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
+
+
+def test_an_uncommitted_mode_change_to_a_file_an_old_commit_renamed_stays_with_the_rename(repo: Repo) -> None:
+    # The rename and the mode are one change to the file itself, which can't be
+    # split, and the commit must still make the rename (see docs/issues.md).
+    repo.commit("base", old=LINES)
+    repo.git("mv", "old", "new")
+    repo.commit("rename")
+    repo.executable("new")
+    session = restored(repo, "HEAD~")
+    (new,) = session.files
+    assert new.status == "R" and new.old_mode != new.new_mode
+    assert session.unassigned() == []
+    names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
+    assert "new" in names and "old" not in names
+
+
+BIG = b"\0" + b"".join(f"line {i}\n".encode() for i in range(2000))
+
+
+@pytest.mark.parametrize("uncommitted", ["mode", "content"])
+def test_a_binary_file_an_old_commit_renamed_keeps_its_rename_with_uncommitted_changes(
+    repo: Repo, uncommitted: str
+) -> None:
+    # Big enough that git still takes it for a rename when its content changes.
+    repo.commit("base", old=BIG)
+    repo.git("mv", "old", "new")
+    repo.commit("rename")
+    if uncommitted == "mode":
+        repo.executable("new")
+    else:
+        repo.write("new", BIG + b"more\n")
+    session = restored(repo, "HEAD~")
+    (new,) = session.files
+    assert new.status == "R"
+    (rename,) = session.build()
+    names = repo.git("ls-tree", "-r", "--name-only", rename).splitlines()
+    assert "new" in names and "old" not in names
+    # With the file as the commit had it, not as the uncommitted changes have it.
+    assert repo.git("rev-parse", f"{rename}:new") == repo.client.hash_blob(BIG)
+
+
+@pytest.mark.parametrize("content", [LINES.encode(), BIG], ids=["text", "binary"])
+def test_a_rename_in_the_uncommitted_changes_isnt_made_by_a_commit_that_only_added_the_new_name(
+    repo: Repo, content: bytes
+) -> None:
+    repo.commit("base", old=content)
+    repo.commit("add new", new="x\n")
+    repo.commit("delete new", new=None)
+    repo.git("mv", "old", "new")
+    session = restored(repo, "HEAD~2")
+    (new,) = session.files
+    assert new.status == "R" and new.meta_id in session.unassigned()
+    assert all("old" in repo.git("ls-tree", "-r", "--name-only", sha).splitlines() for sha in session.build())
+
+
+def test_a_rename_spread_over_two_commits_goes_to_the_one_that_completes_it(repo: Repo) -> None:
+    # One commit copies the file, a later one deletes the old: git sees one
+    # rename in the range, which can only go to one of them (see docs/issues.md).
+    repo.commit("base", old=LINES)
+    repo.commit("copy it", new=LINES)
+    repo.commit("delete the old", old=None)
+    session = restored(repo, "HEAD~2")
+    (new,) = session.files
+    assert new.status == "R" and new.meta_id is not None
+    _, delete = session.plan.commits
+    assert session.plan.assignment[new.meta_id] == delete.key
+
+
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:
     repo.commit("base", data=b"\0one")
     old = [repo.commit("change data", data=b"\0two")]

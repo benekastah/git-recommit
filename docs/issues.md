@@ -27,13 +27,6 @@ hashed more than once; and the plan file keeps it by content, so each
 subcommand reads and encodes it to save the plan, and hashes it again to
 load it. Correct, but slow for a large file. Comparing blob ids would do.
 
-## An uncommitted mode change goes to the last commit to change the file
-
-Starting from the old commits gives a text file's change to itself (its mode)
-to the last commit to change the file, even if the mode changed only in the
-uncommitted changes, which so get committed. It should be unassigned then, as
-an uncommitted rename is, or a file that changes as a whole.
-
 ## A submodule the config ignores can move in the uncommitted changes
 
 Confirmed. With `submodule.<name>.ignore = all` (or `diff.ignoreSubmodules`)
@@ -43,6 +36,23 @@ something else is uncommitted: then `revisions.worktree_commit`'s `git add`
 takes the submodule's move too, and it's an (unassigned) uncommitted change.
 (`ignore = all` in `.gitmodules` keeps `git add` from taking it.) The commit
 of the working tree should take only what `git status` shows.
+
+## An uncommitted mode change to a file an old commit added or renamed is committed with it
+
+A file's rename (or adding it) and its mode are one change to the file itself,
+which can't be split. When an old commit renamed or added the file and the
+uncommitted changes (and not the range's commits) changed its mode, starting
+from the old commits gives the change to the commit that made it, so it
+commits the mode too. Leaving it uncommitted would leave that commit without
+the rename or the file.
+
+## A rename spread over several old commits isn't reproduced
+
+A file's rename is one change (one `FileDiff` covers both paths), which goes to
+one commit: the first whose tree has the new path and not the old. So when
+one old commit copies a file and a later one deletes the old, or a file is
+renamed back and forth, the commits in between are rebuilt without the file
+(or empty), and writing says nothing about it.
 
 ## A mode that changes and changes back isn't reproduced
 

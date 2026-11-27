@@ -41,13 +41,13 @@ class Repo:
             content = content.encode()
         path.write_bytes(content)
 
-    def executable(self, name: str) -> None:
-        """Make the file executable, as git sees it: in the index too, since
-        on Windows, where a file has no executable bit, git keeps the mode
-        there (core.fileMode is off)."""
-        (self.path / name).chmod(0o755)
+    def executable(self, name: str, executable: bool = True) -> None:
+        """Make the file executable (or not), as git sees it: in the index
+        too, since on Windows, where a file has no executable bit, git keeps
+        the mode there (core.fileMode is off)."""
+        (self.path / name).chmod(0o755 if executable else 0o644)
         self.git("add", "--", name)
-        self.git("update-index", "--chmod=+x", "--", name)
+        self.git("update-index", "--chmod=+x" if executable else "--chmod=-x", "--", name)
 
     def commit(self, message: str, **files: str | bytes | None) -> str:
         """Write (or with None, delete) the files, and commit everything."""

@@ -412,6 +412,45 @@ def test_a_mode_change_in_an_old_commit_is_its_own_even_with_uncommitted_changes
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+def test_uncommitted_changes_that_undo_an_old_commits_mode_change_leave_its_rename_its_own(repo: Repo) -> None:
+    # The range's diff has no mode change then, only the rename.
+    repo.commit("base", old=LINES)
+    repo.git("mv", "old", "new")
+    repo.executable("new")
+    repo.commit("rename and make executable")
+    repo.executable("new", executable=False)
+    session = restored(repo, "HEAD~")
+    (new,) = session.files
+    assert new.status == "R" and new.old_mode == new.new_mode
+    assert session.unassigned() == []
+
+
+def test_uncommitted_changes_that_undo_an_old_commits_mode_leave_its_new_file_its_own(repo: Repo) -> None:
+    repo.commit("base", f=LINES)
+    repo.write("empty", "")
+    repo.executable("empty")
+    repo.commit("add an executable file")
+    repo.executable("empty", executable=False)
+    session = restored(repo, "HEAD~")
+    (empty,) = session.files
+    assert empty.status == "A"
+    assert session.unassigned() == []
+
+
+def test_an_uncommitted_mode_change_to_a_renamed_file_leaves_the_rename_uncommitted_too(repo: Repo) -> None:
+    # The rename and the mode are one change to the file itself, which can't be
+    # split: it stays uncommitted, as a file that changes as a whole does,
+    # rather than committing the mode (see docs/issues.md).
+    repo.commit("base", old=LINES)
+    repo.git("mv", "old", "new")
+    repo.commit("rename")
+    repo.executable("new")
+    session = restored(repo, "HEAD~")
+    (new,) = session.files
+    assert new.status == "R" and new.old_mode != new.new_mode
+    assert session.unassigned() == [new.meta_id]
+
+
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:
     repo.commit("base", data=b"\0one")
     old = [repo.commit("change data", data=b"\0two")]

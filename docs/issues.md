@@ -45,6 +45,15 @@ one old commit copies a file and a later one deletes the old, or a file is
 renamed back and forth, the commits in between are rebuilt without the file
 (or empty), and writing says nothing about it.
 
+## A mode an edit gave isn't merged with later changes to the mode
+
+An edit's content is merged again when what it was based on changes, but its
+mode just overrides: it isn't merged three ways. After starting from old
+commits that make a file executable, not, then executable again, assigning
+the mode change to an earlier commit than the one that has it leaves the later
+commits with the mode the edits gave, not the one the changes give (writing
+warns that the file is left with uncommitted changes).
+
 ## On Windows, the TUI runs the editor with cmd.exe
 
 git runs editors with its own sh, even on Windows, but `e` and `r` run

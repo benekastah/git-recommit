@@ -324,12 +324,21 @@ class Session:
             if state.version is not None or state.conflict:
                 commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
             return
-        # (Where the file isn't there, what mode it gets without one is the
-        # changes', which the edit's mode may differ from.)
-        if state.version is not None and mode == state.version.mode:
+        if mode == self._mode_without_edit(diff, state, index):
             mode = None
         if content != state.basis or state.conflict or state.version is None or mode is not None:
             commit.edits[diff.path] = Edit(state.basis, content, blob=diff.whole, mode=mode)
+
+    def _mode_without_edit(self, diff: FileDiff, state: FileState, index: int) -> str:
+        """The mode the file gets in the commit at index with an edit that
+        gives none (see snapshot.file_states): the one it has there, or where it
+        isn't there, the one the changes taken by then give it."""
+        if state.version is not None:
+            return state.version.mode
+        taken = {commit.key for commit in self.plan.commits[: index + 1]}
+        selected = frozenset(i for i in diff.ids if self.plan.assignment.get(i) in taken)
+        assigned = pure_version(diff, selected)
+        return (assigned or Version(diff.new_mode or diff.old_mode or "100644")).mode
 
     def add_unchanged(self, path: str) -> FileDiff:
         """The file at path (from the top), added to the files as one the

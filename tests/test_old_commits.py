@@ -438,6 +438,19 @@ def test_a_file_deleted_and_added_again_with_another_mode_is_reproduced(repo: Re
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+@pytest.mark.parametrize("content", [LINES.encode(), b"\0binary"], ids=["text", "binary"])
+def test_a_history_without_mode_changes_has_no_edit_with_a_mode(repo: Repo, content: bytes) -> None:
+    # Where the file isn't in a commit without its edit (deleted, then added
+    # again), the mode the edit gets anyway is no part of it.
+    repo.commit("base", data=content)
+    repo.commit("delete it", data=None)
+    repo.commit("add it again", data=content + b"more\n")
+    repo.commit("change it", data=content + b"more\nand more\n")
+    session = restored(repo, "HEAD~3")
+    edits = [edit for commit in session.plan.commits for edit in commit.edits.values()]
+    assert edits and all(edit.mode is None for edit in edits)
+
+
 def test_editing_a_file_by_hand_keeps_the_mode_the_commits_own_edit_gave(repo: Repo) -> None:
     repo.commit("base", script=LINES)
     repo.executable("script")

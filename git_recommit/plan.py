@@ -18,7 +18,8 @@ class Edit:
     The edit can also give the file a mode (or kind, e.g. a symlink's), which
     the commit then has, and later commits keep unless the changes they take
     change it: where it isn't what the changes alone make it, as when it was
-    changed in one old commit and back in a later one.
+    changed in one old commit and back in a later one. The mode isn't merged
+    as the content is: it overrides.
     """
 
     basis: bytes

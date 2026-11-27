@@ -451,6 +451,24 @@ def test_a_history_without_mode_changes_has_no_edit_with_a_mode(repo: Repo, cont
     assert edits and all(edit.mode is None for edit in edits)
 
 
+def test_a_mode_is_judged_against_the_changes_every_earlier_commit_takes(repo: Repo) -> None:
+    # A binary file renamed and made executable, deleted, added again as it
+    # was, and made executable again: what the changes give it in the commit
+    # that adds it again depends on all the commits before, not only that one.
+    repo.commit("base", old=BIG)
+    repo.git("mv", "old", "new")
+    repo.executable("new")
+    old = [repo.commit("rename it, executable")]
+    old.append(repo.commit("delete it", new=None))
+    repo.write("new", BIG)
+    repo.executable("new", executable=False)
+    old.append(repo.commit("add it again"))
+    repo.executable("new")
+    old.append(repo.commit("make it executable"))
+    session = restored(repo, "HEAD~4")
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
 def test_editing_a_file_by_hand_keeps_the_mode_the_commits_own_edit_gave(repo: Repo) -> None:
     repo.commit("base", script=LINES)
     repo.executable("script")

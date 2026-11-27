@@ -21,7 +21,7 @@ from git_recommit.revisions import (
     worktree_commit,
     worktree_status,
 )
-from git_recommit.snapshot import FileState, Version, file_states, pure_version
+from git_recommit.snapshot import FileState, Version, default_version, file_states, pure_version
 
 
 @dataclass(frozen=True)
@@ -302,8 +302,9 @@ class Session:
 
     def set_edit(self, key: int, diff: FileDiff, content: bytes | None, mode: str | None = None) -> None:
         """Make the file content in the commit, or with None, delete it (and
-        carry that into later ones); and give it a mode, if it isn't the one
-        it has there (the commit's own edit's, if there is one, by default).
+        carry that into later ones); and give it a mode, if it isn't the one an
+        edit without one gives (the one the file has there, or where it isn't,
+        the one the changes give it); by default the commit's own edit's.
         It replaces the commit's own edit, so it's judged against the file
         without that: content that's what the file would be anyway (and isn't
         a conflict's resolution) is no edit."""
@@ -338,7 +339,7 @@ class Session:
         taken = {commit.key for commit in self.plan.commits[: index + 1]}
         selected = frozenset(i for i in diff.ids if self.plan.assignment.get(i) in taken)
         assigned = pure_version(diff, selected)
-        return (assigned or Version(diff.new_mode or diff.old_mode or "100644")).mode
+        return (assigned or default_version(diff)).mode
 
     def add_unchanged(self, path: str) -> FileDiff:
         """The file at path (from the top), added to the files as one the

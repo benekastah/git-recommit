@@ -107,6 +107,12 @@ def _merge(merge: Merge, whole: bool, basis: bytes, ours: bytes, theirs: bytes) 
     return merged, conflict, conflict
 
 
+def default_version(diff: FileDiff) -> Version:
+    """The version (its mode) a file the changes taken so far don't make is
+    given when an edit makes it: as the diff has it at its end, or its start."""
+    return Version(diff.new_mode or diff.old_mode or "100644")
+
+
 def _carried_mode(
     diff: FileDiff, assigned: Version | None, prev_assigned: Version | None, prev_result: Version | None
 ) -> str:
@@ -177,7 +183,7 @@ def file_states(
                 edited_to, conflict, markers = edit.content, False, False
             else:
                 edited_to, conflict, markers = _merge(merge, diff.whole, edit.basis, edit.content, basis)
-            mode = edit.mode or (carried or assigned or Version(diff.new_mode or diff.old_mode or "100644")).mode
+            mode = edit.mode or (carried or assigned or default_version(diff)).mode
             result = version(mode, edited_to)
         states.append(FileState(result, path, conflict, markers, result != assigned, basis))
         prev_assigned, prev_result, prev_conflict, prev_markers = assigned, result, conflict, markers

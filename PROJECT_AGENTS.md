@@ -101,7 +101,9 @@ These were the user's choices for v0; ask before changing them.
   8000 bytes, even where attributes have it diffed as text, so a change on
   both sides conflicts), and can conflict with them; conflicts must be
   resolved before writing. An edit is kept as (basis, content), so it's merged
-  again when what it was based on changes.
+  again when what it was based on changes; it can also give a mode, which
+  starting from the old commits does where the changes alone don't, and which
+  isn't merged but overrides (see docs/issues.md).
 - Changes left unassigned are allowed, with a warning; they end up as
   uncommitted changes in the working tree. recommit finishes by moving HEAD's
   branch and resetting the index, never touching the working tree.

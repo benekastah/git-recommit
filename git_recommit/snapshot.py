@@ -107,6 +107,23 @@ def _merge(merge: Merge, whole: bool, basis: bytes, ours: bytes, theirs: bytes) 
     return merged, conflict, conflict
 
 
+def default_version(diff: FileDiff) -> Version:
+    """The version (its mode) a file the changes taken so far don't make is
+    given when an edit makes it: as the diff has it at its end, or its start."""
+    return Version(diff.new_mode or diff.old_mode or "100644")
+
+
+def _carried_mode(
+    diff: FileDiff, assigned: Version | None, prev_assigned: Version | None, prev_result: Version | None
+) -> str:
+    """The mode of the file in a commit that takes more changes than the one
+    before it: the mode the changes it takes give it, if they change it, or else
+    the one the earlier commits' edits gave it."""
+    if assigned is not None and (prev_assigned is None or assigned.mode != prev_assigned.mode):
+        return assigned.mode
+    return (prev_result or assigned or prev_assigned or Version(diff.old_mode or diff.new_mode or "100644")).mode
+
+
 def file_states(
     diff: FileDiff, commits: list[NewCommit], assignment: dict[int, int], merge: Merge, pure: Pure
 ) -> list[FileState]:
@@ -152,9 +169,7 @@ def file_states(
             # are: a deletion too, which merged as content would be empty.
             kept_deletion = conflict and not markers and prev_result is None
             conflict, markers = conflict or prev_conflict, markers or prev_markers
-            mode = (
-                assigned or prev_result or prev_assigned or Version(diff.old_mode or diff.new_mode or "100644")
-            ).mode
+            mode = _carried_mode(diff, assigned, prev_assigned, prev_result)
             gone = kept_deletion or (assigned is None and not merged and not conflict)
             carried = None if gone else version(mode, merged)
         # A conflicted file is no basis for an edit, which resolves it.
@@ -168,7 +183,7 @@ def file_states(
                 edited_to, conflict, markers = edit.content, False, False
             else:
                 edited_to, conflict, markers = _merge(merge, diff.whole, edit.basis, edit.content, basis)
-            mode = (carried or assigned or Version(diff.new_mode or diff.old_mode or "100644")).mode
+            mode = edit.mode or (carried or assigned or default_version(diff)).mode
             result = version(mode, edited_to)
         states.append(FileState(result, path, conflict, markers, result != assigned, basis))
         prev_assigned, prev_result, prev_conflict, prev_markers = assigned, result, conflict, markers

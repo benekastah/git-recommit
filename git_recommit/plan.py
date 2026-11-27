@@ -14,12 +14,20 @@ class Edit:
     a whole (a binary file or a symlink), which can't be merged, they're its
     blob ids before and after instead, and blob is true (see
     snapshot._merge_whole).
+
+    The edit can also give the file a mode (or kind, e.g. a symlink's), which
+    the commit then has, and later commits keep unless the changes they take
+    change it: where it isn't what the changes alone make it, as when it was
+    changed in one old commit and back in a later one. The mode isn't merged
+    as the content is: it overrides.
     """
 
     basis: bytes
     # None deletes the file.
     content: bytes | None
     blob: bool = False
+    # None keeps the mode the file has in the commit.
+    mode: str | None = None
 
 
 @dataclass(frozen=True)

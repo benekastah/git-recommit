@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import os
 import re
+import sys
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -194,9 +195,16 @@ def _made_by(session: Session, diff: FileDiff, removed_by: dict[str, str]) -> di
     return made_by
 
 
+# Whether an argument to git is Unicode, so a name that isn't UTF-8 can't be one.
+WINDOWS = sys.platform == "win32"
+
+
 def _blame(session: Session, path: str, reverse: bool) -> dict[int | None, str]:
     """For each line of the file (at tip, or with reverse, at base), the
-    commit that last added it (or with reverse, the last that had it)."""
+    commit that last added it (or with reverse, the last that had it); none
+    where git can't be given the name (see WINDOWS), which so is no one's."""
+    if WINDOWS and not _is_utf8(path):
+        return {}
     # From the root, the whole history; reverse blame isn't needed then, as
     # every file is added.
     span = session.tip if session.root else f"{session.base}..{session.tip}"
@@ -209,6 +217,15 @@ def _blame(session: Session, path: str, reverse: bool) -> dict[int | None, str]:
         if match := BLAME_ENTRY.match(entry):
             lines[int(match[2])] = match[1].decode()
     return lines
+
+
+def _is_utf8(path: str) -> bool:
+    """Whether path (git's bytes, decoded with surrogateescape) is UTF-8."""
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _reproduce(session: Session, trees: list[dict[str, str]]) -> None:

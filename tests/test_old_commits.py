@@ -434,3 +434,31 @@ def test_a_binary_file_renamed_then_changed(repo: Repo) -> None:
     (new,) = session.files
     assert new.status == "R" and new.whole
     assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_a_name_git_cant_be_given_as_an_argument_is_not_blamed(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
+    # On Windows, where an argument is Unicode, so a name that isn't UTF-8 can't
+    # be one. Its changes go to the last commit that changed the file, with
+    # edits that make the commits before as they were. (Faked here: on Linux
+    # git is given the name.) Made with plumbing, since some filesystems refuse
+    # such names; skip-worktree keeps git from seeing it as deleted.
+    name = b"caf\xe9.txt"
+    old = []
+    for text in (b"one\n", b"one\ntwo\n"):
+        blob = repo.client.hash_blob(text)
+        repo.client.run_bytes("update-index", "--add", "--cacheinfo", b"100644," + blob.encode() + b"," + name)
+        repo.git("commit", "--quiet", "-m", text.decode())
+        repo.client.run_bytes("update-index", "--skip-worktree", name)
+        old.append(repo.git("rev-parse", "HEAD"))
+    monkeypatch.setattr(oldcommits, "WINDOWS", True, raising=False)
+    blamed: list[tuple[object, ...]] = []
+    run_bytes = GitClient.run_bytes
+
+    def spy(self: GitClient, *args: object, **kwargs: object) -> bytes:
+        blamed.append(args) if args[:1] == ("blame",) else None
+        return run_bytes(self, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(GitClient, "run_bytes", spy)
+    session = restored(repo, "HEAD~2")
+    assert not blamed
+    assert trees(repo, session.build()) == trees(repo, old)

@@ -99,7 +99,8 @@ def _meta_by(
 ) -> str | None:
     """Which old commit (of the (sha, tree)s) made the file's change to
     itself, given the last to change it, if any: that one, but for a rename,
-    which the first commit to have the new path made, or if none does, it's
+    which the first commit to have the new path and not the old made (one that
+    only adds the new path isn't the rename), or if none does, it's
     uncommitted. (A rename and a change of mode are one change that can't be
     split, so the commit that renames the file keeps it whatever the
     uncommitted changes do to the file, mode included: see docs/issues.md.)
@@ -110,7 +111,7 @@ def _meta_by(
     if diff.old_path is not None and not diff.submodule:
         # For a file that changes as a whole, the rename is all of its change;
         # edits make the commits before the last as they were.
-        return next((sha for sha, blobs in trees if diff.path in blobs), None)
+        return next((sha for sha, blobs in trees if diff.path in blobs and diff.old_path not in blobs), None)
     mode_changed = None not in (diff.old_mode, diff.new_mode) and diff.old_mode != diff.new_mode
     if (diff.whole and uncommitted) or (mode_uncommitted and mode_changed):
         return None

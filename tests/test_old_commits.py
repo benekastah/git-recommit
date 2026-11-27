@@ -455,20 +455,40 @@ def test_an_uncommitted_mode_change_to_a_file_an_old_commit_renamed_stays_with_t
     assert "new" in names and "old" not in names
 
 
+BIG = b"\0" + b"".join(f"line {i}\n".encode() for i in range(2000))
+
+
 @pytest.mark.parametrize("uncommitted", ["mode", "content"])
 def test_a_binary_file_an_old_commit_renamed_keeps_its_rename_with_uncommitted_changes(
     repo: Repo, uncommitted: str
 ) -> None:
-    repo.commit("base", old=b"\0one")
+    # Big enough that git still takes it for a rename when its content changes.
+    repo.commit("base", old=BIG)
     repo.git("mv", "old", "new")
     repo.commit("rename")
     if uncommitted == "mode":
         repo.executable("new")
     else:
-        repo.write("new", b"\0two")
+        repo.write("new", BIG + b"more\n")
     session = restored(repo, "HEAD~")
+    (new,) = session.files
+    assert new.status == "R"
     names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
     assert "new" in names and "old" not in names
+
+
+@pytest.mark.parametrize("content", [LINES.encode(), BIG], ids=["text", "binary"])
+def test_a_rename_in_the_uncommitted_changes_isnt_made_by_a_commit_that_only_added_the_new_name(
+    repo: Repo, content: bytes
+) -> None:
+    repo.commit("base", old=content)
+    repo.commit("add new", new="x\n")
+    repo.commit("delete new", new=None)
+    repo.git("mv", "old", "new")
+    session = restored(repo, "HEAD~2")
+    (new,) = session.files
+    assert new.status == "R" and new.meta_id in session.unassigned()
+    assert all("old" in repo.git("ls-tree", "-r", "--name-only", sha).splitlines() for sha in session.build())
 
 
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:

@@ -27,13 +27,6 @@ hashed more than once; and the plan file keeps it by content, so each
 subcommand reads and encodes it to save the plan, and hashes it again to
 load it. Correct, but slow for a large file. Comparing blob ids would do.
 
-## An uncommitted mode change goes to the last commit to change the file
-
-Starting from the old commits gives a text file's change to itself (its mode)
-to the last commit to change the file, even if the mode changed only in the
-uncommitted changes, which so get committed. It should be unassigned then, as
-an uncommitted rename is, or a file that changes as a whole.
-
 ## A submodule the config ignores can move in the uncommitted changes
 
 Confirmed. With `submodule.<name>.ignore = all` (or `diff.ignoreSubmodules`)

@@ -390,6 +390,28 @@ def test_an_uncommitted_rename_starts_unassigned(repo: Repo) -> None:
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+def test_an_uncommitted_mode_change_starts_unassigned(repo: Repo) -> None:
+    repo.commit("base", script=LINES)
+    old = [repo.commit("change", script=LINES.replace("line 3\n", "three\n"))]
+    repo.executable("script")
+    session = restored(repo, "HEAD~")
+    (script,) = session.files
+    # Only the mode, which wasn't committed: what the old commit changed is its own.
+    assert session.unassigned() == [script.meta_id]
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_a_mode_change_in_an_old_commit_is_its_own_even_with_uncommitted_changes(repo: Repo) -> None:
+    repo.commit("base", script=LINES)
+    repo.executable("script")
+    old = [repo.commit("make it executable")]
+    repo.write("script", LINES.replace("line 3\n", "three\n"))
+    session = restored(repo, "HEAD~")
+    (script,) = session.files
+    assert script.meta_id not in session.unassigned()
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:
     repo.commit("base", data=b"\0one")
     old = [repo.commit("change data", data=b"\0two")]

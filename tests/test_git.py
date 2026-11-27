@@ -116,11 +116,12 @@ def test_runs_git_recommit_git_if_set(monkeypatch: pytest.MonkeyPatch) -> None:
     assert GitClient().program == "/somewhere/git"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="the next test, with a wrapper, is this one's and more")
 def test_git_recommit_needs_no_git_on_path_but_git_recommit_git(repo: Repo, tmp_path: pathlib.Path) -> None:
-    # What the test below checks with a wrapper, which Windows can't have
-    # (GIT_RECOMMIT_GIT can't be a batch file), checked there by what works:
-    # with no git on PATH, so any process that looks one up fails, reading,
-    # rewording and writing (with a hook, which git runs with its own sh).
+    # The next test, which has no Windows (GIT_RECOMMIT_GIT can't be a batch
+    # file there), checks every git process is GIT_RECOMMIT_GIT with a wrapper;
+    # this checks none looks git up on PATH, which is empty: reading,
+    # rewording and writing (with a hook, which git runs with its own sh) work.
     repo.commit("second", f="f\n")
     hook = repo.path / ".git" / "hooks" / "commit-msg"
     hook.write_text('#!/bin/sh\necho "Change-Id: I1" >> "$1"\n', newline="\n")

@@ -37,13 +37,14 @@ takes the submodule's move too, and it's an (unassigned) uncommitted change.
 (`ignore = all` in `.gitmodules` keeps `git add` from taking it.) The commit
 of the working tree should take only what `git status` shows.
 
-## An uncommitted mode change to a renamed file is committed with the rename
+## An uncommitted mode change to a file an old commit added or renamed is committed with it
 
-A file's rename and its mode are one change to the file itself, which can't be
-split. When an old commit renamed the file and the uncommitted changes (and
-not the range's commits) changed its mode, starting from the old commits
-gives the change to the commit that renames it, so it commits the mode too.
-Leaving it uncommitted would leave that commit without the rename.
+A file's rename (or adding it) and its mode are one change to the file itself,
+which can't be split. When an old commit renamed or added the file and the
+uncommitted changes (and not the range's commits) changed its mode, starting
+from the old commits gives the change to the commit that made it, so it
+commits the mode too. Leaving it uncommitted would leave that commit without
+the rename or the file.
 
 ## A mode that changes and changes back isn't reproduced
 

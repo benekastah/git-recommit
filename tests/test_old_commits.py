@@ -455,6 +455,22 @@ def test_an_uncommitted_mode_change_to_a_file_an_old_commit_renamed_stays_with_t
     assert "new" in names and "old" not in names
 
 
+@pytest.mark.parametrize("uncommitted", ["mode", "content"])
+def test_a_binary_file_an_old_commit_renamed_keeps_its_rename_with_uncommitted_changes(
+    repo: Repo, uncommitted: str
+) -> None:
+    repo.commit("base", old=b"\0one")
+    repo.git("mv", "old", "new")
+    repo.commit("rename")
+    if uncommitted == "mode":
+        repo.executable("new")
+    else:
+        repo.write("new", b"\0two")
+    session = restored(repo, "HEAD~")
+    names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
+    assert "new" in names and "old" not in names
+
+
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:
     repo.commit("base", data=b"\0one")
     old = [repo.commit("change data", data=b"\0two")]

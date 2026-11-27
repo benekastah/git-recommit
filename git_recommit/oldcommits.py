@@ -100,23 +100,23 @@ def _meta_by(
     """Which old commit (of the (sha, tree)s) made the file's change to
     itself, given the last to change it, if any: that one, but for a rename,
     which the first commit to have the new path made, or if none does, it's
-    uncommitted. A file that changes as a whole and has uncommitted changes
-    has them in that one change, which so stays uncommitted; so does one whose
-    mode the uncommitted changes changed (if they changed it back, there's no
-    mode change in the diff, and what's in it was committed). But not a
-    renamed file, whose rename and mode are one change that can't be split:
-    it must stay with the commit that renames the file, with the mode (see
-    docs/issues.md)."""
+    uncommitted. (A rename and a change of mode are one change that can't be
+    split, so the commit that renames the file keeps it whatever the
+    uncommitted changes do to the file, mode included: see docs/issues.md.)
+    Otherwise a file that changes as a whole and has uncommitted changes has
+    them in that one change, which so stays uncommitted; so does one whose mode
+    the uncommitted changes changed (if they changed it back, there's no mode
+    change in the diff, and what's in it was committed)."""
+    if diff.old_path is not None and not diff.submodule:
+        # For a file that changes as a whole, the rename is all of its change;
+        # edits make the commits before the last as they were.
+        return next((sha for sha, blobs in trees if diff.path in blobs), None)
     mode_changed = None not in (diff.old_mode, diff.new_mode) and diff.old_mode != diff.new_mode
-    if (diff.whole and uncommitted) or (mode_uncommitted and mode_changed and diff.old_path is None):
+    if (diff.whole and uncommitted) or (mode_uncommitted and mode_changed):
         return None
-    if diff.old_path is None or diff.submodule:
-        # (A submodule can't be edited, so its rename, which is all of its
-        # change, stays with the last commit.)
-        return last
-    # For a file that changes as a whole, the rename is all of its change;
-    # edits make the commits before the last as they were.
-    return next((sha for sha, blobs in trees if diff.path in blobs), None)
+    # (A submodule can't be edited, so its rename, which is all of its
+    # change, stays with the last commit.)
+    return last
 
 
 @dataclass

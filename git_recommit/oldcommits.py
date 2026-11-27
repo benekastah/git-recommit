@@ -31,7 +31,8 @@ def restore(session: Session) -> None:
     later commit rewrites), the changes alone can't make the commit as it
     was, so it gets edits that do. Building the plan unchanged makes the
     same trees, but where a submodule changes, or a file's mode changes and
-    changes back, which edits can't do (see docs/issues.md).
+    changes back, or a file's rename is spread over several commits, which edits
+    can't do (see docs/issues.md).
     """
     old = _old_commits(session)
     # The commit of the uncommitted changes, after them, isn't one of them.

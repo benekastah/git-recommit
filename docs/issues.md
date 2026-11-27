@@ -46,6 +46,14 @@ from the old commits gives the change to the commit that made it, so it
 commits the mode too. Leaving it uncommitted would leave that commit without
 the rename or the file.
 
+## A rename spread over several old commits isn't reproduced
+
+A file's rename is one change (one `FileDiff` covers both paths), which goes to
+one commit: the first whose tree has the new path and not the old. So when
+one old commit copies a file and a later one deletes the old, or a file is
+renamed back and forth, the commits in between are rebuilt without the file
+(or empty), and writing says nothing about it.
+
 ## A mode that changes and changes back isn't reproduced
 
 Starting from the old commits reproduces each file's content with edits, but

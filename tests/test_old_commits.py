@@ -473,8 +473,11 @@ def test_a_binary_file_an_old_commit_renamed_keeps_its_rename_with_uncommitted_c
     session = restored(repo, "HEAD~")
     (new,) = session.files
     assert new.status == "R"
-    names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
+    (rename,) = session.build()
+    names = repo.git("ls-tree", "-r", "--name-only", rename).splitlines()
     assert "new" in names and "old" not in names
+    # With the file as the commit had it, not as the uncommitted changes have it.
+    assert repo.git("rev-parse", f"{rename}:new") == repo.client.hash_blob(BIG)
 
 
 @pytest.mark.parametrize("content", [LINES.encode(), BIG], ids=["text", "binary"])
@@ -489,6 +492,19 @@ def test_a_rename_in_the_uncommitted_changes_isnt_made_by_a_commit_that_only_add
     (new,) = session.files
     assert new.status == "R" and new.meta_id in session.unassigned()
     assert all("old" in repo.git("ls-tree", "-r", "--name-only", sha).splitlines() for sha in session.build())
+
+
+def test_a_rename_spread_over_two_commits_goes_to_the_one_that_completes_it(repo: Repo) -> None:
+    # One commit copies the file, a later one deletes the old: git sees one
+    # rename in the range, which can only go to one of them (see docs/issues.md).
+    repo.commit("base", old=LINES)
+    repo.commit("copy it", new=LINES)
+    repo.commit("delete the old", old=None)
+    session = restored(repo, "HEAD~2")
+    (new,) = session.files
+    assert new.status == "R" and new.meta_id is not None
+    _, delete = session.plan.commits
+    assert session.plan.assignment[new.meta_id] == delete.key
 
 
 def test_an_uncommitted_change_to_a_binary_file_starts_unassigned(repo: Repo) -> None:

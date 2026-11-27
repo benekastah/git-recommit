@@ -66,11 +66,3 @@ Arguments on Windows are Unicode, so a path that isn't UTF-8 (from a
 repository made elsewhere) can't be given to git as one, e.g. to git blame
 when starting from the old commits. Writing such a name into a commit (by
 the index, through stdin) works.
-
-## Signing and the git wrapper aren't tested on Windows
-
-`test_signs_commits_when_git_is_set_to` (`tests/test_session.py`) and
-`test_every_git_process_is_git_recommit_git` (`tests/test_git.py`) fake gpg
-and git with shell scripts, so they're skipped on Windows, and nothing tests
-either there. `AGENTS.md` asks for a test of its own on the other systems: a
-fake written in Python, with a launcher Windows can run.

@@ -20,6 +20,22 @@ from git_recommit.session import Session
 GIT = real_git()
 
 
+def fake_program(path: pathlib.Path, body: str) -> str:
+    """A program at path (a path without an extension) that runs the Python
+    code body, with its arguments in sys.argv, and the path to run it by: the
+    script itself, started by its shebang, or on Windows, which has none, a
+    .cmd that launches it (which git can run where it takes a program, as for
+    gpg.program, but not as GIT_RECOMMIT_GIT, which can't be a batch file)."""
+    script = path.with_suffix(".py") if os.name == "nt" else path
+    script.write_text(f"#!{sys.executable}\nimport sys\n{body}", newline="\n", encoding="utf-8")
+    if os.name != "nt":
+        script.chmod(0o755)
+        return str(script)
+    launcher = path.with_suffix(".cmd")
+    launcher.write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
+    return str(launcher)
+
+
 @dataclass
 class Repo:
     path: pathlib.Path

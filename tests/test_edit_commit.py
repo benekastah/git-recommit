@@ -1,7 +1,3 @@
-import os
-
-import pytest
-
 from git_recommit.sequence_editor import mark_edit
 from tests.helpers import Repo
 
@@ -45,7 +41,6 @@ def test_editing_doesnt_squash_with_autosquash_on(repo: Repo) -> None:
     assert repo.git("log", "--format=%s", "-3").splitlines() == ["three", "fixup! one", "one"]
 
 
-@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
 def test_hooks_see_the_users_environment(repo: Repo) -> None:
     """git recommit mustn't change how the user's hooks treat paths."""
     repo.commit("one", f="1\n")
@@ -53,7 +48,8 @@ def test_hooks_see_the_users_environment(repo: Repo) -> None:
     seen = repo.path.parent / "seen"
     hook = repo.path / ".git" / "hooks" / "pre-rebase"
     hook.parent.mkdir(exist_ok=True)
-    hook.write_text(f'#!/bin/sh\necho "[$GIT_LITERAL_PATHSPECS]" > "{seen}"\n')
+    # git runs a hook with its own sh, even on Windows, where the path is as_posix.
+    hook.write_text(f'#!/bin/sh\necho "[$GIT_LITERAL_PATHSPECS]" > "{seen.as_posix()}"\n', newline="\n")
     hook.chmod(0o755)
     repo.recommit("--edit", "HEAD~")
     assert seen.read_text() == "[]\n"

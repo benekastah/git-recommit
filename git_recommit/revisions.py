@@ -6,6 +6,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 
+from git_recommit.diff import SUBMODULE_MODE
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 
@@ -99,6 +100,8 @@ class WorktreeStatus:
     untracked: list[str]
     # Whether the index has unresolved conflicts.
     unmerged: bool
+    # The tracked paths (from the top) that status shows as changed.
+    shown: list[str]
 
 
 def worktree_status(git: GitClient) -> WorktreeStatus:
@@ -112,24 +115,29 @@ def worktree_status(git: GitClient) -> WorktreeStatus:
         "--no-optional-locks", "status", "--porcelain=v2", "-z", "--no-renames", "--untracked-files=all"
     )
     changed = unmerged = False
-    untracked = []
+    untracked: list[str] = []
+    shown: list[str] = []
     # "? <path>" for an untracked file; for a changed one, "1 <XY> <submodule>
     # ..." (or "u ..." unmerged), where <submodule> is S<c><m><u> for a
     # submodule: "." for c if it hasn't a new commit. Paths are from the top.
     for entry in out.split(b"\0"):
         if entry.startswith(b"? "):
             untracked.append(entry[2:].decode(errors="surrogateescape"))
-        elif entry.startswith(b"1 .M S."):
-            continue
         elif entry:
+            fields = entry.split(b" ", 8)
+            if entry.startswith(b"1 ") and len(fields) == 9:
+                shown.append(fields[8].decode(errors="surrogateescape"))
+            if entry.startswith(b"1 .M S."):
+                continue
             changed = True
             unmerged = unmerged or entry.startswith(b"u ")
-    return WorktreeStatus(changed=changed, untracked=untracked, unmerged=unmerged)
+    return WorktreeStatus(changed=changed, untracked=untracked, unmerged=unmerged, shown=shown)
 
 
 def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_untracked: bool = False) -> str | None:
     """A commit, on head, of the working tree's tracked files (and whatever is
-    staged), as `git stash` makes; or None if they have no uncommitted changes
+    staged), as `git stash` makes, but with only the changes status shows
+    (not those of a submodule it ignores); or None if they have no uncommitted changes
     (by status, from worktree_status). With include_untracked, as `git stash
     -u`: its untracked files too, but for ignored ones.
 
@@ -146,9 +154,31 @@ def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_u
         index = os.path.join(scratch, "index")
         shutil.copy2(git.git_paths("index")[0], index)
         env = {"GIT_INDEX_FILE": os.fsencode(index)}
-        git.run("add", "--all" if include_untracked else "--update", "--", ":/", env=env)
+        hidden = [literal_excluded(path) for path in _hidden_changes(git, status.shown)]
+        git.run("add", "--all" if include_untracked else "--update", "--", ":/", *hidden, env=env)
         tree = git.run("write-tree", env=env)
     return git.run("commit-tree", tree, "-p", head, "-m", "Uncommitted changes")
+
+
+def _hidden_changes(git: GitClient, shown: list[str]) -> list[str]:
+    """The submodules with unstaged changes that status doesn't show (they're
+    ignored, see submodule.<name>.ignore): moved to another commit, removed or
+    replaced. `git add` would take them, but they aren't uncommitted changes."""
+    # Plumbing leaves out what the config ignores, unless it's told not to.
+    out = git.run_bytes("diff-files", "--raw", "-z", "--no-renames", "--ignore-submodules=none").split(b"\0")
+    # ":<old mode> <new mode> <old blob> <new blob> <status>", then the path.
+    submodule = SUBMODULE_MODE.encode()
+    hidden = [
+        path.decode(errors="surrogateescape")
+        for info, path in zip(out[::2], out[1::2], strict=False)
+        if info.startswith(b":") and submodule in info.removeprefix(b":").split(b" ")[:2]
+    ]
+    return [path for path in hidden if path not in shown]
+
+
+def literal_excluded(path: str) -> str:
+    """A pathspec leaving out exactly the file at path (see literal)."""
+    return f":(top,literal,exclude){path}"
 
 
 def literal(path: str) -> str:

@@ -34,16 +34,6 @@ to the last commit to change the file, even if the mode changed only in the
 uncommitted changes, which so get committed. It should be unassigned then, as
 an uncommitted rename is, or a file that changes as a whole.
 
-## A submodule the config ignores can move in the uncommitted changes
-
-Confirmed. With `submodule.<name>.ignore = all` (or `diff.ignoreSubmodules`)
-in the git config, `git status` doesn't show a submodule checked out at
-another commit than HEAD has, and so neither does git recommit, unless
-something else is uncommitted: then `revisions.worktree_commit`'s `git add`
-takes the submodule's move too, and it's an (unassigned) uncommitted change.
-(`ignore = all` in `.gitmodules` keeps `git add` from taking it.) The commit
-of the working tree should take only what `git status` shows.
-
 ## A mode that changes and changes back isn't reproduced
 
 Starting from the old commits reproduces each file's content with edits, but

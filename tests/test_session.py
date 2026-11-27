@@ -1,9 +1,12 @@
 import os
 import pathlib
+import shutil
+import stat
 
 import pytest
 
 from git_recommit.errors import RecommitError
+from git_recommit.git import GitClient
 from git_recommit.revisions import resolve_range
 from git_recommit.session import Session
 from git_recommit.snapshot import Version
@@ -547,14 +550,14 @@ def test_unassigned_new_files_that_look_like_patterns(repo: Repo) -> None:
     assert sorted(repo.git("status", "--porcelain").splitlines()) == ["A b[1].txt"]
 
 
-def with_submodule(repo: Repo) -> Repo:
-    """A submodule at sub (its own repository, checked out), added in a
+def with_submodule(repo: Repo, name: str = "sub") -> Repo:
+    """A submodule at name (its own repository, checked out), added in a
     commit, then a commit after."""
-    sub = Repo(repo.path / "sub")
+    sub = Repo(repo.path / name)
     sub.path.mkdir()
     sub.git("init", "--quiet")
     sub.commit("in sub", s="s\n")
-    repo.write(".gitmodules", '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n')
+    repo.write(".gitmodules", f'[submodule "{name}"]\n\tpath = {name}\n\turl = ./{name}\n')
     repo.commit("add sub")
     repo.commit("after", f="f\n")
     return sub
@@ -566,6 +569,60 @@ def test_a_submodule_the_config_ignores_has_no_uncommitted_changes(repo: Repo) -
     assert repo.session("HEAD~").uncommitted
     repo.git("config", "submodule.sub.ignore", "all")
     assert not repo.session("HEAD~").uncommitted
+
+
+@pytest.mark.parametrize(
+    ("setting", "value", "taken"),
+    [
+        ("submodule.sub.ignore", "all", False),
+        ("diff.ignoreSubmodules", "all", False),
+        ("submodule.sub.ignore", "dirty", True),
+    ],
+    ids=["ignore-all", "diff-ignore-all", "dirty-still-shows-a-move"],
+)
+def test_a_submodule_move_the_config_hides_isnt_taken_with_other_uncommitted_changes(
+    repo: Repo, setting: str, value: str, taken: bool
+) -> None:
+    # git status doesn't show the move, so it isn't an uncommitted change, even
+    # when something else is, and `git add` would take it with that.
+    sub = with_submodule(repo)
+    sub.commit("moved", s="s2\n")
+    repo.git("config", setting, value)
+    repo.write("f", "changed\n")
+    assert [d.path for d in repo.session("HEAD~").files] == (["f", "sub"] if taken else ["f"])
+
+
+def test_a_submodule_the_config_hides_isnt_taken_whatever_the_pathspec_reads_as(repo: Repo) -> None:
+    # A name like a pattern, which must not leave out a file the pattern
+    # matches ("s1 b"), with a space, and untracked files included too.
+    sub = with_submodule(repo, "s[1] b")
+    repo.commit("add files", **{"s1 b": "a\n", "d/x": "x\n"})
+    sub.commit("moved", s="s2\n")
+    repo.git("config", "diff.ignoreSubmodules", "all")
+    repo.write("s1 b", "changed\n")
+    repo.write("new", "untracked\n")
+    session = Session.load(repo.client, "HEAD", include_untracked=True)
+    assert [d.path for d in session.files] == ["new", "s1 b"]
+
+
+def test_a_submodule_the_config_hides_isnt_taken_when_run_from_a_subdirectory(repo: Repo) -> None:
+    # The exclusion is from the top of the working tree, like the paths git reports.
+    sub = with_submodule(repo)
+    repo.commit("add a directory", **{"d/x": "x\n"})
+    sub.commit("moved", s="s2\n")
+    repo.git("config", "submodule.sub.ignore", "all")
+    repo.write("d/x", "changed\n")
+    session = Session.load(GitClient(repo.path / "d"), "HEAD")
+    assert [d.path for d in session.files] == ["d/x"]
+
+
+def test_a_submodule_the_config_hides_isnt_taken_when_its_directory_is_removed(repo: Repo) -> None:
+    with_submodule(repo)
+    repo.git("config", "submodule.sub.ignore", "all")
+    # git's objects are read-only, which Windows won't delete.
+    shutil.rmtree(repo.path / "sub", onexc=lambda func, path, _: (os.chmod(path, stat.S_IWRITE), func(path)))
+    repo.write("f", "changed\n")
+    assert [d.path for d in repo.session("HEAD~").files] == ["f"]
 
 
 @pytest.mark.parametrize("dirty", ["untracked", "s"], ids=["untracked", "tracked"])

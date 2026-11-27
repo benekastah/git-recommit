@@ -153,8 +153,9 @@ These were the user's choices for v0; ask before changing them.
 
 - `os.path` is fine for paths, as well as `pathlib`. Run git through
   `GitClient`, with arguments as a list, never through a shell. The editor
-  and the validate command are the user's shell commands, so those do run
-  through one. `GitClient` (`git_recommit/git.py`) is py-git-client's `Git`
+  is the user's shell command, which git runs with its own sh, so it goes
+  through a `!` alias (`editor.edit`), as git runs one, on every system; the
+  validate command is too, but goes through Python's shell. `GitClient` (`git_recommit/git.py`) is py-git-client's `Git`
   (`git_client`), which starts git by its full path, the quickest way each
   system allows; it adds the reads git recommit makes, and its `run`,
   `run_bytes` and those reads report Git failures as `RecommitError`s.

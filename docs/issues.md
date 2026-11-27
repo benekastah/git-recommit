@@ -51,14 +51,14 @@ an edit can't change a file's mode (or kind, e.g. a file to a symlink). So a
 file whose mode changes in one old commit and changes back in a later one
 (which the range's diff doesn't show) keeps its mode in every new commit.
 
-## On Windows, the TUI runs the editor with cmd.exe
+## On Windows, --validate runs its command with cmd.exe
 
-git runs editors with its own sh, even on Windows, but `e` and `r` run
-`git var GIT_EDITOR` through Python's shell, which is cmd.exe there. So an
-editor command written for sh (e.g. `'C:/Program Files/Vim/vim.exe'`, in
-single quotes) fails, as does git's fallback, `vi`, which isn't on cmd.exe's
-PATH. Running it as git does (e.g. through a `!` alias, which also gets
-git's PATH) would fix it.
+The editor runs as git runs it, with git's own sh, but the validate command
+(`--validate`, and the TUI's) goes through Python's shell, which is cmd.exe on
+Windows. So a command written for sh (e.g. one with single quotes or `&&` as sh
+reads it) behaves differently there than in the README's examples, though it's
+the user's own command either way. Which shell it should be, git's or the
+system's, isn't decided.
 
 ## On Windows, a name that isn't UTF-8 can't be passed to git
 

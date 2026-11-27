@@ -49,6 +49,16 @@ class Repo:
         self.git("add", "--", name)
         self.git("update-index", "--chmod=+x", "--", name)
 
+    def stage_raw_name(self, name: bytes, content: bytes) -> None:
+        """Stage a file with a name that may not be UTF-8, made with plumbing
+        through stdin (a name can't be an argument on Windows, and some
+        filesystems, e.g. macOS's, refuse such names); skip-worktree keeps git
+        from seeing it as deleted from the working tree."""
+        blob = self.client.hash_blob(content)
+        info = f"100644 {blob} 0\t".encode() + name + b"\0"
+        self.client.run_bytes("update-index", "--add", "-z", "--index-info", input=info)
+        self.client.run_bytes("update-index", "--skip-worktree", "-z", "--stdin", input=name + b"\0")
+
     def commit(self, message: str, **files: str | bytes | None) -> str:
         """Write (or with None, delete) the files, and commit everything."""
         for name, content in files.items():

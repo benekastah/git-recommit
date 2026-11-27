@@ -397,16 +397,10 @@ def test_building_a_change_of_kind(repo: Repo) -> None:
     assert repo.git("ls-tree", sha, "link").startswith("120000 blob")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows can't pass git a name that isn't UTF-8 as an argument")
 def test_building_a_file_whose_name_isnt_utf8(repo: Repo) -> None:
-    # Made with plumbing, since some filesystems (e.g. macOS's) refuse such
-    # names; skip-worktree keeps git from seeing it as deleted from the
-    # working tree.
     name = b"caf\xe9.txt"
-    blob = repo.client.hash_blob(b"x\n")
-    repo.client.run_bytes("update-index", "--add", "--cacheinfo", b"100644," + blob.encode() + b"," + name)
+    repo.stage_raw_name(name, b"x\n")
     repo.git("commit", "--quiet", "-m", "add")
-    repo.client.run_bytes("update-index", "--skip-worktree", name)
     session = repo.session("HEAD~")
     session.restore_old_commits()
     (sha,) = session.build()

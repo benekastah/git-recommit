@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 
 import pytest
 
@@ -547,14 +548,14 @@ def test_unassigned_new_files_that_look_like_patterns(repo: Repo) -> None:
     assert sorted(repo.git("status", "--porcelain").splitlines()) == ["A b[1].txt"]
 
 
-def with_submodule(repo: Repo) -> Repo:
-    """A submodule at sub (its own repository, checked out), added in a
+def with_submodule(repo: Repo, name: str = "sub") -> Repo:
+    """A submodule at name (its own repository, checked out), added in a
     commit, then a commit after."""
-    sub = Repo(repo.path / "sub")
+    sub = Repo(repo.path / name)
     sub.path.mkdir()
     sub.git("init", "--quiet")
     sub.commit("in sub", s="s\n")
-    repo.write(".gitmodules", '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n')
+    repo.write(".gitmodules", f'[submodule "{name}"]\n\tpath = {name}\n\turl = ./{name}\n')
     repo.commit("add sub")
     repo.commit("after", f="f\n")
     return sub
@@ -587,6 +588,25 @@ def test_a_submodule_move_the_config_hides_isnt_taken_with_other_uncommitted_cha
     repo.git("config", setting, value)
     repo.write("f", "changed\n")
     assert [d.path for d in repo.session("HEAD~").files] == (["f", "sub"] if taken else ["f"])
+
+
+def test_a_submodule_the_config_hides_isnt_taken_whatever_the_pathspec_reads_as(repo: Repo) -> None:
+    # A name like a pattern, a space, and untracked files included too.
+    sub = with_submodule(repo, "s[1] b")
+    sub.commit("moved", s="s2\n")
+    repo.git("config", "diff.ignoreSubmodules", "all")
+    repo.write("f", "changed\n")
+    repo.write("new", "untracked\n")
+    session = Session.load(repo.client, "HEAD~", include_untracked=True)
+    assert [d.path for d in session.files] == ["f", "new"]
+
+
+def test_a_submodule_the_config_hides_isnt_taken_when_its_directory_is_removed(repo: Repo) -> None:
+    with_submodule(repo)
+    repo.git("config", "submodule.sub.ignore", "all")
+    shutil.rmtree(repo.path / "sub")
+    repo.write("f", "changed\n")
+    assert [d.path for d in repo.session("HEAD~").files] == ["f"]
 
 
 @pytest.mark.parametrize("dirty", ["untracked", "s"], ids=["untracked", "tracked"])

@@ -441,7 +441,9 @@ def test_a_file_deleted_and_added_again_with_another_mode_is_reproduced(repo: Re
 @pytest.mark.parametrize("content", [LINES.encode(), b"\0binary"], ids=["text", "binary"])
 def test_a_history_without_mode_changes_has_no_edit_with_a_mode(repo: Repo, content: bytes) -> None:
     # Where the file isn't in a commit without its edit (deleted, then added
-    # again), the mode the edit gets anyway is no part of it.
+    # again), the mode the edit gets anyway is no part of it. (A binary file
+    # isn't there without the edit; a text file's content merges, so it is:
+    # the text case is a control.)
     repo.commit("base", data=content)
     repo.commit("delete it", data=None)
     repo.commit("add it again", data=content + b"more\n")

@@ -286,7 +286,7 @@ python3 dev.py man            # man/git-recommit.1, the man page, from this READ
 ```
 
 The man page, `man/git-recommit.1`, is made from this README by `dev.py man`,
-with pandoc (from the `pypandoc_binary` dev dependency): its sections but
+with pandoc (the version `dev.py` pins, which it downloads into `.venv`): its sections but
 Install and Development, with the SYNOPSIS in `dev_project.py`. The pre-commit
 hook makes it again when a commit changes the README, and adds it to the
 commit (or stops a `git commit PATH`, which it can't add the page to: run

@@ -5,6 +5,7 @@ import shutil
 import pytest
 
 from git_recommit.errors import RecommitError
+from git_recommit.git import GitClient
 from git_recommit.revisions import resolve_range
 from git_recommit.session import Session
 from git_recommit.snapshot import Version
@@ -591,14 +592,27 @@ def test_a_submodule_move_the_config_hides_isnt_taken_with_other_uncommitted_cha
 
 
 def test_a_submodule_the_config_hides_isnt_taken_whatever_the_pathspec_reads_as(repo: Repo) -> None:
-    # A name like a pattern, a space, and untracked files included too.
+    # A name like a pattern, which must not leave out a file the pattern
+    # matches ("s1 b"), with a space, and untracked files included too.
     sub = with_submodule(repo, "s[1] b")
+    repo.commit("add files", **{"s1 b": "a\n", "d/x": "x\n"})
     sub.commit("moved", s="s2\n")
     repo.git("config", "diff.ignoreSubmodules", "all")
-    repo.write("f", "changed\n")
+    repo.write("s1 b", "changed\n")
     repo.write("new", "untracked\n")
-    session = Session.load(repo.client, "HEAD~", include_untracked=True)
-    assert [d.path for d in session.files] == ["f", "new"]
+    session = Session.load(repo.client, "HEAD", include_untracked=True)
+    assert [d.path for d in session.files] == ["new", "s1 b"]
+
+
+def test_a_submodule_the_config_hides_isnt_taken_when_run_from_a_subdirectory(repo: Repo) -> None:
+    # The exclusion is from the top of the working tree, like the paths git reports.
+    sub = with_submodule(repo)
+    repo.commit("add a directory", **{"d/x": "x\n"})
+    sub.commit("moved", s="s2\n")
+    repo.git("config", "submodule.sub.ignore", "all")
+    repo.write("d/x", "changed\n")
+    session = Session.load(GitClient(repo.path / "d"), "HEAD")
+    assert [d.path for d in session.files] == ["d/x"]
 
 
 def test_a_submodule_the_config_hides_isnt_taken_when_its_directory_is_removed(repo: Repo) -> None:

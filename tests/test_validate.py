@@ -1,10 +1,8 @@
-import os
+import pathlib
 import sys
 
-import pytest
-
 from git_recommit import validate
-from tests.helpers import Repo
+from tests.helpers import Repo, fake_program, shell_quoted
 
 # Passes in a commit that has the file "ok".
 CHECK = f"{sys.executable} -c \"import os, sys; sys.exit(0 if os.path.exists('ok') else 1)\""
@@ -54,14 +52,17 @@ def test_end_of_input_aborts(repo: Repo) -> None:
     assert validate.run(repo.client, CHECK, commits(repo), ask=ask, say=lambda _: None) == validate.Outcome("abort")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as a hook")
-def test_the_command_and_hooks_see_the_users_environment(repo: Repo) -> None:
+def test_the_command_and_hooks_see_the_users_environment(repo: Repo, tmp_path: pathlib.Path) -> None:
     sha = repo.commit("good", ok="1")
     seen = repo.path.parent / "seen"
     hook = repo.path / ".git" / "hooks" / "post-checkout"
     hook.parent.mkdir(exist_ok=True)
-    hook.write_text(f'#!/bin/sh\necho "hook [$GIT_LITERAL_PATHSPECS]" >> "{seen}"\n')
+    # git runs a hook with its own sh, even on Windows, where the path is as_posix.
+    hook.write_text(f'#!/bin/sh\necho "hook [$GIT_LITERAL_PATHSPECS]" >> "{seen.as_posix()}"\n', newline="\n")
     hook.chmod(0o755)
-    command = f'echo "command [$GIT_LITERAL_PATHSPECS]" >> "{seen}"'
-    validate.run(repo.client, command, [(sha, "good")], ask=lambda _: "", say=lambda _: None)
+    command = fake_program(
+        tmp_path / "check",
+        f"import os\nopen({str(seen)!r}, 'a').write('command [' + os.environ.get('GIT_LITERAL_PATHSPECS', '') + ']\\n')\n",
+    )
+    validate.run(repo.client, shell_quoted(command), [(sha, "good")], ask=lambda _: "", say=lambda _: None)
     assert set(seen.read_text().splitlines()) == {"hook []", "command []"}

@@ -116,7 +116,24 @@ def test_runs_git_recommit_git_if_set(monkeypatch: pytest.MonkeyPatch) -> None:
     assert GitClient().program == "/somewhere/git"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the wrapper is a shell script")
+@pytest.mark.skipif(sys.platform != "win32", reason="the next test, with a wrapper, is this one's and more")
+def test_git_recommit_needs_no_git_on_path_but_git_recommit_git(repo: Repo, tmp_path: pathlib.Path) -> None:
+    # The next test, which has no Windows (GIT_RECOMMIT_GIT can't be a batch
+    # file there), checks every git process is GIT_RECOMMIT_GIT with a wrapper;
+    # this checks none looks git up on PATH, which is empty: reading,
+    # rewording and writing (with a hook, which git runs with its own sh) work.
+    repo.commit("second", f="f\n")
+    hook = repo.path / ".git" / "hooks" / "commit-msg"
+    hook.write_text('#!/bin/sh\necho "Change-Id: I1" >> "$1"\n', newline="\n")
+    hook.chmod(0o755)
+    (tmp_path / "empty").mkdir()
+    env = {"GIT_RECOMMIT_GIT": str(GIT), "PATH": str(tmp_path / "empty")}
+    for args in (["start", "HEAD~"], ["commit", "reword", "1", "reworded"], ["write"]):
+        repo.recommit(*args, env=env)
+    assert repo.git("log", "-1", "--format=%B") == "reworded\nChange-Id: I1"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the wrapper is a shell script (see the test above)")
 def test_every_git_process_is_git_recommit_git(repo: Repo, tmp_path: pathlib.Path) -> None:
     repo.commit("second", f="f\n")
     log = tmp_path / "log"

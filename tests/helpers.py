@@ -2,6 +2,7 @@ import io
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -18,6 +19,30 @@ from git_recommit.session import Session
 # GIT_RECOMMIT_GIT): git itself, rather than whatever git is on PATH (e.g. a
 # wrapper, like git-ai's, which would be slower).
 GIT = real_git()
+
+
+def fake_program(path: pathlib.Path, body: str) -> str:
+    """Make a program that runs the Python code body (its arguments in
+    sys.argv) and return what runs it: path (a path without an extension) on
+    POSIX, a script that launches the Python script, which a shebang with a
+    space in it couldn't; on Windows, which has no shebangs, a .cmd that
+    launches it (git can run one where it takes a program, as for gpg.program,
+    but GIT_RECOMMIT_GIT can't be a batch file). Its path must be ASCII."""
+    script = path.with_suffix(".py")
+    script.write_text(f"import sys\n{body}", newline="\n", encoding="utf-8")
+    if os.name != "nt":
+        path.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n', newline="\n", encoding="utf-8")
+        path.chmod(0o755)
+        return str(path)
+    launcher = path.with_suffix(".cmd")
+    launcher.write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
+    return str(launcher)
+
+
+def shell_quoted(path: str) -> str:
+    """path, quoted for the shell subprocess runs a command with: cmd.exe on
+    Windows, sh elsewhere."""
+    return subprocess.list2cmdline([path]) if os.name == "nt" else shlex.quote(path)
 
 
 @dataclass

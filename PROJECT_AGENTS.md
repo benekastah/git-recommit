@@ -142,12 +142,13 @@ These were the user's choices for v0; ask before changing them.
   Windows runs. CI runs it in `.github/workflows/project.yml`.
 - CI's time limits in `.github/workflows/ci.yml` (the template's) are set to
   this project's times, each edit marked "git-recommit:".
-- Two tests fake a program with a shell script, and are skipped on Windows:
-  gpg, to check that commits are signed (`tests/test_session.py`), and a git
-  wrapper, to check that every git process is the one git-recommit names
-  (`tests/test_git.py`). That's deliberate: each fakes what git itself runs,
-  in the way git runs it. They have no Windows counterpart yet (see
-  `docs/issues.md`).
+- Fake programs (e.g. gpg) are Python scripts with a launcher
+  (`tests/helpers.fake_program`), as `AGENTS.md` says. One test still fakes
+  git itself with a shell script, to check that every git process is the one
+  git-recommit names (`tests/test_git.py`), and is skipped on Windows, where
+  `GIT_RECOMMIT_GIT` can't be a batch file; a test of its own there checks that
+  nothing needs a git on PATH. Hooks in tests are sh scripts, which git runs
+  with its own sh on every system.
 
 ## Linux, macOS and Windows
 

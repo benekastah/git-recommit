@@ -7,7 +7,7 @@ from git_recommit.errors import RecommitError
 from git_recommit.revisions import resolve_range
 from git_recommit.session import Session
 from git_recommit.snapshot import Version
-from tests.helpers import Repo
+from tests.helpers import Repo, fake_program
 
 FEATURE = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
 
@@ -438,14 +438,13 @@ def script(path: pathlib.Path, body: str) -> str:
     return str(path)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="uses a shell script as gpg")
 def test_signs_commits_when_git_is_set_to(repo: Repo, tmp_path: pathlib.Path) -> None:
     # A stand-in for gpg, which says it signed, as git checks it does.
-    gpg = script(
+    gpg = fake_program(
         tmp_path / "gpg",
-        "cat > /dev/null\n"
-        "printf '\\n[GNUPG:] SIG_CREATED D 1 8 00 0 0\\n' >&2\n"
-        "printf -- '-----BEGIN PGP SIGNATURE-----\\nfake\\n-----END PGP SIGNATURE-----\\n'\n",
+        "sys.stdin.buffer.read()\n"
+        "sys.stderr.write('\\n[GNUPG:] SIG_CREATED D 1 8 00 0 0\\n')\n"
+        "sys.stdout.write('-----BEGIN PGP SIGNATURE-----\\nfake\\n-----END PGP SIGNATURE-----\\n')\n",
     )
     repo.git("config", "gpg.program", gpg)
     repo.git("config", "user.signingKey", "test@example.com")

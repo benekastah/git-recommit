@@ -102,3 +102,10 @@ def test_an_editor_that_fails_changes_nothing(
     python_editor(tmp_path, monkeypatch, "open(sys.argv[1], 'wb').write(b'half'); sys.exit(1)")
     with pytest.raises(RecommitError, match="the editor failed"):
         edit(repo.client, b"opened\n", "file.txt")
+
+
+def test_an_editor_that_is_the_no_op_colon_changes_nothing(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
+    # As for `git commit`, which opens no editor then (GIT_EDITOR=: is a way to
+    # say so).
+    monkeypatch.setenv("GIT_EDITOR", ":")
+    assert edit(repo.client, b"opened\n", "file.txt") == b"opened\n"

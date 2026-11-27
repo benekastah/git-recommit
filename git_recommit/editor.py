@@ -13,14 +13,21 @@ def edit(git: GitClient, content: bytes, filename: str) -> bytes:
     filename's name so the editor knows what kind of file it is, and return what
     they saved."""
     editor = git.run("var", "GIT_EDITOR")
+    if editor == ":":
+        # git's way to say there's no editor (as for `git commit`): it runs a
+        # command without shell syntax by itself, which an alias can't.
+        return content
     with tempfile.TemporaryDirectory() as scratch:
         path = os.path.join(scratch, _local_name(filename))
         with open(path, "wb") as f:
             f.write(content)
         # As git runs an editor: with its own sh (even on Windows, where
         # Python's shell is cmd.exe, which wouldn't take an editor written for
-        # sh), as `<editor> "$@"`, which a `!` alias does. No timeout: the user
-        # takes as long as they take.
+        # sh), as `<editor> "$@"`, which a `!` alias does (so the editor, and
+        # whatever it runs, gets git's environment for an alias, e.g. GIT_PREFIX,
+        # and runs from the top of the worktree, as with `git commit`; a
+        # git-recommit-edit on PATH would run instead of an alias, which isn't
+        # a name anyone has). No timeout: the user takes as long as they take.
         if not git.passthrough("-c", f"alias.recommit-edit=!{editor}", "recommit-edit", path, timeout=None):
             raise RecommitError("the editor failed, so nothing was changed")
         with open(path, "rb") as f:

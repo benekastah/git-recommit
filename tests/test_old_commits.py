@@ -440,16 +440,12 @@ def test_a_name_git_cant_be_given_as_an_argument_is_not_blamed(repo: Repo, monke
     # On Windows, where an argument is Unicode, so a name that isn't UTF-8 can't
     # be one. Its changes go to the last commit that changed the file, with
     # edits that make the commits before as they were. (Faked here: on Linux
-    # git is given the name.) Made with plumbing, since some filesystems refuse
-    # such names; skip-worktree keeps git from seeing it as deleted.
+    # git is given the name.)
     name = b"caf\xe9.txt"
     old = []
     for text in (b"one\n", b"one\ntwo\n"):
-        blob = repo.client.hash_blob(text)
-        repo.client.run_bytes("update-index", "--add", "--cacheinfo", b"100644," + blob.encode() + b"," + name)
-        repo.git("commit", "--quiet", "-m", text.decode())
-        repo.client.run_bytes("update-index", "--skip-worktree", name)
-        old.append(repo.git("rev-parse", "HEAD"))
+        repo.stage_unlisted_name(name, text)
+        old.append(repo.commit(text.decode()))
     monkeypatch.setattr(oldcommits, "WINDOWS", True, raising=False)
     blamed: list[tuple[object, ...]] = []
     run_bytes = GitClient.run_bytes

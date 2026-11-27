@@ -14,8 +14,9 @@ def edit(git: GitClient, content: bytes, filename: str) -> bytes:
     they saved."""
     editor = git.run("var", "GIT_EDITOR")
     if editor == ":":
-        # git's way to say there's no editor (as for `git commit`): it runs a
-        # command without shell syntax by itself, which an alias can't.
+        # git's way to say there's no editor, which it skips (as for `git
+        # commit`). The alias below would fail: git starts a command with no
+        # shell syntax directly, and `:` is only a shell builtin.
         return content
     with tempfile.TemporaryDirectory() as scratch:
         path = os.path.join(scratch, _local_name(filename))

@@ -1,6 +1,7 @@
 import os
 import pathlib
 import shutil
+import stat
 
 import pytest
 
@@ -618,7 +619,8 @@ def test_a_submodule_the_config_hides_isnt_taken_when_run_from_a_subdirectory(re
 def test_a_submodule_the_config_hides_isnt_taken_when_its_directory_is_removed(repo: Repo) -> None:
     with_submodule(repo)
     repo.git("config", "submodule.sub.ignore", "all")
-    shutil.rmtree(repo.path / "sub")
+    # git's objects are read-only, which Windows won't delete.
+    shutil.rmtree(repo.path / "sub", onexc=lambda func, path, _: (os.chmod(path, stat.S_IWRITE), func(path)))
     repo.write("f", "changed\n")
     assert [d.path for d in repo.session("HEAD~").files] == ["f"]
 

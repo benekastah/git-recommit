@@ -76,6 +76,10 @@ def restore(session: Session) -> None:
             # Only one commit changed it, so it made every change.
             plan.assign([i for i in diff.ids if i != diff.meta_id], last)
             continue
+        if paths & uncommitted and not _blamed(diff):
+            # Nothing says which changes the uncommitted ones are, so none go
+            # to a commit (the edits still make each as it was).
+            continue
         for i, made_by in _made_by(session, diff, removed_by).items():
             plan.assign([i], keys.get(made_by or "", last))
     # Who made each change, for warning when a commit will be authored by
@@ -217,6 +221,11 @@ def _blame(session: Session, path: str, reverse: bool) -> dict[int | None, str]:
         if match := BLAME_ENTRY.match(entry):
             lines[int(match[2])] = match[1].decode()
     return lines
+
+
+def _blamed(diff: FileDiff) -> bool:
+    """Whether git can be asked who made the file's changes (see WINDOWS)."""
+    return not WINDOWS or all(_is_utf8(path) for path in (diff.path, diff.old_path) if path is not None)
 
 
 def _is_utf8(path: str) -> bool:

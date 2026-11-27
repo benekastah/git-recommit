@@ -399,7 +399,7 @@ def test_building_a_change_of_kind(repo: Repo) -> None:
 
 def test_building_a_file_whose_name_isnt_utf8(repo: Repo) -> None:
     name = b"caf\xe9.txt"
-    repo.stage_unlisted_name(name, b"x\n")
+    repo.stage_raw_name(name, b"x\n")
     repo.git("commit", "--quiet", "-m", "add")
     session = repo.session("HEAD~")
     session.restore_old_commits()

@@ -436,25 +436,46 @@ def test_a_binary_file_renamed_then_changed(repo: Repo) -> None:
     assert trees(repo, session.build()) == trees(repo, old)
 
 
-def test_a_name_git_cant_be_given_as_an_argument_is_not_blamed(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
-    # On Windows, where an argument is Unicode, so a name that isn't UTF-8 can't
-    # be one. Its changes go to the last commit that changed the file, with
-    # edits that make the commits before as they were. (Faked here: on Linux
-    # git is given the name.)
+def raw_name_history(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> tuple[bytes, list[str], list[tuple[object, ...]]]:
+    """Two commits of a file whose name isn't UTF-8, as on Windows, where it
+    can't be an argument (faked here: on Linux git takes it); and the blame
+    commands run, which a spy collects."""
     name = b"caf\xe9.txt"
-    old = []
+    old: list[str] = []
     for text in (b"one\n", b"one\ntwo\n"):
-        repo.stage_unlisted_name(name, text)
+        repo.stage_raw_name(name, text)
         old.append(repo.commit(text.decode()))
-    monkeypatch.setattr(oldcommits, "WINDOWS", True, raising=False)
+    monkeypatch.setattr(oldcommits, "WINDOWS", True)
     blamed: list[tuple[object, ...]] = []
     run_bytes = GitClient.run_bytes
 
     def spy(self: GitClient, *args: object, **kwargs: object) -> bytes:
-        blamed.append(args) if args[:1] == ("blame",) else None
+        if args[:1] == ("blame",):
+            blamed.append(args)
         return run_bytes(self, *args, **kwargs)  # pyright: ignore[reportArgumentType]
 
     monkeypatch.setattr(GitClient, "run_bytes", spy)
+    return name, old, blamed
+
+
+def test_a_name_git_cant_be_given_as_an_argument_is_not_blamed(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Its changes go to the last commit that changed the file, with edits that
+    # make the commits before as they were.
+    _, old, blamed = raw_name_history(repo, monkeypatch)
     session = restored(repo, "HEAD~2")
     assert not blamed
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_uncommitted_changes_to_a_name_that_isnt_blamed_stay_uncommitted(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nothing says they weren't made by the last commit, so they'd be committed.
+    name, old, blamed = raw_name_history(repo, monkeypatch)
+    repo.stage_raw_name(name, b"one\ntwo\nthree\n")
+    session = restored(repo, "HEAD~2")
+    assert not blamed
+    # None of its changes can be told from the uncommitted one, so none is
+    # assigned; the edits make the commits as they were, without it.
+    assert session.unassigned()
     assert trees(repo, session.build()) == trees(repo, old)

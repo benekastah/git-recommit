@@ -60,14 +60,19 @@ single quotes) fails, as does git's fallback, `vi`, which isn't on cmd.exe's
 PATH. Running it as git does (e.g. through a `!` alias, which also gets
 git's PATH) would fix it.
 
-## On Windows, a file whose name isn't UTF-8 isn't blamed
+## On Windows, a file whose name isn't UTF-8 can't be passed to git as an argument
 
 Arguments on Windows are Unicode, so a path that isn't UTF-8 (from a
-repository made elsewhere) can't be given to git as one: git blame, when
-starting from the old commits. Its changes all go to the last commit that
-changed the file (with edits that make the commits before as they were), not
-to the commits that made them, and so aren't checked for who made them.
-Writing such a name into a commit (by the index, through stdin) works.
+repository made elsewhere) can't be given to git as one. Starting from the old
+commits doesn't blame such a file (its committed changes all go to the last
+commit that changed it, with edits that make the commits before as they
+were, so they're credited to that commit's author; its uncommitted changes
+are left unassigned), but still passes the name to git elsewhere: for a file
+the old commits change that ends as it started (`add_unchanged`, which finds
+it with `ls-tree`, and whose failure is hidden, so the rebuilt earlier commits
+differ from the old ones), on every edit of the file (`hash-object --path`),
+and in writing (`add --intent-to-add` for a file left uncommitted). Writing
+such a name into a commit (by the index, through stdin) works.
 
 ## Signing and the git wrapper aren't tested on Windows
 

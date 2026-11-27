@@ -479,3 +479,24 @@ def test_uncommitted_changes_to_a_name_that_isnt_blamed_stay_uncommitted(
     # assigned; the edits make the commits as they were, without it.
     assert session.unassigned()
     assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_uncommitted_changes_to_a_file_renamed_from_a_name_that_isnt_blamed_stay_uncommitted(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Blame of the old name (in the base) is what'd say that a removed line was
+    # removed by the uncommitted changes.
+    name = b"caf\xe9.txt"
+    repo.stage_raw_name(name, LINES.encode())
+    repo.git("commit", "--quiet", "-m", "base")
+    repo.write("renamed.txt", LINES)
+    repo.git("add", "renamed.txt")
+    repo.client.run_bytes("update-index", "--force-remove", "-z", "--stdin", input=name + b"\0")
+    old = [repo.commit("rename")]
+    repo.write("renamed.txt", LINES.replace("line 3\n", ""))
+    monkeypatch.setattr(oldcommits, "WINDOWS", True)
+    session = restored(repo, "HEAD~")
+    (renamed,) = session.files
+    assert renamed.status == "R"
+    assert session.unassigned()
+    assert trees(repo, session.build()) == trees(repo, old)

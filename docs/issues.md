@@ -54,13 +54,6 @@ one old commit copies a file and a later one deletes the old, or a file is
 renamed back and forth, the commits in between are rebuilt without the file
 (or empty), and writing says nothing about it.
 
-## A mode that changes and changes back isn't reproduced
-
-Starting from the old commits reproduces each file's content with edits, but
-an edit can't change a file's mode (or kind, e.g. a file to a symlink). So a
-file whose mode changes in one old commit and changes back in a later one
-(which the range's diff doesn't show) keeps its mode in every new commit.
-
 ## On Windows, the TUI runs the editor with cmd.exe
 
 git runs editors with its own sh, even on Windows, but `e` and `r` run

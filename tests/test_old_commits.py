@@ -380,6 +380,60 @@ def test_a_rename_with_changes_in_the_same_commit(repo: Repo) -> None:
     assert trees(repo, session.build()) == trees(repo, old)
 
 
+def test_a_mode_that_changes_and_changes_back_is_reproduced(repo: Repo) -> None:
+    # The range's diff has no mode change, so nothing assigned makes the mode
+    # the first commit has: an edit does.
+    repo.commit("base", script=LINES)
+    repo.executable("script")
+    first = repo.commit("make executable", script=LINES.replace("line 3\n", "three\n"))
+    repo.executable("script", executable=False)
+    second = repo.commit("make it not", script=LINES.replace("line 3\n", "three\n").replace("line 5\n", "five\n"))
+    session = restored(repo, "HEAD~2")
+    assert trees(repo, session.build()) == trees(repo, [first, second])
+
+
+def test_a_mode_that_changes_and_changes_back_with_no_other_change_is_reproduced(repo: Repo) -> None:
+    # The file isn't in the diff at all.
+    repo.commit("base", script=LINES)
+    repo.executable("script")
+    first = repo.commit("make executable")
+    repo.executable("script", executable=False)
+    second = repo.commit("make it not")
+    session = restored(repo, "HEAD~2")
+    assert session.files and trees(repo, session.build()) == trees(repo, [first, second])
+
+
+def test_a_mode_an_edit_gave_is_carried_into_later_commits_without_edits_of_their_own(repo: Repo) -> None:
+    repo.commit("base", script=LINES)
+    repo.executable("script")
+    old = [
+        repo.commit("make executable", script=LINES.replace("line 3\n", "three\n")),
+        repo.commit("change it", script=LINES.replace("line 3\n", "three\n").replace("line 9\n", "nine\n")),
+    ]
+    repo.executable("script", executable=False)
+    old.append(
+        repo.commit(
+            "make it not",
+            script=LINES.replace("line 3\n", "three\n").replace("line 9\n", "nine\n").replace("line 15\n", "fifteen\n"),
+        )
+    )
+    session = restored(repo, "HEAD~3")
+    assert trees(repo, session.build()) == trees(repo, old)
+    first, second, third = session.plan.commits
+    assert "script" in first.edits and "script" not in second.edits and "script" in third.edits
+
+
+def test_a_file_that_becomes_a_symlink_and_a_file_again_is_reproduced(repo: Repo) -> None:
+    repo.commit("base", link="target\n")
+    (repo.path / "link").unlink()
+    (repo.path / "link").symlink_to("target")
+    first = repo.commit("make it a symlink")
+    (repo.path / "link").unlink()
+    second = repo.commit("make it a file again", link="target\n")
+    session = restored(repo, "HEAD~2")
+    assert trees(repo, session.build()) == trees(repo, [first, second])
+
+
 def test_an_uncommitted_rename_starts_unassigned(repo: Repo) -> None:
     repo.commit("base", old=LINES)
     old = [repo.commit("change old", old=LINES.replace("line 3\n", "three\n"))]

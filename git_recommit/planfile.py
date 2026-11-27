@@ -114,25 +114,31 @@ def _save_edit(git: GitClient, edit: Edit) -> dict[str, Any]:
     (see plan.Edit), of blobs nothing refers to, which git gc can drop; so
     it's saved with their contents, as a text file's edit is (null where it
     keeps no blob, for no file)."""
+    saved: dict[str, Any]
     if not edit.blob:
-        return {"basis": _encode(edit.basis), "content": None if edit.content is None else _encode(edit.content)}
+        saved = {"basis": _encode(edit.basis), "content": None if edit.content is None else _encode(edit.content)}
+    else:
 
-    def content(sha: bytes | None) -> str | None:
-        return _encode(git.blob(sha.decode())) if sha else None
+        def content(sha: bytes | None) -> str | None:
+            return _encode(git.blob(sha.decode())) if sha else None
 
-    return {"basis": content(edit.basis), "content": content(edit.content), "blob": True}
+        saved = {"basis": content(edit.basis), "content": content(edit.content), "blob": True}
+    if edit.mode is not None:
+        saved["mode"] = edit.mode
+    return saved
 
 
 def _load_edit(git: GitClient, saved: dict[str, Any]) -> Edit:
+    mode = saved.get("mode")
     if not saved.get("blob"):
         content = None if saved["content"] is None else _decode(saved["content"])
-        return Edit(_decode(saved["basis"]), content)
+        return Edit(_decode(saved["basis"]), content, mode=mode)
 
     def sha(encoded: str | None) -> bytes:
         return b"" if encoded is None else git.hash_blob(_decode(encoded)).encode()
 
     # No content deletes the file; no basis is the file not being there.
-    return Edit(sha(saved["basis"]), None if saved["content"] is None else sha(saved["content"]), blob=True)
+    return Edit(sha(saved["basis"]), None if saved["content"] is None else sha(saved["content"]), blob=True, mode=mode)
 
 
 def remove(git: GitClient) -> None:

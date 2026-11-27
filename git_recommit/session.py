@@ -300,12 +300,13 @@ class Session:
             return self.git.blob(version.sha)
         return b"" if version is None or version.content is None else version.content
 
-    def set_edit(self, key: int, diff: FileDiff, content: bytes | None) -> None:
+    def set_edit(self, key: int, diff: FileDiff, content: bytes | None, mode: str | None = None) -> None:
         """Make the file content in the commit, or with None, delete it (and
-        carry that into later ones). It replaces the commit's own edit, so
-        it's judged against the file without that: content that's what the
-        file would be anyway (and isn't a conflict's resolution) is no
-        edit."""
+        carry that into later ones); and give it a mode, if it isn't the one
+        it has there (the commit's own edit's, if there is one, by default).
+        It replaces the commit's own edit, so it's judged against the file
+        without that: content that's what the file would be anyway (and isn't
+        a conflict's resolution) is no edit."""
         _check_editable(diff)
         if diff.whole and content is not None:
             # Kept as its blob id (see plan.Edit).
@@ -314,14 +315,19 @@ class Session:
         index = self.plan.index(key)
         # The file as it'd be without the commit's own edit, which this one
         # replaces: with it, the conflict it resolved wouldn't show.
-        commit.edits.pop(diff.path, None)
+        own = commit.edits.pop(diff.path, None)
         state = self.states(diff, upto=index)[index]
+        if mode is None and own is not None:
+            mode = own.mode
         # Even an edit that changes nothing resolves a conflict.
         if content is None:
             if state.version is not None or state.conflict:
                 commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
-        elif content != state.basis or state.conflict or state.version is None:
-            commit.edits[diff.path] = Edit(state.basis, content, blob=diff.whole)
+            return
+        there = state.version.mode if state.version is not None else diff.new_mode or diff.old_mode or "100644"
+        mode = None if mode == there else mode
+        if content != state.basis or state.conflict or state.version is None or mode is not None:
+            commit.edits[diff.path] = Edit(state.basis, content, blob=diff.whole, mode=mode)
 
     def add_unchanged(self, path: str) -> FileDiff:
         """The file at path (from the top), added to the files as one the

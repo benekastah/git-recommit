@@ -76,3 +76,20 @@ def test_a_subcommand_finds_every_git_path_with_one_git(repo: Repo, git_calls: l
         git_calls.clear()
         repo.recommit(*args)
         assert sum("--git-path" in call for call in git_calls) == 1, args
+
+
+def test_a_mode_an_edit_gives_survives_saving_and_loading(repo: Repo) -> None:
+    repo.commit("base", script="a\n")
+    repo.executable("script")
+    repo.commit("make executable", script="b\n")
+    repo.executable("script", executable=False)
+    repo.commit("make it not", script="c\n")
+    session = repo.session("HEAD~2")
+    session.restore_old_commits()
+    saved = {commit.message: commit.edits for commit in session.plan.commits}
+    assert saved["make executable"]["script"].mode == "100755"
+
+    planfile.save(session)
+    loaded = planfile.load(repo.client)
+
+    assert {commit.message: commit.edits for commit in loaded.plan.commits} == saved

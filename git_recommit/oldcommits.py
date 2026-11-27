@@ -30,9 +30,8 @@ def restore(session: Session) -> None:
     Where a commit's changes overlap a later one's (e.g. it adds a line a
     later commit rewrites), the changes alone can't make the commit as it
     was, so it gets edits that do. Building the plan unchanged makes the
-    same trees, but where a submodule changes, or a file's mode changes and
-    changes back, or a file's rename is spread over several commits, which edits
-    can't do (see docs/issues.md).
+    same trees, but where a submodule changes, or a file's rename is spread over
+    several commits, which edits can't do (see docs/issues.md).
     """
     old = _old_commits(session)
     # The commit of the uncommitted changes, after them, isn't one of them.
@@ -96,7 +95,7 @@ def _meta_by(
     last: str | None,
     uncommitted: bool,
     mode_uncommitted: bool,
-    trees: Iterable[tuple[str, dict[str, str]]],
+    trees: Iterable[tuple[str, Tree]],
 ) -> str | None:
     """Which old commit (of the (sha, tree)s) made the file's change to
     itself, given the last to change it, if any: that one, but for a rename,
@@ -121,20 +120,25 @@ def _meta_by(
     return last
 
 
+# Each file's (mode, blob) in a commit.
+Tree = dict[str, tuple[str, str]]
+
+
 @dataclass
 class _OldCommit:
     sha: str
     author: Author
     # Each path it changes (from its parent, without finding renames), and
-    # the blob it then has there, or None for none (or a submodule).
-    changes: list[tuple[str, str | None]] = field(default_factory=list)
+    # the blob it then has there, or None for none (or a submodule), and the
+    # mode.
+    changes: list[tuple[str, str | None, str]] = field(default_factory=list)
     # The paths among them whose mode it changes (but not by adding or
     # deleting them).
     mode_changed: set[str] = field(default_factory=set)
 
     @property
     def changed(self) -> list[str]:
-        return [path for path, _ in self.changes]
+        return [path for path, _, _ in self.changes]
 
 
 def _touched_by(commits: list[_OldCommit]) -> dict[str, list[str]]:
@@ -182,7 +186,7 @@ def _old_commits(session: Session) -> list[_OldCommit]:
             old_mode, new_mode, _, blob, status = entry.decode().removeprefix(":").split(" ")
             path = next(fields).decode(errors="surrogateescape")
             gone = status == "D" or new_mode == SUBMODULE_MODE
-            commits[-1].changes.append((path, None if gone else blob))
+            commits[-1].changes.append((path, None if gone else blob, new_mode))
             if status not in "AD" and old_mode != new_mode:
                 commits[-1].mode_changed.add(path)
         elif entry:
@@ -234,9 +238,9 @@ def _blame(session: Session, path: str, reverse: bool) -> dict[int | None, str]:
     return lines
 
 
-def _reproduce(session: Session, trees: list[dict[str, str]]) -> None:
+def _reproduce(session: Session, trees: list[Tree]) -> None:
     """Give each commit of the plan the edits it needs to have each file
-    (but submodules) as the old commit with trees[i] does."""
+    (but submodules) as the old commit with trees[i] does, with its mode."""
     # As an id's length says: SHA-1's are 40 hex digits, SHA-256's 64.
     object_format = "sha1" if len(session.base) == 40 else "sha256"
 
@@ -252,12 +256,18 @@ def _reproduce(session: Session, trees: list[dict[str, str]]) -> None:
                 if version is not None:
                     session.set_edit(commit.key, diff, None)
                 continue
-            if version is not None and actual in (
-                version.sha,
-                None if version.content is None else blob_id(version.content, object_format),
+            mode, blob = actual
+            if (
+                version is not None
+                and version.mode == mode
+                and blob
+                in (
+                    version.sha,
+                    None if version.content is None else blob_id(version.content, object_format),
+                )
             ):
                 continue
-            session.set_edit(commit.key, diff, session.git.blob(actual))
+            session.set_edit(commit.key, diff, session.git.blob(blob), mode)
 
     # Each file is reproduced on its own (its edits are its own), so files
     # are done in parallel, which overlaps their git merge-file processes
@@ -271,24 +281,25 @@ def _reproduce(session: Session, trees: list[dict[str, str]]) -> None:
         commit.edits = dict(sorted(commit.edits.items(), key=lambda item: order[item[0]]))
 
 
-def _trees(session: Session, commits: list[_OldCommit]) -> list[dict[str, str]]:
-    """Each file's blob in each commit: base's, as each commit changes them."""
-    blobs: dict[str, str] = {}
+def _trees(session: Session, commits: list[_OldCommit]) -> list[Tree]:
+    """Each file's mode and blob in each commit: base's, as each commit
+    changes them."""
+    entries: Tree = {}
     if not session.root:
         for entry in session.git.run_bytes("ls-tree", "-r", "-z", "--full-tree", session.base).split(b"\0"):
             if entry:
                 meta, _, name = entry.partition(b"\t")
-                _, kind, blob = meta.decode().split(" ")
+                mode, kind, blob = meta.decode().split(" ")
                 if kind == "blob":
-                    blobs[name.decode(errors="surrogateescape")] = blob
-    trees: list[dict[str, str]] = []
+                    entries[name.decode(errors="surrogateescape")] = (mode, blob)
+    trees: list[Tree] = []
     for commit in commits:
-        for path, change in commit.changes:
-            if change is None:
-                blobs.pop(path, None)
+        for path, blob, mode in commit.changes:
+            if blob is None:
+                entries.pop(path, None)
             else:
-                blobs[path] = change
-        trees.append(dict(blobs))
+                entries[path] = (mode, blob)
+        trees.append(dict(entries))
     return trees
 
 

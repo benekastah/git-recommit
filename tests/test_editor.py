@@ -2,9 +2,12 @@ import os
 import subprocess
 import sys
 
+import pathlib
+
 import pytest
 
-from git_recommit.editor import MessageCleanup
+from git_recommit.editor import MessageCleanup, edit
+from git_recommit.errors import RecommitError
 from tests.helpers import Repo
 
 MESSAGE = "Fix the parser\n\n#123 was the bug.\n"
@@ -69,3 +72,34 @@ def test_editing_a_file_whose_name_isnt_ascii_whatever_the_locale(repo: Repo) ->
     result = subprocess.run([sys.executable, "-c", script, str(repo.path)], capture_output=True, env=env, check=False)
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert result.stdout == b"kept"
+
+
+def python_editor(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, body: str) -> None:
+    """Make a Python script the user's editor (it's given the file's path), written
+    as sh runs it, which is how git runs an editor: quoted with single quotes, in a
+    path with a space. cmd.exe doesn't take those."""
+    script = tmp_path / "an editor.py"
+    script.write_text(f"import sys\n{body}\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_EDITOR", f"'{sys.executable}' '{script}'")
+
+
+def test_the_editor_is_run_as_git_runs_it(repo: Repo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    python_editor(tmp_path, monkeypatch, "open(sys.argv[1], 'ab').write(b'edited\\n')")
+    assert edit(repo.client, b"opened\n", "dir/file.txt") == b"opened\nedited\n"
+
+
+def test_the_editor_gets_a_file_with_the_name_it_was_given(
+    repo: Repo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    python_editor(
+        tmp_path, monkeypatch, "import os; open(sys.argv[1], 'wb').write(os.path.basename(sys.argv[1]).encode())"
+    )
+    assert edit(repo.client, b"", "dir/file.txt") == b"file.txt"
+
+
+def test_an_editor_that_fails_changes_nothing(
+    repo: Repo, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    python_editor(tmp_path, monkeypatch, "open(sys.argv[1], 'wb').write(b'half'); sys.exit(1)")
+    with pytest.raises(RecommitError, match="the editor failed"):
+        edit(repo.client, b"opened\n", "file.txt")

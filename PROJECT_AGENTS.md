@@ -100,8 +100,9 @@ These were the user's choices for v0; ask before changing them.
   file or symlink can't be merged, nor can content with a NUL in its first
   8000 bytes, even where attributes have it diffed as text, so a change on
   both sides conflicts), and can conflict with them; conflicts must be
-  resolved before writing. An edit is kept as (basis, content), so it's merged
-  again when what it was based on changes.
+  resolved before writing. An edit is kept as (basis, content, and a mode if it
+  gives one, which starting from the old commits does where the changes alone
+  don't), so it's merged again when what it was based on changes.
 - Changes left unassigned are allowed, with a warning; they end up as
   uncommitted changes in the working tree. recommit finishes by moving HEAD's
   branch and resetting the index, never touching the working tree.

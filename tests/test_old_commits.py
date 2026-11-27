@@ -8,6 +8,7 @@ from typing import Self
 import pytest
 
 from git_recommit import oldcommits
+from git_recommit.commands import Edit
 from git_recommit.diff import FileDiff
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
@@ -423,6 +424,33 @@ def test_a_mode_an_edit_gave_is_carried_into_later_commits_without_edits_of_thei
     assert "script" in first.edits and "script" not in second.edits and "script" in third.edits
 
 
+@pytest.mark.parametrize("content", [LINES.encode(), b"\0binary"], ids=["text", "binary"])
+def test_a_file_deleted_and_added_again_with_another_mode_is_reproduced(repo: Repo, content: bytes) -> None:
+    # The mode the file ends with is the last commit's, so the one that adds it
+    # again isn't given it by the changes, but by an edit.
+    repo.commit("base", data=content)
+    old = [repo.commit("delete it", data=None)]
+    repo.write("data", content + b"more\n")
+    repo.executable("data")
+    old.append(repo.commit("add it again, executable"))
+    old.append(repo.commit("change it", data=content + b"more\nand more\n"))
+    session = restored(repo, "HEAD~3")
+    assert trees(repo, session.build()) == trees(repo, old)
+
+
+def test_editing_a_file_by_hand_keeps_the_mode_the_commits_own_edit_gave(repo: Repo) -> None:
+    repo.commit("base", script=LINES)
+    repo.executable("script")
+    repo.commit("make executable", script=LINES.replace("line 3\n", "three\n"))
+    repo.executable("script", executable=False)
+    repo.commit("make it not", script=LINES.replace("line 5\n", "five\n"))
+    session = restored(repo, "HEAD~2")
+    Edit(1, "script", b"by hand\n").run(session)
+    first, _ = session.build()
+    assert repo.git("ls-tree", first, "script").startswith("100755 ")
+    assert repo.show(first, "script") == "by hand\n"
+
+
 def test_a_file_that_becomes_a_symlink_and_a_file_again_is_reproduced(repo: Repo) -> None:
     repo.commit("base", link="target\n")
     (repo.path / "link").unlink()
@@ -496,17 +524,16 @@ def test_uncommitted_changes_that_undo_an_old_commits_mode_leave_its_new_file_it
 
 def test_an_uncommitted_mode_change_to_a_file_an_old_commit_renamed_stays_with_the_rename(repo: Repo) -> None:
     # The rename and the mode are one change to the file itself, which can't be
-    # split, and the commit must still make the rename (see docs/issues.md).
+    # split: the commit makes the rename, and an edit gives back the mode it had.
     repo.commit("base", old=LINES)
     repo.git("mv", "old", "new")
-    repo.commit("rename")
+    old = [repo.commit("rename")]
     repo.executable("new")
     session = restored(repo, "HEAD~")
     (new,) = session.files
     assert new.status == "R" and new.old_mode != new.new_mode
     assert session.unassigned() == []
-    names = repo.git("ls-tree", "-r", "--name-only", session.build()[0]).splitlines()
-    assert "new" in names and "old" not in names
+    assert trees(repo, session.build()) == trees(repo, old)
 
 
 BIG = b"\0" + b"".join(f"line {i}\n".encode() for i in range(2000))

@@ -324,8 +324,10 @@ class Session:
             if state.version is not None or state.conflict:
                 commit.edits[diff.path] = Edit(state.basis, None, blob=diff.whole)
             return
-        there = state.version.mode if state.version is not None else diff.new_mode or diff.old_mode or "100644"
-        mode = None if mode == there else mode
+        # (Where the file isn't there, what mode it gets without one is the
+        # changes', which the edit's mode may differ from.)
+        if state.version is not None and mode == state.version.mode:
+            mode = None
         if content != state.basis or state.conflict or state.version is None or mode is not None:
             commit.edits[diff.path] = Edit(state.basis, content, blob=diff.whole, mode=mode)
 

@@ -4,8 +4,9 @@ the uncommitted changes as a commit, and what must not be in progress."""
 import os
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from git_recommit.diff import SUBMODULE_MODE
 from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 
@@ -99,6 +100,9 @@ class WorktreeStatus:
     untracked: list[str]
     # Whether the index has unresolved conflicts.
     unmerged: bool
+    # The submodules (from the top) that status shows at another commit than
+    # the index has.
+    moved: list[str] = field(default_factory=list)
 
 
 def worktree_status(git: GitClient) -> WorktreeStatus:
@@ -112,7 +116,8 @@ def worktree_status(git: GitClient) -> WorktreeStatus:
         "--no-optional-locks", "status", "--porcelain=v2", "-z", "--no-renames", "--untracked-files=all"
     )
     changed = unmerged = False
-    untracked = []
+    untracked: list[str] = []
+    moved: list[str] = []
     # "? <path>" for an untracked file; for a changed one, "1 <XY> <submodule>
     # ..." (or "u ..." unmerged), where <submodule> is S<c><m><u> for a
     # submodule: "." for c if it hasn't a new commit. Paths are from the top.
@@ -122,9 +127,12 @@ def worktree_status(git: GitClient) -> WorktreeStatus:
         elif entry.startswith(b"1 .M S."):
             continue
         elif entry:
+            fields = entry.split(b" ", 8)
+            if len(fields) == 9 and fields[2].startswith(b"SC"):
+                moved.append(fields[8].decode(errors="surrogateescape"))
             changed = True
             unmerged = unmerged or entry.startswith(b"u ")
-    return WorktreeStatus(changed=changed, untracked=untracked, unmerged=unmerged)
+    return WorktreeStatus(changed=changed, untracked=untracked, unmerged=unmerged, moved=moved)
 
 
 def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_untracked: bool = False) -> str | None:
@@ -146,9 +154,30 @@ def worktree_commit(git: GitClient, head: str, status: WorktreeStatus, include_u
         index = os.path.join(scratch, "index")
         shutil.copy2(git.git_paths("index")[0], index)
         env = {"GIT_INDEX_FILE": os.fsencode(index)}
-        git.run("add", "--all" if include_untracked else "--update", "--", ":/", env=env)
+        hidden = [literal_excluded(path) for path in _hidden_moves(git, status.moved)]
+        git.run("add", "--all" if include_untracked else "--update", "--", ":/", *hidden, env=env)
         tree = git.run("write-tree", env=env)
     return git.run("commit-tree", tree, "-p", head, "-m", "Uncommitted changes")
+
+
+def _hidden_moves(git: GitClient, shown: list[str]) -> list[str]:
+    """The submodules at another commit than the index has that status doesn't
+    show (they're ignored, see submodule.<name>.ignore), which `git add` would
+    take, but they aren't uncommitted changes."""
+    # Plumbing leaves out what the config ignores, unless it's told not to.
+    out = git.run_bytes("diff-files", "--raw", "-z", "--no-renames", "--ignore-submodules=none").split(b"\0")
+    # ":<old mode> <new mode> <old blob> <new blob> <status>", then the path.
+    moved = [
+        path.decode(errors="surrogateescape")
+        for info, path in zip(out[::2], out[1::2], strict=False)
+        if info.startswith(b":") and info.split(b" ")[1] == SUBMODULE_MODE.encode()
+    ]
+    return [path for path in moved if path not in shown]
+
+
+def literal_excluded(path: str) -> str:
+    """A pathspec leaving out exactly the file at path (see literal)."""
+    return f":(top,literal,exclude){path}"
 
 
 def literal(path: str) -> str:

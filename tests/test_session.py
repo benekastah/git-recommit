@@ -568,6 +568,27 @@ def test_a_submodule_the_config_ignores_has_no_uncommitted_changes(repo: Repo) -
     assert not repo.session("HEAD~").uncommitted
 
 
+@pytest.mark.parametrize(
+    ("setting", "value", "taken"),
+    [
+        ("submodule.sub.ignore", "all", False),
+        ("diff.ignoreSubmodules", "all", False),
+        ("submodule.sub.ignore", "dirty", True),
+    ],
+    ids=["ignore-all", "diff-ignore-all", "dirty-still-shows-a-move"],
+)
+def test_a_submodule_move_the_config_hides_isnt_taken_with_other_uncommitted_changes(
+    repo: Repo, setting: str, value: str, taken: bool
+) -> None:
+    # git status doesn't show the move, so it isn't an uncommitted change, even
+    # when something else is, and `git add` would take it with that.
+    sub = with_submodule(repo)
+    sub.commit("moved", s="s2\n")
+    repo.git("config", setting, value)
+    repo.write("f", "changed\n")
+    assert [d.path for d in repo.session("HEAD~").files] == (["f", "sub"] if taken else ["f"])
+
+
 @pytest.mark.parametrize("dirty", ["untracked", "s"], ids=["untracked", "tracked"])
 def test_changes_in_a_submodule_it_hasnt_committed_are_no_uncommitted_changes(repo: Repo, dirty: str) -> None:
     # An untracked file, or a change to a tracked one: the superproject can't

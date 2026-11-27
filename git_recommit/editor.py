@@ -1,6 +1,4 @@
 import os
-import shlex
-import subprocess
 import sys
 import tempfile
 
@@ -10,22 +8,28 @@ from git_recommit.errors import RecommitError
 from git_recommit.git import GitClient
 
 
-def shell_quote(arg: str) -> str:
-    """arg, quoted for the shell subprocess runs a command with: cmd.exe on
-    Windows, sh elsewhere."""
-    return subprocess.list2cmdline([arg]) if os.name == "nt" else shlex.quote(arg)
-
-
 def edit(git: GitClient, content: bytes, filename: str) -> bytes:
     """Open content in the user's editor (as git chooses it), in a file with
     filename's name so the editor knows what kind of file it is, and return what
     they saved."""
     editor = git.run("var", "GIT_EDITOR")
+    if editor == ":":
+        # git's way to say there's no editor, which it skips (as for `git
+        # commit`). The alias below would fail: git starts a command with no
+        # shell syntax directly, and `:` is only a shell builtin.
+        return content
     with tempfile.TemporaryDirectory() as scratch:
         path = os.path.join(scratch, _local_name(filename))
         with open(path, "wb") as f:
             f.write(content)
-        if subprocess.run(f"{editor} {shell_quote(path)}", shell=True, check=False).returncode != 0:
+        # As git runs an editor: with its own sh (even on Windows, where
+        # Python's shell is cmd.exe, which wouldn't take an editor written for
+        # sh), as `<editor> "$@"`, which a `!` alias does (so the editor, and
+        # whatever it runs, gets git's environment for an alias, e.g. GIT_PREFIX,
+        # and runs from the top of the worktree, as with `git commit`; a
+        # git-recommit-edit on PATH would run instead of an alias, which isn't
+        # a name anyone has). No timeout: the user takes as long as they take.
+        if not git.passthrough("-c", f"alias.recommit-edit=!{editor}", "recommit-edit", path, timeout=None):
             raise RecommitError("the editor failed, so nothing was changed")
         with open(path, "rb") as f:
             return f.read()
